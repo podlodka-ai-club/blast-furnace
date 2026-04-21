@@ -102,7 +102,7 @@ describe('issues', () => {
         labels: 'bug,help-wanted',
         state: 'all',
         assignee: 'anotheruser',
-        since: new Date('2024-01-01T00:00:00Z'),
+        since: '2024-01-01T00:00:00.000Z',
         milestone: 5,
       });
     });

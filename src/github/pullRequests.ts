@@ -26,6 +26,10 @@ export interface PullRequestResponse {
 export async function createPullRequest(options: CreatePullRequestOptions): Promise<PullRequestResponse> {
   const { title, head, base, body = '', draft = false } = options;
 
+  if (!title.trim() || !head.trim() || !base.trim()) {
+    throw new Error('PR title, head, and base must be non-empty');
+  }
+
   const response = await githubClient.pulls.create({
     owner: config.github.owner,
     repo: config.github.repo,

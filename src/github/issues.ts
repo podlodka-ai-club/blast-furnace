@@ -25,7 +25,7 @@ function mapGitHubIssueResponse(
     title: issue.title,
     body: issue.body,
     state: issue.state === 'open' || issue.state === 'closed' ? issue.state : 'open',
-    labels: issue.labels?.map((label) => (typeof label === 'string' ? label : label.name)) ?? [],
+    labels: issue.labels?.map((label) => (typeof label === 'string' ? label : label?.name)).filter((l): l is string => l !== undefined) ?? [],
     assignee: issue.assignee?.login ?? null,
     createdAt: issue.created_at,
     updatedAt: issue.updated_at,
@@ -46,7 +46,7 @@ export async function fetchIssues(filters: IssueFilters = {}): Promise<GitHubIss
     assignee,
     since: since ? (() => {
       const d = new Date(since);
-      return Number.isNaN(d.getTime()) ? undefined : d;
+      return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
     })() : undefined,
     milestone: milestone ?? undefined,
   });
