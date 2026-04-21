@@ -47,6 +47,11 @@ export function createWorker(
     logger.warn(`Job ${jobId} stalled and will be retried`);
   });
 
+  worker.on('error', (err) => {
+    const logger = createLogger({ component: 'worker' });
+    logger.error(`Worker error: ${err.message}`);
+  });
+
   return worker;
 }
 

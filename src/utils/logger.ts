@@ -43,9 +43,9 @@ function logToConsole(entry: LogEntry): void {
   }
 }
 
-function mergeContext(defaultContext: Record<string, unknown> | undefined, context: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
-  const hasContext = Object.keys(context ?? {}).length > 0 || Object.keys(defaultContext ?? {}).length > 0;
-  return hasContext ? { ...defaultContext, ...context } : undefined;
+function mergeContext(defaultContext?: Record<string, unknown>, context?: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!defaultContext && !context) return undefined;
+  return { ...defaultContext, ...context };
 }
 
 export function createLogger(defaultContext?: Record<string, unknown>): Logger {

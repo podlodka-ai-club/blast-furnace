@@ -1,14 +1,14 @@
 import { buildServer, startServer } from './server/index.js';
 import { config } from './config/index.js';
 import { closeQueue, closeWorker, createWorker } from './jobs/index.js';
-import type { Worker } from 'bullmq';
+import type { Job, Worker } from 'bullmq';
 import type { JobPayload } from './types/index.js';
 
 let server: Awaited<ReturnType<typeof buildServer>> | undefined;
 let worker: Worker<JobPayload> | undefined;
 
 // Placeholder processor - worker infrastructure is ready for task processing
-async function placeholderProcessor(): Promise<void> {
+async function placeholderProcessor(_job: Job<JobPayload>): Promise<void> {
   // Tasks will be processed here in future implementation
 }
 
@@ -16,6 +16,12 @@ async function main(): Promise<void> {
   // Validate required configuration
   if (!config.github.token) {
     throw new Error('GITHUB_TOKEN environment variable is required');
+  }
+  if (!config.github.owner) {
+    throw new Error('GITHUB_OWNER environment variable is required');
+  }
+  if (!config.github.repo) {
+    throw new Error('GITHUB_REPO environment variable is required');
   }
 
   server = await buildServer({ logger: true });

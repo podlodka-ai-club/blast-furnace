@@ -38,7 +38,7 @@ describe('job logger', () => {
         taskId: 'task-456',
         type: 'test-task',
       },
-    } as Job;
+    } as unknown as Job;
 
     const logger = createJobLogger(mockJob);
 
@@ -58,7 +58,7 @@ describe('job logger', () => {
         taskId: 'task-456',
         type: 'test-task',
       },
-    } as Job;
+    } as unknown as Job;
 
     const logger = createJobLogger(mockJob);
     expect(typeof logger.info).toBe('function');
