@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Blast Furnace is an Agent Orchestrator server that runs continuously, polls GitHub Issues, and processes tasks through a pipeline using background jobs.
+Blast Furnace is an Agent Orchestrator server that runs continuously, receives GitHub Issues via polling or webhooks (configurable), and processes tasks through a pipeline using background jobs.
 
 ## Tech Stack
 
@@ -31,12 +31,15 @@ src/
     index.test.ts    - Server tests
     routes/
       health.ts      - GET /health endpoint
+      github-webhooks.ts - POST /webhooks/github for GitHub issue events
   jobs/
     index.ts         - Job infrastructure exports
     index.test.ts    - Job tests
     queue.ts         - BullMQ Queue and QueueEvents configuration
     worker.ts        - BullMQ Worker factory with logging middleware
     logger.ts        - Job-specific logging helper
+    issue-watcher.ts - Polling-based GitHub issue watcher (repeatable job)
+    issue-processor.ts - Shared issue processing job (logs issue, creates PR)
   github/
     index.ts         - GitHub API client exports
     types.ts         - GitHub-specific TypeScript types
@@ -55,6 +58,8 @@ Defined in `src/types/index.ts`:
 - `GitHubIssue`, `GitHubComment`
 - `AppConfig`, `RedisConfig`, `GitHubConfig`
 - `JobPayload`
+- `IssueProcessorJobData`, `IssueWatcherJobData` (job data types)
+- `GitHubWebhookEvent`, `GitHubIssueEventPayload` (webhook types)
 
 ## Configuration
 
@@ -66,6 +71,9 @@ Loaded from environment variables in `src/config/index.ts`:
 - `REDIS_PASSWORD` (optional, no default)
 - `CORS_ORIGIN` (default: true for development)
 - `GITHUB_TOKEN`, `GITHUB_OWNER`, `GITHUB_REPO`
+- `GITHUB_ISSUE_STRATEGY` (polling | webhook, default: polling) - how to receive GitHub issues
+- `GITHUB_POLL_INTERVAL_MS` (default: 60000) - polling interval in milliseconds
+- `GITHUB_WEBHOOK_SECRET` (optional) - HMAC secret for webhook signature validation
 
 ## Commands
 
