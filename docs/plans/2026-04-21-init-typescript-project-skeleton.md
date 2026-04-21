@@ -71,11 +71,11 @@ Set up a TypeScript project skeleton for the Agent Orchestrator server that runs
 - Create: `src/config/`
 - Create: `src/utils/`
 
-- [ ] Create `src/types/index.ts` for shared TypeScript interfaces
-- [ ] Create `src/config/index.ts` for environment config loading
-- [ ] Create `src/utils/logger.ts` for structured logging
-- [ ] Write tests for config and types
-- [ ] Run tests - must pass
+- [x] Create `src/types/index.ts` for shared TypeScript interfaces
+- [x] Create `src/config/index.ts` for environment config loading
+- [x] Create `src/utils/logger.ts` for structured logging
+- [x] Write tests for config and types
+- [x] Run tests - must pass
 
 ### Task 5: Verify project builds and runs
 

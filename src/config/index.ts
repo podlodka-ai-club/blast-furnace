@@ -1,18 +1,6 @@
-interface Config {
-  env: string;
-  port: number;
-  redis: {
-    host: string;
-    port: number;
-  };
-  github: {
-    token: string;
-    owner: string;
-    repo: string;
-  };
-}
+import type { AppConfig } from '../types/index.js';
 
-function loadConfig(): Config {
+function loadConfig(): AppConfig {
   return {
     env: process.env['NODE_ENV'] ?? 'development',
     port: parseInt(process.env['PORT'] ?? '3000', 10),
@@ -29,4 +17,3 @@ function loadConfig(): Config {
 }
 
 export const config = loadConfig();
-export type { Config };
