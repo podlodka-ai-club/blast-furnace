@@ -46,10 +46,10 @@ Design and implement a GitHub communication module (`src/github/`) that provides
 - Create: `src/github/branches.ts`
 - Create: `src/github/branches.test.ts`
 
-- [ ] Add `pushBranch(branchName, sha, force?)` function that calls `client.git.createRef`
-- [ ] Add `getRef(branchName)` function that calls `client.git.getRef`
-- [ ] Write unit tests with mocked Octokit
-- [ ] Run project test suite - must pass before Task 5
+- [x] Add `pushBranch(branchName, sha, force?)` function that calls `client.git.createRef`
+- [x] Add `getRef(branchName)` function that calls `client.git.getRef`
+- [x] Write unit tests with mocked Octokit
+- [x] Run project test suite - must pass before Task 5
 
 ### Task 5: Implement pull requests module
 **Files:**
