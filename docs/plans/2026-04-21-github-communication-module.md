@@ -66,10 +66,10 @@ Design and implement a GitHub communication module (`src/github/`) that provides
 - Create: `src/github/index.ts`
 - Create: `src/github/types.ts`
 
-- [ ] Re-export all functions from `src/github/index.ts`
-- [ ] Add GitHub-specific types (API response types not covered by existing `GitHubIssue`/`GitHubComment`)
-- [ ] Write integration-style tests for exports
-- [ ] Run project test suite - must pass before Task 7
+- [x] Re-export all functions from `src/github/index.ts`
+- [x] Add GitHub-specific types (API response types not covered by existing `GitHubIssue`/`GitHubComment`)
+- [x] Write integration-style tests for exports
+- [x] Run project test suite - must pass before Task 7
 
 ### Task 7: Verify acceptance criteria
 - [ ] Run full test suite (npm test)
