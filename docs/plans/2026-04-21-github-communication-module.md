@@ -56,10 +56,10 @@ Design and implement a GitHub communication module (`src/github/`) that provides
 - Create: `src/github/pullRequests.ts`
 - Create: `src/github/pullRequests.test.ts`
 
-- [ ] Add `CreatePullRequestOptions` interface (title, head, base, body, draft)
-- [ ] Add `createPullRequest(options)` function that calls `client.pulls.create`
-- [ ] Write unit tests with mocked Octokit
-- [ ] Run project test suite - must pass before Task 6
+- [x] Add `CreatePullRequestOptions` interface (title, head, base, body, draft)
+- [x] Add `createPullRequest(options)` function that calls `client.pulls.create`
+- [x] Write unit tests with mocked Octokit
+- [x] Run project test suite - must pass before Task 6
 
 ### Task 6: Create module entry point and types
 **Files:**
