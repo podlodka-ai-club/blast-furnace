@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyPluginOptions } from 'fastify';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { config } from '../../config/index.js';
 import { jobQueue } from '../../jobs/queue.js';
 import type { GitHubWebhookEvent, IssueProcessorJobData } from '../../types/index.js';
@@ -13,17 +13,14 @@ interface GitHubWebhooksRouteOptions extends FastifyPluginOptions {
  */
 function validateSignature(payload: string, signature: string, secret: string): boolean {
   const expectedSignature = `sha256=${createHmac('sha256', secret).update(payload).digest('hex')}`;
+  const signatureBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expectedSignature);
+
   // Use timingSafeEqual to prevent timing attacks
-  if (signature.length !== expectedSignature.length) {
+  if (signatureBuffer.length !== expectedBuffer.length) {
     return false;
   }
-  const payloadBuffer = Buffer.from(signature);
-  const expectedBuffer = Buffer.from(expectedSignature);
-  let result = 0;
-  for (let i = 0; i < payloadBuffer.length; i++) {
-    result |= payloadBuffer[i] ^ expectedBuffer[i];
-  }
-  return result === 0;
+  return timingSafeEqual(signatureBuffer, expectedBuffer);
 }
 
 /**

@@ -25,6 +25,9 @@ function slugify(text: string): string {
     }
   }
 
+  // Remove any trailing hyphens from truncation
+  slug = slug.replace(/-+$/, '');
+
   // Fallback to 'issue' if slug is empty (e.g., title was all special chars)
   return slug || 'issue';
 }

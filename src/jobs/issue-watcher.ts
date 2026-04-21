@@ -3,6 +3,14 @@ import type { IssueProcessorJobData, IssueWatcherJobData } from '../types/index.
 import { jobQueue } from './queue.js';
 import { config } from '../config/index.js';
 import { fetchIssues } from '../github/issues.js';
+import Redis from 'ioredis';
+
+const LAST_POLL_KEY = 'github:issue-watcher:last-poll';
+const redisClient = new Redis({
+  host: config.redis.host,
+  port: config.redis.port,
+  ...(config.redis.password !== undefined && { password: config.redis.password }),
+});
 
 /**
  * Start the issue watcher by adding a repeatable job to the queue.
@@ -10,6 +18,8 @@ import { fetchIssues } from '../github/issues.js';
  */
 export async function startIssueWatcher(): Promise<void> {
   const jobName = 'issue-watcher';
+
+  await redisClient.connect();
 
   // Add a repeatable job with no initial lastPollTimestamp
   // The handler will fetch all open issues on first run
@@ -32,8 +42,10 @@ export async function startIssueWatcher(): Promise<void> {
 /**
  * Handler for issue watcher jobs - fetches new issues and queues them for processing
  */
-export async function issueWatcherHandler(job: Job<IssueWatcherJobData>): Promise<void> {
-  const { lastPollTimestamp } = job.data;
+export async function issueWatcherHandler(_job: Job<IssueWatcherJobData>): Promise<void> {
+  // Get lastPollTimestamp from Redis (not from job data, which is static for repeatable jobs)
+  const storedTimestamp = await redisClient.get(LAST_POLL_KEY);
+  const lastPollTimestamp = storedTimestamp ? new Date(storedTimestamp) : undefined;
 
   // Fetch open issues, optionally filtered by last poll time
   const issues = await fetchIssues({
@@ -52,7 +64,6 @@ export async function issueWatcherHandler(job: Job<IssueWatcherJobData>): Promis
     await jobQueue.add('issue-processor', processorJob);
   }
 
-  // Note: BullMQ's repeatable job mechanism automatically reschedules this job.
-  // The next invocation will use the same job data (lastPollTimestamp from initial job).
-  // For accurate "since" filtering, consider storing last poll time in Redis.
+  // Store current timestamp in Redis for next poll cycle
+  await redisClient.set(LAST_POLL_KEY, new Date().toISOString());
 }

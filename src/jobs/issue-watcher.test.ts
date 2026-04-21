@@ -3,9 +3,14 @@ import type { Job } from 'bullmq';
 import type { IssueWatcherJobData } from '../types/index.js';
 
 // Use vi.hoisted to avoid hoisting issues with vi.mock
-const { mockFetchIssues, mockJobQueueAdd } = vi.hoisted(() => ({
+const { mockFetchIssues, mockJobQueueAdd, mockRedisClient } = vi.hoisted(() => ({
   mockFetchIssues: vi.fn(),
   mockJobQueueAdd: vi.fn(),
+  mockRedisClient: {
+    connect: vi.fn().mockResolvedValue(undefined),
+    get: vi.fn().mockResolvedValue(null),
+    set: vi.fn().mockResolvedValue('OK'),
+  },
 }));
 
 // Mock the GitHub issues module
@@ -18,6 +23,11 @@ vi.mock('./queue.js', () => ({
   jobQueue: {
     add: mockJobQueueAdd,
   },
+}));
+
+// Mock the Redis client
+vi.mock('ioredis', () => ({
+  default: vi.fn().mockImplementation(() => mockRedisClient),
 }));
 
 // Mock the config
@@ -98,6 +108,7 @@ describe('issue watcher', () => {
       const { issueWatcherHandler } = await import('./issue-watcher.js');
 
       mockFetchIssues.mockResolvedValue([]);
+      mockRedisClient.get.mockResolvedValue(null);
 
       const mockJob = createMockJob(undefined);
       await issueWatcherHandler(mockJob);
@@ -112,13 +123,14 @@ describe('issue watcher', () => {
       const { issueWatcherHandler } = await import('./issue-watcher.js');
 
       mockFetchIssues.mockResolvedValue([]);
+      mockRedisClient.get.mockResolvedValue('2024-01-01T00:00:00.000Z');
 
       const mockJob = createMockJob('2024-01-01T00:00:00Z');
       await issueWatcherHandler(mockJob);
 
       expect(mockFetchIssues).toHaveBeenCalledWith({
         state: 'open',
-        since: '2024-01-01T00:00:00Z',
+        since: new Date('2024-01-01T00:00:00.000Z'),
       });
     });
 
@@ -151,11 +163,12 @@ describe('issue watcher', () => {
       ];
 
       mockFetchIssues.mockResolvedValue(mockIssues);
+      mockRedisClient.get.mockResolvedValue('2024-01-01T00:00:00.000Z');
 
       const mockJob = createMockJob('2024-01-01T00:00:00Z');
       await issueWatcherHandler(mockJob);
 
-      // Only issue processor jobs are added (BullMQ's repeatable mechanism handles rescheduling)
+      // Issue processor jobs are added for each issue
       expect(mockJobQueueAdd).toHaveBeenCalledTimes(mockIssues.length);
 
       // First two calls should be issue processor jobs
@@ -182,11 +195,12 @@ describe('issue watcher', () => {
       const { issueWatcherHandler } = await import('./issue-watcher.js');
 
       mockFetchIssues.mockResolvedValue([]);
+      mockRedisClient.get.mockResolvedValue('2024-01-01T00:00:00.000Z');
 
       const mockJob = createMockJob('2024-01-01T00:00:00Z');
       await issueWatcherHandler(mockJob);
 
-      // No jobs added when issue list is empty (BullMQ handles repeatable job rescheduling)
+      // No jobs added when issue list is empty
       expect(mockJobQueueAdd).toHaveBeenCalledTimes(0);
     });
 
@@ -219,6 +233,7 @@ describe('issue watcher', () => {
       ];
 
       mockFetchIssues.mockResolvedValue(mockIssues);
+      mockRedisClient.get.mockResolvedValue('2024-01-01T00:00:00.000Z');
 
       const mockJob = createMockJob('2024-01-01T00:00:00Z');
       await issueWatcherHandler(mockJob);
@@ -236,6 +251,7 @@ describe('issue watcher', () => {
       const { issueWatcherHandler } = await import('./issue-watcher.js');
 
       mockFetchIssues.mockRejectedValue(new Error('Network error'));
+      mockRedisClient.get.mockResolvedValue('2024-01-01T00:00:00.000Z');
 
       const mockJob = createMockJob('2024-01-01T00:00:00Z');
       await expect(issueWatcherHandler(mockJob)).rejects.toThrow('Network error');

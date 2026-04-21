@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-    <title>Code coverage report for src/github/pullRequests.ts</title>
+    <title>Code coverage report for src/jobs/issue-watcher.ts</title>
     <meta charset="utf-8" />
     <link rel="stylesheet" href="../../prettify.css" />
     <link rel="stylesheet" href="../../base.css" />
@@ -19,34 +19,34 @@
 <body>
 <div class='wrapper'>
     <div class='pad1'>
-        <h1><a href="../../index.html">All files</a> / <a href="index.html">src/github</a> pullRequests.ts</h1>
+        <h1><a href="../../index.html">All files</a> / <a href="index.html">src/jobs</a> issue-watcher.ts</h1>
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>21/21</span>
+                <span class='fraction'>50/50</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>5/5</span>
+                <span class='fraction'>3/3</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>1/1</span>
+                <span class='fraction'>2/2</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>21/21</span>
+                <span class='fraction'>50/50</span>
             </div>
         
             
@@ -110,101 +110,170 @@
 <a name='L45'></a><a href='#L45'>45</a>
 <a name='L46'></a><a href='#L46'>46</a>
 <a name='L47'></a><a href='#L47'>47</a>
-<a name='L48'></a><a href='#L48'>48</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">10x</span>
-<span class="cline-any cline-yes">10x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">10x</span>
-<span class="cline-any cline-yes">6x</span>
-<span class="cline-any cline-yes">6x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
 <span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { githubClient } from './client.js';
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span></td><td class="text"><pre class="prettyprint lang-js">import type { Job } from 'bullmq';
+import type { IssueProcessorJobData, IssueWatcherJobData } from '../types/index.js';
+import { jobQueue } from './queue.js';
 import { config } from '../config/index.js';
+import { fetchIssues } from '../github/issues.js';
 &nbsp;
 /**
- * Options for creating a pull request
+ * Start the issue watcher by adding a repeatable job to the queue.
+ * The job will fire every pollIntervalMs milliseconds.
  */
-export interface CreatePullRequestOptions {
-  title: string;
-  head: string;
-  base: string;
-  body?: string;
-  draft?: boolean;
+export async function startIssueWatcher(): Promise&lt;void&gt; {
+  const jobName = 'issue-watcher';
+&nbsp;
+  // Add a repeatable job with no initial lastPollTimestamp
+  // The handler will fetch all open issues on first run
+  await jobQueue.add(
+    jobName,
+    {
+      taskId: `issue-watcher-${Date.now()}`,
+      type: 'issue-watcher',
+      lastPollTimestamp: undefined,
+    },
+    {
+      repeat: {
+        every: config.github.pollIntervalMs,
+      },
+      jobId: 'issue-watcher-repeatable',
+    }
+  );
 }
 &nbsp;
 /**
- * Response from creating a pull request
+ * Handler for issue watcher jobs - fetches new issues and queues them for processing
  */
-export interface PullRequestResponse {
-  number: number;
-  htmlUrl: string;
-}
+export async function issueWatcherHandler(job: Job&lt;IssueWatcherJobData&gt;): Promise&lt;void&gt; {
+  const { lastPollTimestamp } = job.data;
 &nbsp;
-/**
- * Create a pull request using the GitHub client
- */
-export async function createPullRequest(options: CreatePullRequestOptions): Promise&lt;PullRequestResponse&gt; {
-  const { title, head, base, body = '', draft = false } = options;
-&nbsp;
-  if (!title.trim() || !head.trim() || !base.trim()) {
-    throw new Error('PR title, head, and base must be non-empty');
-  }
-&nbsp;
-  const response = await githubClient.pulls.create({
-    owner: config.github.owner,
-    repo: config.github.repo,
-    title,
-    head,
-    base,
-    body,
-    draft,
+  // Fetch open issues, optionally filtered by last poll time
+  const issues = await fetchIssues({
+    state: 'open',
+    since: lastPollTimestamp,
   });
 &nbsp;
-  return {
-    number: response.data.number,
-    htmlUrl: response.data.html_url,
-  };
-}
-&nbsp;</pre></td></tr></table></pre>
+  // For each new issue, add an IssueProcessorJobData job to the queue
+  for (const issue of issues) {
+    const processorJob: IssueProcessorJobData = {
+      taskId: `issue-processor-${issue.id}-${Date.now()}`,
+      type: 'issue-processor',
+      issue,
+    };
+&nbsp;
+    await jobQueue.add('issue-processor', processorJob);
+  }
+&nbsp;
+  // Schedule the next poll with the current timestamp
+  const currentTimestamp = new Date().toISOString();
+  await jobQueue.add(
+    'issue-watcher',
+    {
+      taskId: `issue-watcher-${Date.now()}`,
+      type: 'issue-watcher',
+      lastPollTimestamp: currentTimestamp,
+    },
+    {
+      repeat: {
+        every: config.github.pollIntervalMs,
+      },
+      jobId: 'issue-watcher-repeatable',
+    }
+  );
+}</pre></td></tr></table></pre>
 
                 <div class='push'></div><!-- for sticky footer -->
             </div><!-- /wrapper -->
