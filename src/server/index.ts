@@ -1,6 +1,8 @@
 import Fastify, { FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import { healthRoute } from './routes/health.js';
+import { githubWebhooksRoute } from './routes/github-webhooks.js';
+import { config } from '../config/index.js';
 import type { ServerOptions } from '../types/index.js';
 
 export type { ServerOptions };
@@ -25,6 +27,11 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
   // Register health check route with server start time for accurate uptime
   const startTime = Date.now();
   await server.register(healthRoute, { startTime });
+
+  // Register GitHub webhooks route when webhook strategy is configured
+  if (config.github.issueStrategy === 'webhook') {
+    await server.register(githubWebhooksRoute);
+  }
 
   return server;
 }

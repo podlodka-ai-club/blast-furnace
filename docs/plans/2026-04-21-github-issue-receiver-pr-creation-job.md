@@ -81,8 +81,8 @@ Add two strategies to receive GitHub issues reactively (polling and webhooks), c
 ### Task 6: Register webhook route in server
 **Files:**
 - Modify: `src/server/index.ts`
-- [ ] Import and register `githubWebhooksRoute` (always registered when webhook strategy is selected)
-- [ ] Write test verifying webhook route registration
+- [x] Import and register `githubWebhooksRoute` (always registered when webhook strategy is selected)
+- [x] Write test verifying webhook route registration
 
 ### Task 7: Conditionally start polling or webhook based on config
 **Files:**

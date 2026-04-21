@@ -24,7 +24,9 @@ vi.mock('../../config/index.js', () => ({
       token: 'test-token',
       owner: 'test-owner',
       repo: 'test-repo',
-      issueStrategy: 'webhook',
+      // Use polling so buildServer doesn't auto-register the webhook route
+      // The test will manually register it
+      issueStrategy: 'polling',
       pollIntervalMs: 60000,
       webhookSecret: undefined,
     },
