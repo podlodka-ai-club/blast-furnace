@@ -37,8 +37,6 @@ main().catch((err) => {
   process.exit(1);
 });
 
-const SHUTDOWN_TIMEOUT_MS = 10000;
-
 // Handle shutdown signals - coordinated shutdown with guard
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
   if (isShuttingDown) {
@@ -51,7 +49,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   const timeout = setTimeout(() => {
     console.error('Shutdown timeout exceeded, forcing exit');
     process.exit(1);
-  }, SHUTDOWN_TIMEOUT_MS);
+  }, 10000);
 
   try {
     // Close server first to stop accepting new connections

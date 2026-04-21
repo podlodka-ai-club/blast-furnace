@@ -36,6 +36,6 @@ export const queueEvents = new QueueEvents('agent-orchestrator', {
 });
 
 export async function closeQueue(): Promise<void> {
-  await jobQueue.close();
   await queueEvents.close();
+  await jobQueue.close();
 }
