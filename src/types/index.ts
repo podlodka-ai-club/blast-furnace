@@ -91,7 +91,6 @@ export interface ServerOptions {
 export interface HealthResponse {
   status: 'ok';
   timestamp: string;
-  uptime: number;
 }
 
 // Job types (for BullMQ)

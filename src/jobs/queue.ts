@@ -1,11 +1,8 @@
 import { Queue, QueueEvents } from 'bullmq';
 import { config } from '../config/index.js';
+import type { JobPayload } from '../types/index.js';
 
-export interface JobData {
-  taskId: string;
-  type: string;
-  payload?: Record<string, unknown>;
-}
+export type JobData = JobPayload;
 
 export const jobQueue = new Queue<JobData>('agent-orchestrator', {
   connection: {

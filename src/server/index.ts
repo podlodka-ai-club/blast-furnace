@@ -1,10 +1,9 @@
 import Fastify, { FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import { healthRoute } from './routes/health.js';
+import type { ServerOptions } from '../types/index.js';
 
-export interface ServerOptions {
-  logger?: boolean;
-}
+export type { ServerOptions };
 
 export async function buildServer(options: ServerOptions = {}): Promise<FastifyInstance> {
   const server = Fastify({
@@ -14,7 +13,7 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
   // Register CORS plugin
   await server.register(cors, {
     origin: true,
-    credentials: true,
+    credentials: false,
   });
 
   // Register health check route

@@ -1,5 +1,6 @@
 import { Job } from 'bullmq';
-import type { JobData } from './queue.js';
+import type { JobPayload } from '../types/index.js';
+import { createLogger } from '../utils/logger.js';
 
 export interface JobLogger {
   info(message: string): void;
@@ -8,22 +9,23 @@ export interface JobLogger {
   debug(message: string): void;
 }
 
-export function createJobLogger(job: Job<JobData>): JobLogger {
+export function createJobLogger(job: Job<JobPayload>): JobLogger {
   const jobId = job.id ?? 'unknown';
   const taskId = job.data.taskId;
+  const logger = createLogger({ jobId, taskId, component: 'worker' });
 
   return {
     info(message: string): void {
-      console.log(`[Job:${jobId}|${taskId}] INFO: ${message}`);
+      logger.info(message);
     },
     error(message: string): void {
-      console.error(`[Job:${jobId}|${taskId}] ERROR: ${message}`);
+      logger.error(message);
     },
     warn(message: string): void {
-      console.warn(`[Job:${jobId}|${taskId}] WARN: ${message}`);
+      logger.warn(message);
     },
     debug(message: string): void {
-      console.debug(`[Job:${jobId}|${taskId}] DEBUG: ${message}`);
+      logger.debug(message);
     },
   };
 }

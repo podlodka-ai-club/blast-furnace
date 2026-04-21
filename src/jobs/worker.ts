@@ -1,6 +1,6 @@
 import { Worker, Job } from 'bullmq';
 import { config } from '../config/index.js';
-import type { JobData } from './queue.js';
+import type { JobPayload } from '../types/index.js';
 import { createJobLogger } from './logger.js';
 
 export interface WorkerOptions {
@@ -8,10 +8,10 @@ export interface WorkerOptions {
 }
 
 export function createWorker(
-  processor: (job: Job<JobData>) => Promise<void>,
+  processor: (job: Job<JobPayload>) => Promise<void>,
   options: WorkerOptions = {}
-): Worker<JobData> {
-  const worker = new Worker<JobData>('agent-orchestrator', processor, {
+): Worker<JobPayload> {
+  const worker = new Worker<JobPayload>('agent-orchestrator', processor, {
     connection: {
       host: config.redis.host,
       port: config.redis.port,
@@ -44,6 +44,6 @@ export function createWorker(
   return worker;
 }
 
-export async function closeWorker(worker: Worker<JobData>): Promise<void> {
+export async function closeWorker(worker: Worker<JobPayload>): Promise<void> {
   await worker.close();
 }

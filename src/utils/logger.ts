@@ -43,34 +43,27 @@ function logToConsole(entry: LogEntry): void {
   }
 }
 
+function mergeContext(defaultContext: Record<string, unknown> | undefined, context: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  const hasContext = Object.keys(context ?? {}).length > 0 || Object.keys(defaultContext ?? {}).length > 0;
+  return hasContext ? { ...defaultContext, ...context } : undefined;
+}
+
 export function createLogger(defaultContext?: Record<string, unknown>): Logger {
   return {
     debug(message: string, context?: Record<string, unknown>): void {
-      const mergedContext = Object.keys(context ?? {}).length > 0 || Object.keys(defaultContext ?? {}).length > 0
-        ? { ...defaultContext, ...context }
-        : undefined;
-      const entry = formatLogEntry('debug', message, mergedContext);
+      const entry = formatLogEntry('debug', message, mergeContext(defaultContext, context));
       logToConsole(entry);
     },
     info(message: string, context?: Record<string, unknown>): void {
-      const mergedContext = Object.keys(context ?? {}).length > 0 || Object.keys(defaultContext ?? {}).length > 0
-        ? { ...defaultContext, ...context }
-        : undefined;
-      const entry = formatLogEntry('info', message, mergedContext);
+      const entry = formatLogEntry('info', message, mergeContext(defaultContext, context));
       logToConsole(entry);
     },
     warn(message: string, context?: Record<string, unknown>): void {
-      const mergedContext = Object.keys(context ?? {}).length > 0 || Object.keys(defaultContext ?? {}).length > 0
-        ? { ...defaultContext, ...context }
-        : undefined;
-      const entry = formatLogEntry('warn', message, mergedContext);
+      const entry = formatLogEntry('warn', message, mergeContext(defaultContext, context));
       logToConsole(entry);
     },
     error(message: string, context?: Record<string, unknown>): void {
-      const mergedContext = Object.keys(context ?? {}).length > 0 || Object.keys(defaultContext ?? {}).length > 0
-        ? { ...defaultContext, ...context }
-        : undefined;
-      const entry = formatLogEntry('error', message, mergedContext);
+      const entry = formatLogEntry('error', message, mergeContext(defaultContext, context));
       logToConsole(entry);
     },
   };
