@@ -1,0 +1,91 @@
+# Init TypeScript Project Skeleton for Agent Orchestrator Server
+
+## Overview
+
+Set up a TypeScript project skeleton for the Agent Orchestrator server that runs continuously, polls GitHub Issues, and processes tasks through a pipeline using background jobs. The server will be built in the `src/` directory.
+
+## Context
+
+- This is the foundation for an Agent Orchestrator system that runs continuously as a server
+- Polls GitHub Issues for tasks and processes them through pipeline stages using background jobs
+- Language: TypeScript (confirmed)
+- HTTP Framework: Fastify (modern, fast, excellent TypeScript support)
+- Background Jobs: BullMQ (robust Redis-based job queue)
+- Project state: Empty `src/` directory, no existing code
+
+## Development Approach
+
+- **Testing approach**: Regular (code first, then tests)
+- Complete each task fully before moving to the next
+- **CRITICAL: every task MUST include new/updated tests**
+- **CRITICAL: all tests must pass before starting next task**
+
+## Implementation Steps
+
+### Task 1: Initialize TypeScript project configuration
+
+**Files:**
+- Create: `package.json`
+- Create: `tsconfig.json`
+- Create: `tsconfig.build.json`
+
+- [ ] Create `package.json` with dependencies: fastify, @fastify/cors, bullmq, ioredis, typescript, vitest, @types/node, tsx
+- [ ] Create `tsconfig.json` with strict mode, Node.js target, ESNext modules
+- [ ] Create `tsconfig.build.json` for production builds
+- [ ] Add npm scripts: build, dev, test, test:watch, lint
+- [ ] Write tests for config loading
+- [ ] Run tests - must pass
+
+### Task 2: Set up Fastify HTTP server
+
+**Files:**
+- Create: `src/server/index.ts`
+- Create: `src/server/routes/health.ts`
+- Create: `src/server/plugins/`
+
+- [ ] Create Fastify server with TypeScript strict typing
+- [ ] Add health check route GET /health
+- [ ] Add graceful shutdown handling
+- [ ] Configure CORS plugin
+- [ ] Write tests for server startup/shutdown
+- [ ] Run tests - must pass
+
+### Task 3: Set up BullMQ background job infrastructure
+
+**Files:**
+- Create: `src/jobs/queue.ts`
+- Create: `src/jobs/worker.ts`
+- Create: `src/jobs/processors/`
+
+- [ ] Create BullMQ Queue instance for job processing
+- [ ] Create Worker base setup
+- [ ] Add job retry configuration
+- [ ] Add job logging middleware
+- [ ] Write tests for queue/worker initialization
+- [ ] Run tests - must pass
+
+### Task 4: Create src directory structure
+
+**Files:**
+- Create: `src/types/`
+- Create: `src/config/`
+- Create: `src/utils/`
+
+- [ ] Create `src/types/index.ts` for shared TypeScript interfaces
+- [ ] Create `src/config/index.ts` for environment config loading
+- [ ] Create `src/utils/logger.ts` for structured logging
+- [ ] Write tests for config and types
+- [ ] Run tests - must pass
+
+### Task 5: Verify project builds and runs
+
+- [ ] Run TypeScript build (npm run build)
+- [ ] Run linter (npm run lint)
+- [ ] Run full test suite
+- [ ] Verify server starts in dev mode (npm run dev)
+
+### Task 6: Update documentation
+
+- [ ] Update README.md with project setup instructions
+- [ ] Update CLAUDE.md with project structure and conventions
+- [ ] Move this plan to `docs/plans/completed/`
