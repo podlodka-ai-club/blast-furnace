@@ -32,11 +32,6 @@ async function main(): Promise<void> {
   worker = createWorker(placeholderProcessor);
 }
 
-main().catch((err) => {
-  console.error('Failed to start server:', err);
-  process.exit(1);
-});
-
 // Handle shutdown signals - coordinated shutdown with guard
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
   if (isShuttingDown) {
@@ -80,3 +75,8 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+main().catch((err) => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
+});

@@ -56,6 +56,8 @@ Loaded from environment variables in `src/config/index.ts`:
 - `PORT` (default: 3000)
 - `REDIS_HOST` (default: localhost)
 - `REDIS_PORT` (default: 6379)
+- `REDIS_PASSWORD` (optional, no default)
+- `CORS_ORIGIN` (default: true for development)
 - `GITHUB_TOKEN`, `GITHUB_OWNER`, `GITHUB_REPO`
 
 ## Commands

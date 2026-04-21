@@ -39,8 +39,12 @@ export function createWorker(
   });
 
   worker.on('progress', (job, progress) => {
-    const logger = createJobLogger(job);
-    logger.info(`Job ${job.id} progress: ${JSON.stringify(progress)}`);
+    try {
+      const logger = createJobLogger(job);
+      logger.info(`Job ${job.id} progress: ${JSON.stringify(progress)}`);
+    } catch {
+      // Progress data may contain circular references or other serialization issues
+    }
   });
 
   worker.on('stalled', (jobId) => {

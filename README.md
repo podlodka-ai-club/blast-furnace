@@ -16,16 +16,18 @@ Agent Orchestrator server that polls GitHub Issues and processes tasks through a
 
 2. Configure environment variables:
    ```bash
-   cp .env.example .env  # if you have an example file, or create manually
+   # Set required environment variables
+   export GITHUB_TOKEN=your_github_token
+   export GITHUB_OWNER=owner
+   export GITHUB_REPO=repo
    ```
 
-   Required environment variables:
+   Optional environment variables:
    - `PORT` - HTTP server port (default: 3000)
    - `REDIS_HOST` - Redis host (default: localhost)
    - `REDIS_PORT` - Redis port (default: 6379)
-   - `GITHUB_TOKEN` - GitHub API token
-   - `GITHUB_OWNER` - GitHub repository owner
-   - `GITHUB_REPO` - GitHub repository name
+   - `REDIS_PASSWORD` - Redis password (optional)
+   - `CORS_ORIGIN` - CORS allowed origins, comma-separated list or `*` for all (default: true for development)
    - `NODE_ENV` - Environment (development/production)
 
 3. Start Redis:
