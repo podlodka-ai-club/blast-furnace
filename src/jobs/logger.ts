@@ -11,7 +11,7 @@ export interface JobLogger {
 
 export function createJobLogger(job: Job<JobPayload>): JobLogger {
   const jobId = job.id ?? 'unknown';
-  const taskId = job.data.taskId;
+  const taskId = job.data?.taskId ?? 'unknown';
   const logger = createLogger({ jobId, taskId, component: 'worker' });
 
   return {

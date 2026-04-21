@@ -19,20 +19,6 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
   // Register health check route
   await server.register(healthRoute);
 
-  // Graceful shutdown handling
-  const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
-  for (const signal of signals) {
-    process.on(signal, async () => {
-      server.log.info(`Received ${signal}, starting graceful shutdown...`);
-      try {
-        await server.close();
-        server.log.info('Server closed gracefully');
-      } catch (err) {
-        server.log.error(err, 'Error during shutdown');
-      }
-    });
-  }
-
   return server;
 }
 
