@@ -1,0 +1,43 @@
+import { Worker } from 'bullmq';
+import { config } from '../config/index.js';
+import { createLogger } from '../utils/logger.js';
+import { createJobLogger } from './logger.js';
+export function createWorker(processor, options = {}) {
+    const worker = new Worker('agent-orchestrator', processor, {
+        connection: {
+            host: config.redis.host,
+            port: config.redis.port,
+        },
+        concurrency: options.concurrency ?? 5,
+    });
+    worker.on('active', (job) => {
+        const logger = createJobLogger(job);
+        logger.info(`Job ${job.id} started processing`);
+    });
+    worker.on('completed', (job) => {
+        const logger = createJobLogger(job);
+        logger.info(`Job ${job.id} completed successfully`);
+    });
+    worker.on('failed', (job, err) => {
+        if (!job)
+            return;
+        const logger = createJobLogger(job);
+        logger.error(`Job ${job.id} failed: ${err.message}`);
+    });
+    worker.on('progress', (job, progress) => {
+        const logger = createJobLogger(job);
+        logger.info(`Job ${job.id} progress: ${JSON.stringify(progress)}`);
+    });
+    worker.on('stalled', (jobId) => {
+        const logger = createLogger({ component: 'worker' });
+        logger.warn(`Job ${jobId} stalled and will be retried`);
+    });
+    worker.on('error', (err) => {
+        const logger = createLogger({ component: 'worker' });
+        logger.error(`Worker error: ${err.message}`);
+    });
+    return worker;
+}
+export async function closeWorker(worker) {
+    await worker.close();
+}

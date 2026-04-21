@@ -1,11 +1,15 @@
 import { FastifyInstance, FastifyPluginOptions } from 'fastify';
 
-const startTime = Date.now();
+interface HealthRouteOptions extends FastifyPluginOptions {
+  startTime?: number;
+}
 
 export async function healthRoute(
   server: FastifyInstance,
-  _options: FastifyPluginOptions
+  options: HealthRouteOptions
 ): Promise<void> {
+  const startTime = options.startTime ?? Date.now();
+
   server.get('/health', {
     schema: {
       response: {

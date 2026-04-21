@@ -6,6 +6,7 @@ import type { JobPayload } from './types/index.js';
 
 let server: Awaited<ReturnType<typeof buildServer>> | undefined;
 let worker: Worker<JobPayload> | undefined;
+let isShuttingDown = false;
 
 // Placeholder processor - worker infrastructure is ready for task processing
 async function placeholderProcessor(_job: Job<JobPayload>): Promise<void> {
@@ -36,33 +37,48 @@ main().catch((err) => {
   process.exit(1);
 });
 
-// Handle shutdown signals - coordinated shutdown
-const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
-for (const signal of signals) {
-  process.on(signal, async () => {
-    console.log(`Received ${signal}, shutting down gracefully...`);
-    try {
-      // Close server first to stop accepting new connections
-      if (server) {
-        await server.close();
-      }
-    } catch (err) {
-      console.error('Error closing server:', err);
+const SHUTDOWN_TIMEOUT_MS = 10000;
+
+// Handle shutdown signals - coordinated shutdown with guard
+async function shutdown(signal: NodeJS.Signals): Promise<void> {
+  if (isShuttingDown) {
+    return;
+  }
+  isShuttingDown = true;
+
+  console.log(`Received ${signal}, shutting down gracefully...`);
+
+  const timeout = setTimeout(() => {
+    console.error('Shutdown timeout exceeded, forcing exit');
+    process.exit(1);
+  }, SHUTDOWN_TIMEOUT_MS);
+
+  try {
+    // Close server first to stop accepting new connections
+    if (server) {
+      await server.close();
     }
-    try {
-      // Close worker if it was created
-      if (worker) {
-        await closeWorker(worker);
-      }
-    } catch (err) {
-      console.error('Error closing worker:', err);
+  } catch (err) {
+    console.error('Error closing server:', err);
+  }
+  try {
+    // Close worker if it was created
+    if (worker) {
+      await closeWorker(worker);
     }
-    try {
-      // Close queue events and queue
-      await closeQueue();
-    } catch (err) {
-      console.error('Error closing queue:', err);
-    }
-    process.exit(0);
-  });
+  } catch (err) {
+    console.error('Error closing worker:', err);
+  }
+  try {
+    // Close queue events and queue
+    await closeQueue();
+  } catch (err) {
+    console.error('Error closing queue:', err);
+  }
+
+  clearTimeout(timeout);
+  process.exit(0);
 }
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));

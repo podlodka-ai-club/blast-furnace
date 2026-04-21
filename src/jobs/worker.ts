@@ -16,6 +16,7 @@ export function createWorker(
     connection: {
       host: config.redis.host,
       port: config.redis.port,
+      ...(config.redis.password && { password: config.redis.password }),
     },
     concurrency: options.concurrency ?? 5,
   });

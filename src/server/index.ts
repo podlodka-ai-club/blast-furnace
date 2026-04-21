@@ -10,14 +10,21 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
     logger: options.logger ?? true,
   });
 
-  // Register CORS plugin
+  // Register CORS plugin - origin defaults to true for development
+  // Set CORS_ORIGIN environment variable to comma-separated list of allowed origins
+  const corsOrigin = process.env['CORS_ORIGIN'] ?? true;
+  const originArray = typeof corsOrigin === 'string' && corsOrigin !== '*'
+    ? corsOrigin.split(',').map((s) => s.trim())
+    : corsOrigin;
+
   await server.register(cors, {
-    origin: true,
+    origin: originArray,
     credentials: false,
   });
 
-  // Register health check route
-  await server.register(healthRoute);
+  // Register health check route with server start time for accurate uptime
+  const startTime = Date.now();
+  await server.register(healthRoute, { startTime });
 
   return server;
 }
