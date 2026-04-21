@@ -59,13 +59,13 @@ Add two strategies to receive GitHub issues reactively (polling and webhooks), c
 ### Task 4: Create polling-based issue watcher job
 **Files:**
 - Create: `src/jobs/issue-watcher.ts`
-- [ ] Create `startIssueWatcher` function that adds a repeatable job to the queue using `add` with `repeat` option (every `pollIntervalMs`)
-- [ ] Create `issueWatcherHandler` function that:
+- [x] Create `startIssueWatcher` function that adds a repeatable job to the queue using `add` with `repeat` option (every `pollIntervalMs`)
+- [x] Create `issueWatcherHandler` function that:
   - Fetches open issues using `fetchIssues` with `since` filter based on last poll time
   - For each new issue, adds an `IssueProcessorJobData` job to the queue
   - Updates last poll timestamp
-- [ ] Export `startIssueWatcher` and `issueWatcherHandler` for use in index.ts
-- [ ] Write tests with mocked fetchIssues
+- [x] Export `startIssueWatcher` and `issueWatcherHandler` for use in index.ts
+- [x] Write tests with mocked fetchIssues
 
 ### Task 5: Create GitHub webhooks route
 **Files:**
