@@ -27,10 +27,8 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
       try {
         await server.close();
         server.log.info('Server closed gracefully');
-        process.exit(0);
       } catch (err) {
         server.log.error(err, 'Error during shutdown');
-        process.exit(1);
       }
     });
   }

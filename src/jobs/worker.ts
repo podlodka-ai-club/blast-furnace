@@ -1,6 +1,7 @@
 import { Worker, Job } from 'bullmq';
 import { config } from '../config/index.js';
 import type { JobPayload } from '../types/index.js';
+import { createLogger } from '../utils/logger.js';
 import { createJobLogger } from './logger.js';
 
 export interface WorkerOptions {
@@ -39,6 +40,11 @@ export function createWorker(
   worker.on('progress', (job, progress) => {
     const logger = createJobLogger(job);
     logger.info(`Job ${job.id} progress: ${JSON.stringify(progress)}`);
+  });
+
+  worker.on('stalled', (jobId) => {
+    const logger = createLogger({ component: 'worker' });
+    logger.warn(`Job ${jobId} stalled and will be retried`);
   });
 
   return worker;

@@ -32,3 +32,8 @@ export const queueEvents = new QueueEvents('agent-orchestrator', {
     port: config.redis.port,
   },
 });
+
+export async function closeQueue(): Promise<void> {
+  await queueEvents.close();
+  await jobQueue.close();
+}
