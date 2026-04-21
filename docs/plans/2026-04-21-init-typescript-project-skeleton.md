@@ -43,12 +43,12 @@ Set up a TypeScript project skeleton for the Agent Orchestrator server that runs
 - Create: `src/server/routes/health.ts`
 - Create: `src/server/plugins/`
 
-- [ ] Create Fastify server with TypeScript strict typing
-- [ ] Add health check route GET /health
-- [ ] Add graceful shutdown handling
-- [ ] Configure CORS plugin
-- [ ] Write tests for server startup/shutdown
-- [ ] Run tests - must pass
+- [x] Create Fastify server with TypeScript strict typing
+- [x] Add health check route GET /health
+- [x] Add graceful shutdown handling
+- [x] Configure CORS plugin
+- [x] Write tests for server startup/shutdown
+- [x] Run tests - must pass
 
 ### Task 3: Set up BullMQ background job infrastructure
 
