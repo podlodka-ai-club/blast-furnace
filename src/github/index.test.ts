@@ -30,6 +30,10 @@ vi.mock('../config/index.js', () => ({
 }));
 
 describe('GitHub module exports', () => {
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
   describe('client exports', () => {
     it('should export githubClient', () => {
       expect(github.githubClient).toBeDefined();

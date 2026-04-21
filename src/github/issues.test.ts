@@ -72,7 +72,17 @@ describe('issues', () => {
     });
 
     it('should fetch issues with custom filters', async () => {
-      const mockIssues: typeof import('./issues.js') extends never ? never : never[] = [];
+      const mockIssues = [] as Array<{
+        id: number;
+        number: number;
+        title: string;
+        body: string | null;
+        state: string;
+        labels: Array<{ name: string } | string>;
+        assignee: { login: string } | null;
+        created_at: string;
+        updated_at: string;
+      }>;
       const mockListForRepo = vi.fn().mockResolvedValue({ data: mockIssues });
       vi.mocked(githubClient.issues.listForRepo).mockImplementation(mockListForRepo);
 
