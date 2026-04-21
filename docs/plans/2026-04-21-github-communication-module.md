@@ -72,9 +72,9 @@ Design and implement a GitHub communication module (`src/github/`) that provides
 - [x] Run project test suite - must pass before Task 7
 
 ### Task 7: Verify acceptance criteria
-- [ ] Run full test suite (npm test)
-- [ ] Run linter (npm run lint)
-- [ ] Verify test coverage meets 80%+ (run vitest coverage)
+- [x] Run full test suite (npm test)
+- [x] Run linter (npm run lint)
+- [x] Verify test coverage meets 80%+ (run vitest coverage)
 
 ### Task 8: Update documentation
 - [ ] Update CLAUDE.md if internal patterns changed (none expected)
