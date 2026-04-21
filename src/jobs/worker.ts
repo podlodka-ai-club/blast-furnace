@@ -16,7 +16,7 @@ export function createWorker(
     connection: {
       host: config.redis.host,
       port: config.redis.port,
-      ...(config.redis.password && { password: config.redis.password }),
+      ...(config.redis.password !== undefined && { password: config.redis.password }),
     },
     concurrency: options.concurrency ?? 5,
   });
@@ -48,7 +48,7 @@ export function createWorker(
   });
 
   worker.on('stalled', (jobId) => {
-    const logger = createLogger({ component: 'worker' });
+    const logger = createLogger({ component: 'worker', jobId });
     logger.warn(`Job ${jobId} stalled and will be retried`);
   });
 

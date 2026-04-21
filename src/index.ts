@@ -45,6 +45,9 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
     console.error('Shutdown timeout exceeded, forcing exit');
     process.exit(1);
   }, 10000);
+  timeout.unref();
+
+  let shutdownError: Error | undefined;
 
   try {
     // Close server first to stop accepting new connections
@@ -52,7 +55,8 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
       await server.close();
     }
   } catch (err) {
-    console.error('Error closing server:', err);
+    shutdownError = err instanceof Error ? err : new Error(String(err));
+    console.error('Error closing server:', shutdownError);
   }
   try {
     // Close worker if it was created
@@ -60,17 +64,19 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
       await closeWorker(worker);
     }
   } catch (err) {
-    console.error('Error closing worker:', err);
+    shutdownError = err instanceof Error ? err : new Error(String(err));
+    console.error('Error closing worker:', shutdownError);
   }
   try {
     // Close queue events and queue
     await closeQueue();
   } catch (err) {
-    console.error('Error closing queue:', err);
+    shutdownError = err instanceof Error ? err : new Error(String(err));
+    console.error('Error closing queue:', shutdownError);
   }
 
   clearTimeout(timeout);
-  process.exit(0);
+  process.exit(shutdownError ? 1 : 0);
 }
 
 process.on('SIGINT', () => shutdown('SIGINT'));
