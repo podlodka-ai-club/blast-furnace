@@ -35,11 +35,11 @@ Design and implement a GitHub communication module (`src/github/`) that provides
 - Create: `src/github/issues.ts`
 - Create: `src/github/issues.test.ts`
 
-- [ ] Add `IssueFilters` interface for filter options (labels, state, assignee, since, milestone)
-- [ ] Add `fetchIssues(filters)` function that calls `client.issues.listForRepo`
-- [ ] Map GitHub API response to existing `GitHubIssue` type from `src/types/index.ts`
-- [ ] Write unit tests with mocked Octokit
-- [ ] Run project test suite - must pass before Task 4
+- [x] Add `IssueFilters` interface for filter options (labels, state, assignee, since, milestone)
+- [x] Add `fetchIssues(filters)` function that calls `client.issues.listForRepo`
+- [x] Map GitHub API response to existing `GitHubIssue` type from `src/types/index.ts`
+- [x] Write unit tests with mocked Octokit
+- [x] Run project test suite - must pass before Task 4
 
 ### Task 4: Implement branches module
 **Files:**
