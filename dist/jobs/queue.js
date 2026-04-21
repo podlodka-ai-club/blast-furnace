@@ -30,6 +30,6 @@ export const queueEvents = new QueueEvents('agent-orchestrator', {
     },
 });
 export async function closeQueue() {
-    await jobQueue.close();
     await queueEvents.close();
+    await jobQueue.close();
 }

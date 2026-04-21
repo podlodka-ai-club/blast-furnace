@@ -20,11 +20,6 @@ async function main() {
     await startServer(server, config.port);
     worker = createWorker(placeholderProcessor);
 }
-main().catch((err) => {
-    console.error('Failed to start server:', err);
-    process.exit(1);
-});
-const SHUTDOWN_TIMEOUT_MS = 10000;
 async function shutdown(signal) {
     if (isShuttingDown) {
         return;
@@ -34,7 +29,7 @@ async function shutdown(signal) {
     const timeout = setTimeout(() => {
         console.error('Shutdown timeout exceeded, forcing exit');
         process.exit(1);
-    }, SHUTDOWN_TIMEOUT_MS);
+    }, 10000);
     try {
         if (server) {
             await server.close();
@@ -62,3 +57,7 @@ async function shutdown(signal) {
 }
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+main().catch((err) => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+});

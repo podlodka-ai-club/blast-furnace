@@ -26,8 +26,12 @@ export function createWorker(processor, options = {}) {
         logger.error(`Job ${job.id} failed: ${err.message}`);
     });
     worker.on('progress', (job, progress) => {
-        const logger = createJobLogger(job);
-        logger.info(`Job ${job.id} progress: ${JSON.stringify(progress)}`);
+        try {
+            const logger = createJobLogger(job);
+            logger.info(`Job ${job.id} progress: ${JSON.stringify(progress)}`);
+        }
+        catch {
+        }
     });
     worker.on('stalled', (jobId) => {
         const logger = createLogger({ component: 'worker' });
