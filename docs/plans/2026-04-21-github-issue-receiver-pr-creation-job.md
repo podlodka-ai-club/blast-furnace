@@ -95,9 +95,9 @@ Add two strategies to receive GitHub issues reactively (polling and webhooks), c
 - [x] Write test verifying strategy selection logic
 
 ### Task 8: Verify acceptance criteria
-- [ ] Run full test suite (`npm test`)
-- [ ] Run linter (`npm run lint`)
-- [ ] Verify test coverage meets 80%+
+- [x] Run full test suite (`npm test`)
+- [x] Run linter (`npm run lint`)
+- [x] Verify test coverage meets 80%+
 
 ### Task 9: Update documentation
 - [ ] Update CLAUDE.md with new webhook endpoint, polling configuration, and issue strategy option
