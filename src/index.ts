@@ -1,16 +1,27 @@
 import { buildServer, startServer } from './server/index.js';
 import { config } from './config/index.js';
 import { closeQueue, closeWorker, createWorker } from './jobs/index.js';
+import { issueProcessorHandler } from './jobs/issue-processor.js';
+import { issueWatcherHandler, startIssueWatcher } from './jobs/issue-watcher.js';
 import type { Job, Worker } from 'bullmq';
-import type { JobPayload } from './types/index.js';
+import type { IssueProcessorJobData, IssueWatcherJobData, JobPayload } from './types/index.js';
 
 let server: Awaited<ReturnType<typeof buildServer>> | undefined;
 let worker: Worker<JobPayload> | undefined;
 let isShuttingDown = false;
 
-// Placeholder processor - worker infrastructure is ready for task processing
-async function placeholderProcessor(_job: Job<JobPayload>): Promise<void> {
-  // Tasks will be processed here in future implementation
+/**
+ * Multi-handler that routes jobs to appropriate handlers based on job type
+ */
+export async function multiHandler(job: Job<JobPayload>): Promise<void> {
+  switch (job.data.type) {
+    case 'issue-processor':
+      return issueProcessorHandler(job as Job<IssueProcessorJobData>);
+    case 'issue-watcher':
+      return issueWatcherHandler(job as Job<IssueWatcherJobData>);
+    default:
+      throw new Error(`Unknown job type: ${job.data.type}`);
+  }
 }
 
 async function main(): Promise<void> {
@@ -28,8 +39,13 @@ async function main(): Promise<void> {
   server = await buildServer({ logger: true });
   await startServer(server, config.port);
 
+  // Start polling if configured
+  if (config.github.issueStrategy === 'polling') {
+    await startIssueWatcher();
+  }
+
   // Create worker after server is ready
-  worker = createWorker(placeholderProcessor);
+  worker = createWorker(multiHandler);
 }
 
 // Handle shutdown signals - coordinated shutdown with guard

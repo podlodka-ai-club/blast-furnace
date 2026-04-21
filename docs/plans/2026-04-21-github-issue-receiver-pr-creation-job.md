@@ -87,12 +87,12 @@ Add two strategies to receive GitHub issues reactively (polling and webhooks), c
 ### Task 7: Conditionally start polling or webhook based on config
 **Files:**
 - Modify: `src/index.ts`
-- [ ] Check `config.github.issueStrategy` on startup
-- [ ] If "polling": import and call `startIssueWatcher` to begin polling
-- [ ] If "webhook": webhook route is already registered via server; no additional startup action needed
-- [ ] Replace placeholder processor with multi-handler that routes jobs by type
-- [ ] Route `IssueProcessorJobData` jobs to `issueProcessorHandler`
-- [ ] Write test verifying strategy selection logic
+- [x] Check `config.github.issueStrategy` on startup
+- [x] If "polling": import and call `startIssueWatcher` to begin polling
+- [x] If "webhook": webhook route is already registered via server; no additional startup action needed
+- [x] Replace placeholder processor with multi-handler that routes jobs by type
+- [x] Route `IssueProcessorJobData` jobs to `issueProcessorHandler`
+- [x] Write test verifying strategy selection logic
 
 ### Task 8: Verify acceptance criteria
 - [ ] Run full test suite (`npm test`)
