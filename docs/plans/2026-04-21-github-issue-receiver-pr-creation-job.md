@@ -48,13 +48,13 @@ Add two strategies to receive GitHub issues reactively (polling and webhooks), c
 ### Task 3: Create issue processor job (shared by both strategies)
 **Files:**
 - Create: `src/jobs/issue-processor.ts`
-- [ ] Create `processIssue` function that:
+- [x] Create `processIssue` function that:
   - Extracts issue data from job payload
   - Logs issue title and body to console using the job logger
   - Creates a new branch with name `issue-{number}-{slug}` using `getRef` and `pushBranch`
   - Creates PR with issue title, body as description, head=new branch, base=main
-- [ ] Export `issueProcessorHandler` for use in worker
-- [ ] Write tests with mocked GitHub API calls
+- [x] Export `issueProcessorHandler` for use in worker
+- [x] Write tests with mocked GitHub API calls
 
 ### Task 4: Create polling-based issue watcher job
 **Files:**
