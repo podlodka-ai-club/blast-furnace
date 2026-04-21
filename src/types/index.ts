@@ -104,3 +104,33 @@ export interface JobPayload {
   type: string;
   payload?: Record<string, unknown>;
 }
+
+// GitHub webhook types
+export interface GitHubWebhookEvent {
+  action: string;
+  issue: GitHubIssue;
+  repository: {
+    id: number;
+    name: string;
+    fullName: string;
+  };
+  sender: {
+    login: string;
+  };
+}
+
+export interface GitHubIssueEventPayload {
+  action: 'opened' | 'closed' | 'assigned' | 'unassigned' | 'labeled' | 'unlabeled' | 'synchronize';
+  issue: GitHubIssue;
+}
+
+// Job data types for issue processing
+export interface IssueProcessorJobData extends JobPayload {
+  type: 'issue-processor';
+  issue: GitHubIssue;
+}
+
+export interface IssueWatcherJobData extends JobPayload {
+  type: 'issue-watcher';
+  lastPollTimestamp?: string;
+}

@@ -15,6 +15,10 @@ import type {
   ServerOptions,
   HealthResponse,
   JobPayload,
+  GitHubWebhookEvent,
+  GitHubIssueEventPayload,
+  IssueProcessorJobData,
+  IssueWatcherJobData,
 } from './index.js';
 
 describe('types', () => {
@@ -241,6 +245,139 @@ describe('types', () => {
       };
       expect(payload.taskId).toBe('task-123');
       expect(payload.type).toBe('process');
+    });
+  });
+
+  describe('GitHubWebhookEvent', () => {
+    it('should accept valid webhook event', () => {
+      const event: GitHubWebhookEvent = {
+        action: 'opened',
+        issue: {
+          id: 1,
+          number: 42,
+          title: 'Test issue',
+          body: 'Issue body',
+          state: 'open',
+          labels: ['bug'],
+          assignee: null,
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+        },
+        repository: {
+          id: 123,
+          name: 'test-repo',
+          fullName: 'owner/test-repo',
+        },
+        sender: {
+          login: 'username',
+        },
+      };
+      expect(event.action).toBe('opened');
+      expect(event.issue.number).toBe(42);
+      expect(event.repository.fullName).toBe('owner/test-repo');
+    });
+  });
+
+  describe('GitHubIssueEventPayload', () => {
+    it('should accept valid issue event payload', () => {
+      const payload: GitHubIssueEventPayload = {
+        action: 'opened',
+        issue: {
+          id: 1,
+          number: 42,
+          title: 'Test issue',
+          body: 'Issue body',
+          state: 'open',
+          labels: [],
+          assignee: null,
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+        },
+      };
+      expect(payload.action).toBe('opened');
+      expect(payload.issue.title).toBe('Test issue');
+    });
+
+    it('should accept closed action', () => {
+      const payload: GitHubIssueEventPayload = {
+        action: 'closed',
+        issue: {
+          id: 1,
+          number: 42,
+          title: 'Test issue',
+          body: null,
+          state: 'closed',
+          labels: [],
+          assignee: null,
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-02T00:00:00.000Z',
+        },
+      };
+      expect(payload.action).toBe('closed');
+      expect(payload.issue.state).toBe('closed');
+    });
+  });
+
+  describe('IssueProcessorJobData', () => {
+    it('should accept valid issue processor job data', () => {
+      const jobData: IssueProcessorJobData = {
+        taskId: 'task-123',
+        type: 'issue-processor',
+        issue: {
+          id: 1,
+          number: 42,
+          title: 'Test issue',
+          body: 'Issue body',
+          state: 'open',
+          labels: ['enhancement'],
+          assignee: 'user',
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+        },
+      };
+      expect(jobData.taskId).toBe('task-123');
+      expect(jobData.type).toBe('issue-processor');
+      expect(jobData.issue.number).toBe(42);
+    });
+
+    it('should allow optional payload', () => {
+      const jobData: IssueProcessorJobData = {
+        taskId: 'task-123',
+        type: 'issue-processor',
+        issue: {
+          id: 1,
+          number: 42,
+          title: 'Test issue',
+          body: null,
+          state: 'open',
+          labels: [],
+          assignee: null,
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+        },
+      };
+      expect(jobData.payload).toBeUndefined();
+    });
+  });
+
+  describe('IssueWatcherJobData', () => {
+    it('should accept valid issue watcher job data', () => {
+      const jobData: IssueWatcherJobData = {
+        taskId: 'task-456',
+        type: 'issue-watcher',
+        lastPollTimestamp: '2024-01-01T00:00:00.000Z',
+      };
+      expect(jobData.taskId).toBe('task-456');
+      expect(jobData.type).toBe('issue-watcher');
+      expect(jobData.lastPollTimestamp).toBe('2024-01-01T00:00:00.000Z');
+    });
+
+    it('should allow optional lastPollTimestamp', () => {
+      const jobData: IssueWatcherJobData = {
+        taskId: 'task-456',
+        type: 'issue-watcher',
+      };
+      expect(jobData.lastPollTimestamp).toBeUndefined();
     });
   });
 });

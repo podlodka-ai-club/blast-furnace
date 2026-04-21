@@ -39,11 +39,11 @@ Add two strategies to receive GitHub issues reactively (polling and webhooks), c
 ### Task 2: Add webhook payload types and job types
 **Files:**
 - Modify: `src/types/index.ts`
-- [ ] Add `GitHubWebhookEvent` type for webhook payload envelope
-- [ ] Add `GitHubIssueEventPayload` type for issue event action and issue data
-- [ ] Add `IssueProcessorJobData` type extending `JobPayload` with `issue` field
-- [ ] Add `IssueWatcherJobData` type for polling job
-- [ ] Write tests for new types
+- [x] Add `GitHubWebhookEvent` type for webhook payload envelope
+- [x] Add `GitHubIssueEventPayload` type for issue event action and issue data
+- [x] Add `IssueProcessorJobData` type extending `JobPayload` with `issue` field
+- [x] Add `IssueWatcherJobData` type for polling job
+- [x] Write tests for new types
 
 ### Task 3: Create issue processor job (shared by both strategies)
 **Files:**
