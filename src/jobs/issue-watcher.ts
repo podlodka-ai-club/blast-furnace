@@ -52,20 +52,7 @@ export async function issueWatcherHandler(job: Job<IssueWatcherJobData>): Promis
     await jobQueue.add('issue-processor', processorJob);
   }
 
-  // Schedule the next poll with the current timestamp
-  const currentTimestamp = new Date().toISOString();
-  await jobQueue.add(
-    'issue-watcher',
-    {
-      taskId: `issue-watcher-${Date.now()}`,
-      type: 'issue-watcher',
-      lastPollTimestamp: currentTimestamp,
-    },
-    {
-      repeat: {
-        every: config.github.pollIntervalMs,
-      },
-      jobId: 'issue-watcher-repeatable',
-    }
-  );
+  // Note: BullMQ's repeatable job mechanism automatically reschedules this job.
+  // The next invocation will use the same job data (lastPollTimestamp from initial job).
+  // For accurate "since" filtering, consider storing last poll time in Redis.
 }

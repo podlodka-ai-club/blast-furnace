@@ -42,8 +42,10 @@ export function createWorker(
     try {
       const logger = createJobLogger(job);
       logger.info(`Job ${job.id} progress: ${JSON.stringify(progress)}`);
-    } catch {
-      // Progress data may contain circular references or other serialization issues
+    } catch (err) {
+      // Log serialization errors but don't crash
+      const logger = createLogger({ component: 'worker' });
+      logger.warn(`Job ${job?.id} progress serialization error: ${err}`);
     }
   });
 

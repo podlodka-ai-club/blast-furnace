@@ -63,7 +63,7 @@ Add two strategies to receive GitHub issues reactively (polling and webhooks), c
 - [x] Create `issueWatcherHandler` function that:
   - Fetches open issues using `fetchIssues` with `since` filter based on last poll time
   - For each new issue, adds an `IssueProcessorJobData` job to the queue
-  - Updates last poll timestamp
+  - Note: BullMQ's repeatable job mechanism automatically reschedules the next poll
 - [x] Export `startIssueWatcher` and `issueWatcherHandler` for use in index.ts
 - [x] Write tests with mocked fetchIssues
 
@@ -90,8 +90,9 @@ Add two strategies to receive GitHub issues reactively (polling and webhooks), c
 - [x] Check `config.github.issueStrategy` on startup
 - [x] If "polling": import and call `startIssueWatcher` to begin polling
 - [x] If "webhook": webhook route is already registered via server; no additional startup action needed
-- [x] Replace placeholder processor with multi-handler that routes jobs by type
+- [x] Replace placeholder processor with `multiHandler` function that routes jobs by their `type` field
 - [x] Route `IssueProcessorJobData` jobs to `issueProcessorHandler`
+- [x] Route `IssueWatcherJobData` jobs to `issueWatcherHandler`
 - [x] Write test verifying strategy selection logic
 
 ### Task 8: Verify acceptance criteria

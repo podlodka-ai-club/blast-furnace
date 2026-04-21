@@ -212,6 +212,54 @@ describe('issue processor', () => {
 
       expect(mockPushBranch).toHaveBeenCalledWith('issue-42-my-multiple-spaces', 'abc123');
     });
+
+    it('should propagate error when getRef fails', async () => {
+      const { processIssue } = await import('./issue-processor.js');
+
+      mockCreateJobLogger.mockReturnValue({
+        info: vi.fn(),
+        error: vi.fn(),
+        warn: vi.fn(),
+        debug: vi.fn(),
+      });
+      mockGetRef.mockRejectedValue(new Error('Ref not found'));
+
+      const mockJob = createMockJob();
+      await expect(processIssue(mockJob)).rejects.toThrow('Ref not found');
+    });
+
+    it('should propagate error when pushBranch fails', async () => {
+      const { processIssue } = await import('./issue-processor.js');
+
+      mockCreateJobLogger.mockReturnValue({
+        info: vi.fn(),
+        error: vi.fn(),
+        warn: vi.fn(),
+        debug: vi.fn(),
+      });
+      mockGetRef.mockResolvedValue('abc123');
+      mockPushBranch.mockRejectedValue(new Error('Push failed'));
+
+      const mockJob = createMockJob();
+      await expect(processIssue(mockJob)).rejects.toThrow('Push failed');
+    });
+
+    it('should propagate error when createPullRequest fails', async () => {
+      const { processIssue } = await import('./issue-processor.js');
+
+      mockCreateJobLogger.mockReturnValue({
+        info: vi.fn(),
+        error: vi.fn(),
+        warn: vi.fn(),
+        debug: vi.fn(),
+      });
+      mockGetRef.mockResolvedValue('abc123');
+      mockPushBranch.mockResolvedValue();
+      mockCreatePullRequest.mockRejectedValue(new Error('PR creation failed'));
+
+      const mockJob = createMockJob();
+      await expect(processIssue(mockJob)).rejects.toThrow('PR creation failed');
+    });
   });
 
   describe('issueProcessorHandler', () => {

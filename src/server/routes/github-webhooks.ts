@@ -1,10 +1,29 @@
 import { FastifyInstance, FastifyPluginOptions } from 'fastify';
+import { createHmac } from 'crypto';
 import { config } from '../../config/index.js';
 import { jobQueue } from '../../jobs/queue.js';
 import type { GitHubWebhookEvent, IssueProcessorJobData } from '../../types/index.js';
 
 interface GitHubWebhooksRouteOptions extends FastifyPluginOptions {
   skipSignatureValidation?: boolean;
+}
+
+/**
+ * Validate GitHub webhook signature using HMAC SHA256
+ */
+function validateSignature(payload: string, signature: string, secret: string): boolean {
+  const expectedSignature = `sha256=${createHmac('sha256', secret).update(payload).digest('hex')}`;
+  // Use timingSafeEqual to prevent timing attacks
+  if (signature.length !== expectedSignature.length) {
+    return false;
+  }
+  const payloadBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expectedSignature);
+  let result = 0;
+  for (let i = 0; i < payloadBuffer.length; i++) {
+    result |= payloadBuffer[i] ^ expectedBuffer[i];
+  }
+  return result === 0;
 }
 
 /**
@@ -21,14 +40,16 @@ export async function githubWebhooksRoute(
     // Validate webhook signature if secret is configured
     if (config.github.webhookSecret && !skipSignatureValidation) {
       const signature = request.headers['x-hub-signature-256'] as string | undefined;
-      // In production, request.raw.body contains the raw body for signature validation
-      // When using Fastify inject(), we skip this validation via skipSignatureValidation option
       if (!signature) {
         server.log.warn('Missing webhook signature');
         return reply.status(401).send({ error: 'Missing signature' });
       }
-      // Note: Full signature validation with raw body would be implemented here
-      // using request.raw body in production
+      // Get raw body for signature validation
+      const rawBody = JSON.stringify(request.body);
+      if (!validateSignature(rawBody, signature, config.github.webhookSecret)) {
+        server.log.warn('Invalid webhook signature');
+        return reply.status(401).send({ error: 'Invalid signature' });
+      }
     }
 
     // Parse and validate webhook payload
@@ -47,7 +68,7 @@ export async function githubWebhooksRoute(
     // Handle issues.opened event
     if (event.action === 'opened' && event.issue) {
       const processorJob: IssueProcessorJobData = {
-        taskId: `issue-processor-${event.issue.id}-${Date.now()}-${process.hrtime.bigint()}`,
+        taskId: `issue-processor-${event.issue.id}-${Date.now()}`,
         type: 'issue-processor',
         issue: event.issue,
       };

@@ -155,7 +155,8 @@ describe('issue watcher', () => {
       const mockJob = createMockJob('2024-01-01T00:00:00Z');
       await issueWatcherHandler(mockJob);
 
-      expect(mockJobQueueAdd).toHaveBeenCalledTimes(mockIssues.length + 1); // +1 for scheduling next poll
+      // Only issue processor jobs are added (BullMQ's repeatable mechanism handles rescheduling)
+      expect(mockJobQueueAdd).toHaveBeenCalledTimes(mockIssues.length);
 
       // First two calls should be issue processor jobs
       expect(mockJobQueueAdd).toHaveBeenNthCalledWith(
@@ -177,46 +178,6 @@ describe('issue watcher', () => {
       );
     });
 
-    it('should schedule next poll with current timestamp', async () => {
-      const { issueWatcherHandler } = await import('./issue-watcher.js');
-
-      mockFetchIssues.mockResolvedValue([]);
-
-      const beforeTime = new Date().toISOString();
-      const mockJob = createMockJob('2024-01-01T00:00:00Z');
-      await issueWatcherHandler(mockJob);
-      const afterTime = new Date().toISOString();
-
-      // Find the last call (scheduling next poll)
-      const lastCall = mockJobQueueAdd.mock.calls[mockJobQueueAdd.mock.calls.length - 1];
-
-      expect(lastCall[0]).toBe('issue-watcher');
-      expect(lastCall[1].lastPollTimestamp).toBeDefined();
-
-      const scheduledTimestamp = new Date(lastCall[1].lastPollTimestamp).getTime();
-      expect(scheduledTimestamp).toBeGreaterThanOrEqual(new Date(beforeTime).getTime());
-      expect(scheduledTimestamp).toBeLessThanOrEqual(new Date(afterTime).getTime());
-    });
-
-    it('should schedule next poll with repeat option', async () => {
-      const { issueWatcherHandler } = await import('./issue-watcher.js');
-
-      mockFetchIssues.mockResolvedValue([]);
-
-      const mockJob = createMockJob('2024-01-01T00:00:00Z');
-      await issueWatcherHandler(mockJob);
-
-      // Find the last call (scheduling next poll)
-      const lastCall = mockJobQueueAdd.mock.calls[mockJobQueueAdd.mock.calls.length - 1];
-
-      expect(lastCall[2]).toEqual({
-        repeat: {
-          every: 60000,
-        },
-        jobId: 'issue-watcher-repeatable',
-      });
-    });
-
     it('should handle empty issues list', async () => {
       const { issueWatcherHandler } = await import('./issue-watcher.js');
 
@@ -225,13 +186,8 @@ describe('issue watcher', () => {
       const mockJob = createMockJob('2024-01-01T00:00:00Z');
       await issueWatcherHandler(mockJob);
 
-      // Should still schedule next poll (one call to add)
-      expect(mockJobQueueAdd).toHaveBeenCalledTimes(1);
-      expect(mockJobQueueAdd).toHaveBeenCalledWith(
-        'issue-watcher',
-        expect.any(Object),
-        expect.any(Object)
-      );
+      // No jobs added when issue list is empty (BullMQ handles repeatable job rescheduling)
+      expect(mockJobQueueAdd).toHaveBeenCalledTimes(0);
     });
 
     it('should generate unique taskId for each issue processor job', async () => {
@@ -274,6 +230,15 @@ describe('issue watcher', () => {
       const secondTaskId = secondCall[1].taskId;
 
       expect(firstTaskId).not.toBe(secondTaskId);
+    });
+
+    it('should propagate error when fetchIssues fails', async () => {
+      const { issueWatcherHandler } = await import('./issue-watcher.js');
+
+      mockFetchIssues.mockRejectedValue(new Error('Network error'));
+
+      const mockJob = createMockJob('2024-01-01T00:00:00Z');
+      await expect(issueWatcherHandler(mockJob)).rejects.toThrow('Network error');
     });
   });
 });

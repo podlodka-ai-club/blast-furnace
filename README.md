@@ -1,6 +1,6 @@
 # Blast Furnace
 
-Agent Orchestrator server that polls GitHub Issues and processes tasks through a pipeline using background jobs.
+Agent Orchestrator server that receives GitHub Issues via polling or webhooks (configurable) and processes tasks through a pipeline using background jobs.
 
 ## Prerequisites
 
@@ -29,6 +29,9 @@ Agent Orchestrator server that polls GitHub Issues and processes tasks through a
    - `REDIS_PASSWORD` - Redis password (optional)
    - `CORS_ORIGIN` - CORS allowed origins, comma-separated list or `*` for all (default: true for development)
    - `NODE_ENV` - Environment (development/production)
+   - `GITHUB_ISSUE_STRATEGY` - How to receive GitHub issues: "polling" or "webhook" (default: polling)
+   - `GITHUB_POLL_INTERVAL_MS` - Polling interval in milliseconds (default: 60000)
+   - `GITHUB_WEBHOOK_SECRET` - HMAC secret for webhook signature validation (optional)
 
 3. Start Redis:
    ```bash
@@ -80,15 +83,19 @@ src/
     index.ts         - Fastify server setup
     routes/
       health.ts      - Health check endpoint
+      github-webhooks.ts - POST /webhooks/github for GitHub issue events
   jobs/
     queue.ts         - BullMQ queue configuration
     worker.ts        - BullMQ worker setup
     logger.ts        - Job-specific logging
+    issue-watcher.ts - Polling-based GitHub issue watcher
+    issue-processor.ts - Shared issue processing job (logs issue, creates PR)
 ```
 
 ## API Endpoints
 
 - `GET /health` - Health check endpoint
+- `POST /webhooks/github` - GitHub webhook endpoint for issue events
 
 ## Architecture
 
