@@ -75,6 +75,9 @@ export interface GitHubConfig {
   token: string;
   owner: string;
   repo: string;
+  issueStrategy: 'polling' | 'webhook';
+  pollIntervalMs: number;
+  webhookSecret?: string;
 }
 
 export interface AppConfig {
