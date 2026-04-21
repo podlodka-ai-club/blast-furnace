@@ -100,5 +100,5 @@ Add two strategies to receive GitHub issues reactively (polling and webhooks), c
 - [x] Verify test coverage meets 80%+
 
 ### Task 9: Update documentation
-- [ ] Update CLAUDE.md with new webhook endpoint, polling configuration, and issue strategy option
-- [ ] Move this plan to `docs/plans/completed/`
+- [x] Update CLAUDE.md with new webhook endpoint, polling configuration, and issue strategy option
+- [x] Move this plan to `docs/plans/completed/`
