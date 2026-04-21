@@ -25,10 +25,10 @@ Design and implement a GitHub communication module (`src/github/`) that provides
 **Files:**
 - Create: `src/github/client.ts`
 
-- [ ] Create `createGitHubClient()` function that initializes Octokit with token from config
-- [ ] Export client instance for use by other modules
-- [ ] Write tests for client factory
-- [ ] Run project test suite - must pass before Task 3
+- [x] Create `createGitHubClient()` function that initializes Octokit with token from config
+- [x] Export client instance for use by other modules
+- [x] Write tests for client factory
+- [x] Run project test suite - must pass before Task 3
 
 ### Task 3: Implement issues module
 **Files:**
