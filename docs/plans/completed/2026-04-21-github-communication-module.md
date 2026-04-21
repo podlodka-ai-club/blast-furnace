@@ -77,5 +77,5 @@ Design and implement a GitHub communication module (`src/github/`) that provides
 - [x] Verify test coverage meets 80%+ (run vitest coverage)
 
 ### Task 8: Update documentation
-- [ ] Update CLAUDE.md if internal patterns changed (none expected)
-- [ ] Move this plan to `docs/plans/completed/`
+- [x] Update CLAUDE.md if internal patterns changed (none expected)
+- [x] Move this plan to `docs/plans/completed/`

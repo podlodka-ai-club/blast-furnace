@@ -37,6 +37,13 @@ src/
     queue.ts         - BullMQ Queue and QueueEvents configuration
     worker.ts        - BullMQ Worker factory with logging middleware
     logger.ts        - Job-specific logging helper
+  github/
+    index.ts         - GitHub API client exports
+    types.ts         - GitHub-specific TypeScript types
+    client.ts        - Octokit client factory
+    issues.ts        - GitHub issues API functions
+    branches.ts      - GitHub branches/ref API functions
+    pullRequests.ts  - GitHub pull requests API functions
 ```
 
 ## Key Interfaces
