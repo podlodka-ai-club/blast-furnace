@@ -29,12 +29,12 @@ Set up a TypeScript project skeleton for the Agent Orchestrator server that runs
 - Create: `tsconfig.json`
 - Create: `tsconfig.build.json`
 
-- [ ] Create `package.json` with dependencies: fastify, @fastify/cors, bullmq, ioredis, typescript, vitest, @types/node, tsx
-- [ ] Create `tsconfig.json` with strict mode, Node.js target, ESNext modules
-- [ ] Create `tsconfig.build.json` for production builds
-- [ ] Add npm scripts: build, dev, test, test:watch, lint
-- [ ] Write tests for config loading
-- [ ] Run tests - must pass
+- [x] Create `package.json` with dependencies: fastify, @fastify/cors, bullmq, ioredis, typescript, vitest, @types/node, tsx
+- [x] Create `tsconfig.json` with strict mode, Node.js target, ESNext modules
+- [x] Create `tsconfig.build.json` for production builds
+- [x] Add npm scripts: build, dev, test, test:watch, lint
+- [x] Write tests for config loading
+- [x] Run tests - must pass
 
 ### Task 2: Set up Fastify HTTP server
 
