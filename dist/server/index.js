@@ -5,11 +5,16 @@ export async function buildServer(options = {}) {
     const server = Fastify({
         logger: options.logger ?? true,
     });
+    const corsOrigin = process.env['CORS_ORIGIN'] ?? true;
+    const originArray = typeof corsOrigin === 'string' && corsOrigin !== '*'
+        ? corsOrigin.split(',').map((s) => s.trim())
+        : corsOrigin;
     await server.register(cors, {
-        origin: true,
+        origin: originArray,
         credentials: false,
     });
-    await server.register(healthRoute);
+    const startTime = Date.now();
+    await server.register(healthRoute, { startTime });
     return server;
 }
 export async function startServer(server, port = 3000, host = '0.0.0.0') {

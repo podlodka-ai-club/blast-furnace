@@ -3,6 +3,7 @@ import { config } from './config/index.js';
 import { closeQueue, closeWorker, createWorker } from './jobs/index.js';
 let server;
 let worker;
+let isShuttingDown = false;
 async function placeholderProcessor(_job) {
 }
 async function main() {
@@ -23,32 +24,41 @@ main().catch((err) => {
     console.error('Failed to start server:', err);
     process.exit(1);
 });
-const signals = ['SIGINT', 'SIGTERM'];
-for (const signal of signals) {
-    process.on(signal, async () => {
-        console.log(`Received ${signal}, shutting down gracefully...`);
-        try {
-            if (server) {
-                await server.close();
-            }
+const SHUTDOWN_TIMEOUT_MS = 10000;
+async function shutdown(signal) {
+    if (isShuttingDown) {
+        return;
+    }
+    isShuttingDown = true;
+    console.log(`Received ${signal}, shutting down gracefully...`);
+    const timeout = setTimeout(() => {
+        console.error('Shutdown timeout exceeded, forcing exit');
+        process.exit(1);
+    }, SHUTDOWN_TIMEOUT_MS);
+    try {
+        if (server) {
+            await server.close();
         }
-        catch (err) {
-            console.error('Error closing server:', err);
+    }
+    catch (err) {
+        console.error('Error closing server:', err);
+    }
+    try {
+        if (worker) {
+            await closeWorker(worker);
         }
-        try {
-            if (worker) {
-                await closeWorker(worker);
-            }
-        }
-        catch (err) {
-            console.error('Error closing worker:', err);
-        }
-        try {
-            await closeQueue();
-        }
-        catch (err) {
-            console.error('Error closing queue:', err);
-        }
-        process.exit(0);
-    });
+    }
+    catch (err) {
+        console.error('Error closing worker:', err);
+    }
+    try {
+        await closeQueue();
+    }
+    catch (err) {
+        console.error('Error closing queue:', err);
+    }
+    clearTimeout(timeout);
+    process.exit(0);
 }
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));

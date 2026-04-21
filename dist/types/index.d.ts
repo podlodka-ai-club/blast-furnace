@@ -52,6 +52,7 @@ export interface GitHubComment {
 export interface RedisConfig {
     host: string;
     port: number;
+    password?: string;
 }
 export interface GitHubConfig {
     token: string;

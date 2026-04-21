@@ -1,5 +1,5 @@
-const startTime = Date.now();
-export async function healthRoute(server, _options) {
+export async function healthRoute(server, options) {
+    const startTime = options.startTime ?? Date.now();
     server.get('/health', {
         schema: {
             response: {

@@ -12,6 +12,7 @@ function loadConfig() {
         redis: {
             host: process.env['REDIS_HOST'] ?? 'localhost',
             port: parsePort(process.env['REDIS_PORT'], 6379),
+            password: process.env['REDIS_PASSWORD'] || undefined,
         },
         github: {
             token: process.env['GITHUB_TOKEN'] ?? '',
