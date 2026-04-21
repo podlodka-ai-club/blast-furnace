@@ -31,6 +31,7 @@ export function createWorker(
   });
 
   worker.on('failed', (job, err) => {
+    if (!job) return;
     const logger = createJobLogger(job);
     logger.error(`Job ${job.id} failed: ${err.message}`);
   });

@@ -79,10 +79,10 @@ Set up a TypeScript project skeleton for the Agent Orchestrator server that runs
 
 ### Task 5: Verify project builds and runs
 
-- [ ] Run TypeScript build (npm run build)
-- [ ] Run linter (npm run lint)
-- [ ] Run full test suite
-- [ ] Verify server starts in dev mode (npm run dev)
+- [x] Run TypeScript build (npm run build)
+- [x] Run linter (npm run lint)
+- [x] Run full test suite
+- [x] Verify server starts in dev mode (npm run dev)
 
 ### Task 6: Update documentation
 

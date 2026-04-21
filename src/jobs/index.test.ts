@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Job } from 'bullmq';
+import type { WorkerOptions, JobData } from './index.js';
 
 // Mock the config module
 vi.mock('../config/index.js', () => ({
@@ -76,7 +77,6 @@ describe('worker creation', () => {
   });
 
   it('should export WorkerOptions type', async () => {
-    const { WorkerOptions } = await import('./index.js');
     // Type check - if this compiles, the type is exported correctly
     const options: WorkerOptions = { concurrency: 5 };
     expect(options.concurrency).toBe(5);
@@ -85,7 +85,6 @@ describe('worker creation', () => {
 
 describe('job data type', () => {
   it('should export JobData type', async () => {
-    const { JobData } = await import('./index.js');
     // Type check - if this compiles, the type is exported correctly
     const data: JobData = {
       taskId: 'test-task',

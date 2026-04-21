@@ -35,5 +35,3 @@ export const queueEvents = new QueueEvents('agent-orchestrator', {
     port: config.redis.port,
   },
 });
-
-export type { JobData };
