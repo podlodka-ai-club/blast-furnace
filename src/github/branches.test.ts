@@ -75,6 +75,24 @@ describe('branches', () => {
     });
   });
 
+  describe('pushBranch validation', () => {
+    it('should throw for empty branch name', async () => {
+      await expect(pushBranch('', 'abc123')).rejects.toThrow('Invalid branch name');
+    });
+
+    it('should throw for branch name with path traversal', async () => {
+      await expect(pushBranch('../etc/passwd', 'abc123')).rejects.toThrow('Invalid branch name');
+    });
+
+    it('should throw for branch name starting with dash', async () => {
+      await expect(pushBranch('-fix-bug', 'abc123')).rejects.toThrow('Invalid branch name');
+    });
+
+    it('should throw for branch name with spaces', async () => {
+      await expect(pushBranch('feat/test branch', 'abc123')).rejects.toThrow('Invalid branch name');
+    });
+  });
+
   describe('getRef', () => {
     it('should get the SHA for a branch', async () => {
       const mockGetRef = vi.fn().mockResolvedValue({
@@ -114,6 +132,24 @@ describe('branches', () => {
         ref: 'heads/feature/my-feature',
       });
       expect(result).toBe('xyz789');
+    });
+  });
+
+  describe('getRef validation', () => {
+    it('should throw for empty branch name', async () => {
+      await expect(getRef('')).rejects.toThrow('Invalid branch name');
+    });
+
+    it('should throw for branch name with path traversal', async () => {
+      await expect(getRef('../etc/passwd')).rejects.toThrow('Invalid branch name');
+    });
+
+    it('should throw for branch name starting with dash', async () => {
+      await expect(getRef('-fix-bug')).rejects.toThrow('Invalid branch name');
+    });
+
+    it('should throw for branch name with spaces', async () => {
+      await expect(getRef('feat/test branch')).rejects.toThrow('Invalid branch name');
     });
   });
 });

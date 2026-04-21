@@ -153,6 +153,56 @@ describe('pullRequests', () => {
     });
   });
 
+  describe('createPullRequest validation', () => {
+    it('should throw for empty title', async () => {
+      await expect(createPullRequest({
+        title: '',
+        head: 'feature-branch',
+        base: 'main',
+      })).rejects.toThrow('PR title, head, and base must be non-empty');
+    });
+
+    it('should throw for whitespace-only title', async () => {
+      await expect(createPullRequest({
+        title: '   ',
+        head: 'feature-branch',
+        base: 'main',
+      })).rejects.toThrow('PR title, head, and base must be non-empty');
+    });
+
+    it('should throw for empty head', async () => {
+      await expect(createPullRequest({
+        title: 'Valid title',
+        head: '',
+        base: 'main',
+      })).rejects.toThrow('PR title, head, and base must be non-empty');
+    });
+
+    it('should throw for whitespace-only head', async () => {
+      await expect(createPullRequest({
+        title: 'Valid title',
+        head: '   ',
+        base: 'main',
+      })).rejects.toThrow('PR title, head, and base must be non-empty');
+    });
+
+    it('should throw for empty base', async () => {
+      await expect(createPullRequest({
+        title: 'Valid title',
+        head: 'feature-branch',
+        base: '',
+      })).rejects.toThrow('PR title, head, and base must be non-empty');
+    });
+
+    it('should throw for whitespace-only base', async () => {
+      await expect(createPullRequest({
+        title: 'Valid title',
+        head: 'feature-branch',
+        base: '   ',
+      })).rejects.toThrow('PR title, head, and base must be non-empty');
+    });
+  });
+
   describe('CreatePullRequestOptions interface', () => {
     it('should accept all options', () => {
       const options: CreatePullRequestOptions = {
