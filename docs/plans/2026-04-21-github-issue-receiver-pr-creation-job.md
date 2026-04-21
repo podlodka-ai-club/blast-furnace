@@ -70,13 +70,13 @@ Add two strategies to receive GitHub issues reactively (polling and webhooks), c
 ### Task 5: Create GitHub webhooks route
 **Files:**
 - Create: `src/server/routes/github-webhooks.ts`
-- [ ] Create `githubWebhooksRoute` plugin with Fastify
-- [ ] Add POST `/webhooks/github` endpoint
-- [ ] If `GITHUB_WEBHOOK_SECRET` is set, validate webhook signature using HMAC SHA256; skip validation if not set (development mode)
-- [ ] Parse and validate incoming webhook payload
-- [ ] On `issues.opened` event, add `IssueProcessorJobData` job to queue immediately
-- [ ] Return 200 quickly to acknowledge receipt (async processing)
-- [ ] Write tests for webhook validation and routing
+- [x] Create `githubWebhooksRoute` plugin with Fastify
+- [x] Add POST `/webhooks/github` endpoint
+- [x] If `GITHUB_WEBHOOK_SECRET` is set, validate webhook signature using HMAC SHA256; skip validation if not set (development mode)
+- [x] Parse and validate incoming webhook payload
+- [x] On `issues.opened` event, add `IssueProcessorJobData` job to queue immediately
+- [x] Return 200 quickly to acknowledge receipt (async processing)
+- [x] Write tests for webhook validation and routing
 
 ### Task 6: Register webhook route in server
 **Files:**
