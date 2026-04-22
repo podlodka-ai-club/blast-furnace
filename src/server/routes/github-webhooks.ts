@@ -41,8 +41,8 @@ export async function githubWebhooksRoute(
         server.log.warn('Missing webhook signature');
         return reply.status(401).send({ error: 'Missing signature' });
       }
-      // Get raw body for signature validation
-      const rawBody = JSON.stringify(request.body);
+      // Use raw body bytes for signature validation (GitHub signs the exact raw bytes)
+      const rawBody = (request as unknown as { rawBody: Buffer }).rawBody?.toString('utf-8') ?? JSON.stringify(request.body);
       if (!validateSignature(rawBody, signature, config.github.webhookSecret)) {
         server.log.warn('Invalid webhook signature');
         return reply.status(401).send({ error: 'Invalid signature' });
