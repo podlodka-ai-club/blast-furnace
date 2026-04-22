@@ -91,6 +91,15 @@ Additional configuration read directly from environment:
 - `npm run test:watch` - Watch mode
 - `npm run lint` - ESLint on `src/`
 
+## Docker Redis Setup
+
+The project uses Docker Compose to run Redis locally. See `docs/docker.md` for details, but the quick reference is:
+
+- `./scripts/start.sh` - Start Redis and the dev server
+- `./scripts/stop.sh` - Stop Redis and the dev server
+- `docker-compose up -d` - Start Redis only
+- `docker-compose down` - Stop Redis only
+
 ## Conventions
 
 - Use ESNext modules (import/export with .js extensions)
