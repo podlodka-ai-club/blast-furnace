@@ -47,10 +47,10 @@ Create a Docker Compose environment for Redis and scripts to start/stop the serv
 
 ### Task 4: Verify the setup works
 
-- [ ] Run docker-compose up -d and verify Redis starts
-- [ ] Run the start script and verify server connects to Redis
-- [ ] Run the stop script and verify clean shutdown
-- [ ] Run existing tests to ensure nothing broke
+- [x] Run docker-compose up -d and verify Redis starts
+- [x] Run the start script and verify server connects to Redis
+- [x] Run the stop script and verify clean shutdown
+- [x] Run existing tests to ensure nothing broke
 
 ### Task 5: Update documentation
 
