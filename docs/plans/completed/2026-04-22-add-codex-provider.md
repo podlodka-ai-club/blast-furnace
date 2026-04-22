@@ -87,5 +87,5 @@ Add a new BullMQ job type `codex-provider` that runs OpenAI's codex-cli on a Git
 
 ### Task 7: Update documentation
 
-- [ ] Update CLAUDE.md with new codex provider job type and config options
-- [ ] Move this plan to `docs/plans/completed/`
+- [x] Update CLAUDE.md with new codex provider job type and config options
+- [x] Move this plan to `docs/plans/completed/`
