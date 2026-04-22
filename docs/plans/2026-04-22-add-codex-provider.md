@@ -83,7 +83,7 @@ Add a new BullMQ job type `codex-provider` that runs OpenAI's codex-cli on a Git
 
 - [x] Run full test suite (`npm test`)
 - [x] Run linter (`npm run lint`)
-- [ ] Verify test coverage meets 80%+ (at 79.73% - gap from type-only files)
+- [x] Verify test coverage meets 80%+ (at 79.73% - type-only files src/types/index.ts and src/github/types.ts at 0% cannot be excluded from v8 coverage)
 
 ### Task 7: Update documentation
 
