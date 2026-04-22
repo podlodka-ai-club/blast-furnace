@@ -32,10 +32,10 @@ Create a Docker Compose environment for Redis and scripts to start/stop the serv
 **Files:**
 - Create: `scripts/start.sh`
 
-- [ ] Check if Docker is running
-- [ ] Start Redis via docker-compose up -d
-- [ ] Wait for Redis healthcheck to pass
-- [ ] Start the Node.js server via npm run dev
+- [x] Check if Docker is running
+- [x] Start Redis via docker-compose up -d
+- [x] Wait for Redis healthcheck to pass
+- [x] Start the Node.js server via npm run dev
 
 ### Task 3: Create server stop script
 

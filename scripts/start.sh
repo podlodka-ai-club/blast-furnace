@@ -1,0 +1,41 @@
+#!/bin/bash
+set -e
+
+# Check if Docker is running
+if ! docker info > /dev/null 2>&1; then
+  echo "Error: Docker is not running. Please start Docker and try again."
+  exit 1
+fi
+
+# Change to the script's directory to find docker-compose.yml
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Start Redis via docker-compose up -d
+echo "Starting Redis..."
+docker-compose up -d
+
+# Wait for Redis healthcheck to pass
+echo "Waiting for Redis to be healthy..."
+MAX_RETRIES=30
+RETRY_COUNT=0
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+  if docker-compose exec -T redis redis-cli ping 2>/dev/null | grep -q "PONG"; then
+    echo "Redis is ready!"
+    break
+  fi
+  RETRY_COUNT=$((RETRY_COUNT + 1))
+  echo "Waiting for Redis... ($RETRY_COUNT/$MAX_RETRIES)"
+  sleep 1
+done
+
+if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+  echo "Error: Redis healthcheck failed after $MAX_RETRIES attempts"
+  docker-compose down
+  exit 1
+fi
+
+# Start the Node.js server via npm run dev
+echo "Starting Node.js server..."
+npm run dev
