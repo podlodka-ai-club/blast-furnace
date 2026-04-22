@@ -38,7 +38,7 @@ Add a new BullMQ job type `codex-provider` that runs OpenAI's codex-cli on a Git
 **Files:**
 - Create: `src/jobs/codex-provider.ts`
 
-- [ ] Create `processCodex` async function that:
+- [x] Create `processCodex` async function that:
   - Receives issue and branchName from job data
   - Ensures git repo is on the correct branch (using existing git/branch.ts functions + `git checkout`)
   - Spawns `npx @openai/codex` as a child process with issue title+body as prompt (non-blocking via spawn)
@@ -46,9 +46,9 @@ Add a new BullMQ job type `codex-provider` that runs OpenAI's codex-cli on a Git
   - Waits for process to complete (or timeout after configurable period)
   - Runs `git add -A && git commit` to commit any changes made by codex
   - On failure, logs error and throws (triggers BullMQ retry)
-- [ ] Export `codexProviderHandler` for use in worker
-- [ ] Write tests with mocked child_process.spawn
-- [ ] Run project test suite - must pass before Task 3
+- [x] Export `codexProviderHandler` for use in worker
+- [x] Write tests with mocked child_process.spawn
+- [x] Run project test suite - must pass before Task 3
 
 ### Task 3: Register codex provider in multiHandler
 
