@@ -25,7 +25,8 @@ function parseIssueStrategy(value: string | undefined): 'polling' | 'webhook' {
 
 function parseTimeout(value: string | undefined, defaultVal: number): number {
   const parsed = parseInt(value ?? String(defaultVal), 10);
-  if (Number.isNaN(parsed) || parsed < 1) {
+  const maxTimeout = 600000; // 10 minutes max
+  if (Number.isNaN(parsed) || parsed < 1 || parsed > maxTimeout) {
     return defaultVal;
   }
   return parsed;

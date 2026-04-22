@@ -83,6 +83,30 @@ function createGitMockProcess(exitCode: number = 0): ReturnType<typeof spawn> {
   } as unknown as ReturnType<typeof spawn>;
 }
 
+function createGitMockProcessWithExitCode(exitCode: number): ReturnType<typeof spawn> {
+  const listeners: Record<string, ((...args: unknown[]) => void)[]> = {};
+  return {
+    stdout: {
+      on: vi.fn((event: string, cb: (data: Buffer) => void) => {
+        if (event === 'data') cb(Buffer.from(''));
+      }),
+    },
+    stderr: {
+      on: vi.fn((event: string, cb: (data: Buffer) => void) => {
+        if (event === 'data') cb(Buffer.from(''));
+      }),
+    },
+    on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
+      if (!listeners[event]) listeners[event] = [];
+      listeners[event].push(cb);
+      if (event === 'close') {
+        setTimeout(() => cb(exitCode), 0);
+      }
+    }),
+    kill: vi.fn(),
+  } as unknown as ReturnType<typeof spawn>;
+}
+
 function createCodexMockProcess(exitCode: number = 0): ReturnType<typeof spawn> {
   return {
     stdout: {
@@ -121,8 +145,12 @@ describe('processCodex', () => {
   it('should checkout the branch and spawn codex process', async () => {
     const mockSpawn = vi.mocked(spawn);
 
-    mockSpawn.mockImplementation((cmd: string) => {
+    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
       if (cmd === 'git') {
+        // rev-parse fails (exit code 1) to indicate branch doesn't exist locally
+        if (args[0] === 'rev-parse') {
+          return createGitMockProcessWithExitCode(1);
+        }
         return createGitMockProcess();
       }
       return createCodexMockProcess();
@@ -140,6 +168,8 @@ describe('processCodex', () => {
 
     // Verify fetch was called first to get the remote branch
     expect(mockSpawn).toHaveBeenCalledWith('git', ['fetch', 'origin', 'heads/issue-1-test-issue'], expect.any(Object));
+    // Verify branch existence was checked (and found not to exist)
+    expect(mockSpawn).toHaveBeenCalledWith('git', ['rev-parse', '--verify', '--quiet', 'issue-1-test-issue'], expect.any(Object));
     // Verify checkout was called to create local tracking branch
     expect(mockSpawn).toHaveBeenCalledWith('git', ['checkout', '-b', 'issue-1-test-issue', '--track', 'origin/issue-1-test-issue'], expect.any(Object));
 
@@ -308,6 +338,10 @@ describe('processCodex', () => {
         if (args[0] === 'fetch' || args[0] === 'checkout') {
           return createGitMockProcess();
         }
+        if (args[0] === 'rev-parse') {
+          // Branch doesn't exist locally
+          return createGitMockProcessWithExitCode(1);
+        }
         if (args[0] === 'status') {
           // Return empty string to indicate no changes
           return {
@@ -343,7 +377,7 @@ describe('processCodex', () => {
     expect(addCalls).toHaveLength(0);
   });
 
-  it('should not throw when git commit fails gracefully', async () => {
+  it('should throw when git commit fails with real error', async () => {
     const mockSpawn = vi.mocked(spawn);
     const mockLogger = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() };
     mockCreateJobLogger.mockReturnValue(mockLogger);
@@ -352,6 +386,10 @@ describe('processCodex', () => {
       if (cmd === 'git') {
         if (args[0] === 'fetch' || args[0] === 'checkout') {
           return createGitMockProcess();
+        }
+        if (args[0] === 'rev-parse') {
+          // Branch doesn't exist locally
+          return createGitMockProcessWithExitCode(1);
         }
         if (args[0] === 'status') {
           // Return non-empty to indicate changes exist
@@ -364,7 +402,7 @@ describe('processCodex', () => {
             kill: vi.fn(),
           } as unknown as ReturnType<typeof spawn>;
         }
-        // git add succeeds but git commit fails
+        // git add succeeds but git commit fails with non-"nothing to commit" error
         if (args[0] === 'add') {
           return {
             stdout: { on: vi.fn((e, cb) => cb(Buffer.from(''))) },
@@ -376,10 +414,10 @@ describe('processCodex', () => {
           } as unknown as ReturnType<typeof spawn>;
         }
         if (args[0] === 'commit') {
-          // Commit fails with non-zero exit code
+          // Commit fails with non-zero exit code and error message that is NOT "nothing to commit"
           return {
-            stdout: { on: vi.fn((e, cb) => cb(Buffer.from(''))) },
-            stderr: { on: vi.fn() },
+            stdout: { on: vi.fn() },
+            stderr: { on: vi.fn((e, cb) => cb(Buffer.from('Author identity unknown'))) },
             on: vi.fn((event: string, cb: (code: number) => void) => {
               if (event === 'close') setTimeout(() => cb(1), 0);
             }),
@@ -399,12 +437,11 @@ describe('processCodex', () => {
       branchName: 'issue-1-test-issue',
     });
 
-    // Should not throw, just log a warning
-    await expect(processCodex(job)).resolves.not.toThrow();
+    // Should throw because commit failed with a real error (not "nothing to commit")
+    await expect(processCodex(job)).rejects.toThrow('git command failed');
 
-    // Verify the warning was logged about commit failure
-    expect(mockLogger.warn).toHaveBeenCalled();
-    expect(mockLogger.warn.mock.calls[0][0]).toContain('Git commit note');
+    // Verify the error was logged
+    expect(mockLogger.error).toHaveBeenCalled();
   });
 
   it('should stream stderr from codex process to logger', async () => {

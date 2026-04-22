@@ -72,8 +72,19 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
     logger.info(`Checking out branch: ${branchName}`);
     // First fetch the specific branch to ensure we have the remote ref
     await execGitCommand(['fetch', 'origin', `heads/${branchName}`], repoCwd);
-    // Create a new local branch tracking the remote branch
-    await execGitCommand(['checkout', '-b', branchName, '--track', `origin/${branchName}`], repoCwd);
+    // Check if branch already exists locally
+    const branchExists = await execGitCommand(['rev-parse', '--verify', '--quiet', branchName], repoCwd)
+      .then(() => true)
+      .catch(() => false);
+
+    if (branchExists) {
+      // Branch exists locally - checkout and update to match remote
+      await execGitCommand(['checkout', branchName], repoCwd);
+      await execGitCommand(['reset', '--hard', `origin/${branchName}`], repoCwd);
+    } else {
+      // Create a new local branch tracking the remote branch
+      await execGitCommand(['checkout', '-b', branchName, '--track', `origin/${branchName}`], repoCwd);
+    }
   } catch (err) {
     logger.error(`Failed to checkout branch ${branchName}: ${err}`);
     throw err;
@@ -148,9 +159,16 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
       logger.info('No changes detected, skipping commit');
     }
   } catch (err) {
-    // If commit fails (e.g., nothing to commit), log but don't throw
-    // as the codex execution itself was successful
-    logger.warn(`Git commit note: ${err}`);
+    // Distinguish "nothing to commit" from actual failures
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    if (errorMessage.includes('nothing to commit')) {
+      logger.info('No changes detected, skipping commit');
+    } else {
+      // Actual commit failure - log and throw as the codex execution may have produced changes
+      // that failed to commit for legitimate reasons (e.g., git author not configured, disk full)
+      logger.error(`Git commit failed: ${err}`);
+      throw err;
+    }
   }
 
   logger.info(`Codex provider completed for issue #${issue.number}`);
