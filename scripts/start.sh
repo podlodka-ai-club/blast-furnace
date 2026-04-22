@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -eu
 
 # Check if Docker is running
 if ! docker info > /dev/null 2>&1; then
@@ -35,6 +35,15 @@ if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
   docker-compose down
   exit 1
 fi
+
+# Cleanup function
+cleanup() {
+  echo "Shutting down..."
+  docker-compose down > /dev/null 2>&1
+}
+
+# Trap SIGINT and SIGTERM to cleanup
+trap cleanup EXIT INT TERM
 
 # Start the Node.js server via npm run dev
 echo "Starting Node.js server..."
