@@ -103,7 +103,7 @@ describe('issues', () => {
         state: 'all',
         assignee: 'anotheruser',
         since: '2024-01-01T00:00:00.000Z',
-        milestone: 5,
+        milestone: '5',
       });
     });
 

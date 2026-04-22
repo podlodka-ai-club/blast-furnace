@@ -21,7 +21,7 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
     { parseAs: 'buffer' },
     (request, rawBody, done) => {
       // Store raw body on request for webhook signature validation
-      (request as unknown as { rawBody: Buffer }).rawBody = rawBody;
+      (request as unknown as { rawBody: Buffer }).rawBody = rawBody as Buffer;
       try {
         const json = JSON.parse(rawBody.toString('utf-8'));
         done(null, json);

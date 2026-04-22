@@ -68,7 +68,6 @@ describe('issue watcher', () => {
         expect.objectContaining({
           taskId: expect.stringContaining('issue-watcher-'),
           type: 'issue-watcher',
-          lastPollTimestamp: undefined,
         }),
         expect.objectContaining({
           repeat: {
@@ -138,7 +137,7 @@ describe('issue watcher', () => {
         owner: 'test-owner',
         repo: 'test-repo',
         state: 'open',
-        since: new Date('2024-01-01T00:00:00.000Z'),
+        since: '2024-01-01T00:00:00.000Z',
       });
     });
 

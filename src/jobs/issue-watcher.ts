@@ -1,3 +1,4 @@
+import type { Job } from 'bullmq';
 import type { IssueProcessorJobData, IssueWatcherJobData } from '../types/index.js';
 import { jobQueue } from './queue.js';
 import { config } from '../config/index.js';
@@ -26,15 +27,13 @@ export async function startIssueWatcher(): Promise<void> {
   }
 
   try {
-    // Add a repeatable job with no initial lastPollTimestamp
-    // The handler will fetch all open issues on first run
+    // Add a repeatable job - handler fetches lastPollTimestamp from Redis at runtime
     await jobQueue.add(
       jobName,
       {
         taskId: `issue-watcher-${Date.now()}`,
         type: 'issue-watcher',
-        lastPollTimestamp: undefined,
-      },
+      } as IssueWatcherJobData,
       {
         repeat: {
           every: config.github.pollIntervalMs,
@@ -58,6 +57,7 @@ export async function issueWatcherHandler(_job: Job<IssueWatcherJobData>): Promi
   // Get lastPollTimestamp from Redis (not from job data, which is static for repeatable jobs)
   const storedTimestamp = await redisClient.get(LAST_POLL_KEY);
   const lastPollTimestamp = storedTimestamp ? new Date(storedTimestamp) : undefined;
+  const sinceTimestamp = lastPollTimestamp?.toISOString();
 
   // Get list of registered repos from Redis
   const repoMembers = await redisClient.smembers(REPO_LIST_KEY);
@@ -85,7 +85,7 @@ export async function issueWatcherHandler(_job: Job<IssueWatcherJobData>): Promi
       owner,
       repo,
       state: 'open',
-      since: lastPollTimestamp,
+      since: sinceTimestamp,
     });
 
     // For each new issue, add an IssueProcessorJobData job to the queue

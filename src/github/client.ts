@@ -9,4 +9,4 @@ export function createGitHubClient(): GitHubClient {
   });
 }
 
-export const githubClient = createGitHubClient();
+export const githubClient: GitHubClient = createGitHubClient();
