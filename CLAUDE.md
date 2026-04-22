@@ -63,17 +63,19 @@ Defined in `src/types/index.ts`:
 
 ## Configuration
 
-Loaded from environment variables in `src/config/index.ts`:
+Most configuration is loaded from environment variables in `src/config/index.ts`:
 - `NODE_ENV` (default: development)
 - `PORT` (default: 3000)
 - `REDIS_HOST` (default: localhost)
 - `REDIS_PORT` (default: 6379)
 - `REDIS_PASSWORD` (optional, no default)
-- `CORS_ORIGIN` (default: true for development)
 - `GITHUB_TOKEN`, `GITHUB_OWNER`, `GITHUB_REPO`
 - `GITHUB_ISSUE_STRATEGY` (polling | webhook, default: polling) - how to receive GitHub issues
 - `GITHUB_POLL_INTERVAL_MS` (default: 60000) - polling interval in milliseconds
 - `GITHUB_WEBHOOK_SECRET` (optional) - HMAC secret for webhook signature validation
+
+Additional configuration read directly from environment:
+- `CORS_ORIGIN` (used in `src/server/index.ts`, default: true for development)
 
 ## Commands
 
