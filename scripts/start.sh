@@ -39,11 +39,13 @@ fi
 # Cleanup function
 cleanup() {
   echo "Shutting down..."
-  docker-compose down > /dev/null 2>&1
+  docker-compose down || echo "Warning: docker-compose down failed"
 }
 
 # Trap SIGINT and SIGTERM to cleanup
-trap cleanup EXIT INT TERM
+# NOTE: cleanup only runs on intentional signals (INT/TERM), not on EXIT
+# This prevents Redis from being stopped when npm run dev exits unexpectedly
+trap cleanup INT TERM
 
 # Start the Node.js server via npm run dev
 echo "Starting Node.js server..."
