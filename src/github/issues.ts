@@ -11,6 +11,8 @@ export interface IssueFilters {
   assignee?: string;
   since?: string;
   milestone?: number;
+  owner?: string;
+  repo?: string;
 }
 
 /**
@@ -36,11 +38,11 @@ function mapGitHubIssueResponse(
  * Fetch issues from the repository using the GitHub client
  */
 export async function fetchIssues(filters: IssueFilters = {}): Promise<GitHubIssue[]> {
-  const { labels, state, assignee, since, milestone } = filters;
+  const { labels, state, assignee, since, milestone, owner, repo } = filters;
 
   const response = await githubClient.issues.listForRepo({
-    owner: config.github.owner,
-    repo: config.github.repo,
+    owner: owner ?? config.github.owner,
+    repo: repo ?? config.github.repo,
     labels,
     state: state ?? 'open',
     assignee,

@@ -59,21 +59,45 @@ export async function issueWatcherHandler(_job: Job<IssueWatcherJobData>): Promi
   const storedTimestamp = await redisClient.get(LAST_POLL_KEY);
   const lastPollTimestamp = storedTimestamp ? new Date(storedTimestamp) : undefined;
 
-  // Fetch open issues, optionally filtered by last poll time
-  const issues = await fetchIssues({
-    state: 'open',
-    since: lastPollTimestamp,
-  });
+  // Get list of registered repos from Redis
+  const repoMembers = await redisClient.smembers(REPO_LIST_KEY);
+  const repos: Array<{ owner: string; repo: string }> = [];
 
-  // For each new issue, add an IssueProcessorJobData job to the queue
-  for (const issue of issues) {
-    const processorJob: IssueProcessorJobData = {
-      taskId: `issue-processor-${issue.id}-${Date.now()}`,
-      type: 'issue-processor',
-      issue,
-    };
+  for (const member of repoMembers) {
+    try {
+      const parsed = JSON.parse(member);
+      if (parsed.owner && parsed.repo) {
+        repos.push({ owner: parsed.owner, repo: parsed.repo });
+      }
+    } catch {
+      // Skip invalid JSON members
+    }
+  }
 
-    await jobQueue.add('issue-processor', processorJob);
+  // If no repos registered, fall back to configured default repo
+  if (repos.length === 0) {
+    repos.push({ owner: config.github.owner, repo: config.github.repo });
+  }
+
+  // Fetch issues for each registered repo
+  for (const { owner, repo } of repos) {
+    const issues = await fetchIssues({
+      owner,
+      repo,
+      state: 'open',
+      since: lastPollTimestamp,
+    });
+
+    // For each new issue, add an IssueProcessorJobData job to the queue
+    for (const issue of issues) {
+      const processorJob: IssueProcessorJobData = {
+        taskId: `issue-processor-${issue.id}-${Date.now()}`,
+        type: 'issue-processor',
+        issue,
+      };
+
+      await jobQueue.add('issue-processor', processorJob);
+    }
   }
 
   // Store current timestamp in Redis for next poll cycle

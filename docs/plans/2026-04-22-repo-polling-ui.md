@@ -69,14 +69,14 @@ Add a web UI page with a form to register GitHub repositories for polling, with 
 **Files:**
 - Modify: `src/jobs/issue-watcher.ts`
 
-- [ ] Modify `issueWatcherHandler` to fetch repo list from Redis
-- [ ] For each registered repo, fetch issues using `fetchIssues` with that repo's owner/repo
-- [ ] Write tests for multi-repo polling
+- [x] Modify `issueWatcherHandler` to fetch repo list from Redis
+- [x] For each registered repo, fetch issues using `fetchIssues` with that repo's owner/repo
+- [x] Write tests for multi-repo polling
 
 **Files:**
 - Modify: `src/github/issues.ts`
 
-- [ ] Update `fetchIssues` to accept optional `owner` and `repo` overrides (for testing and future flexibility)
+- [x] Update `fetchIssues` to accept optional `owner` and `repo` overrides (for testing and future flexibility)
 
 ---
 

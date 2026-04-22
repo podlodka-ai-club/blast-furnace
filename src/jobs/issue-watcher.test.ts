@@ -12,6 +12,7 @@ const { mockFetchIssues, mockJobQueueAdd, mockRedisClient } = vi.hoisted(() => (
     set: vi.fn().mockResolvedValue('OK'),
     quit: vi.fn().mockResolvedValue('OK'),
     status: 'ready',
+    smembers: vi.fn().mockResolvedValue([]),
   },
 }));
 
@@ -53,6 +54,7 @@ describe('issue watcher', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mockJobQueueAdd.mockResolvedValue({ id: 'new-job-id' });
+    mockRedisClient.smembers.mockResolvedValue([]);
   });
 
   describe('startIssueWatcher', () => {
@@ -116,6 +118,8 @@ describe('issue watcher', () => {
       await issueWatcherHandler(mockJob);
 
       expect(mockFetchIssues).toHaveBeenCalledWith({
+        owner: 'test-owner',
+        repo: 'test-repo',
         state: 'open',
         since: undefined,
       });
@@ -131,6 +135,8 @@ describe('issue watcher', () => {
       await issueWatcherHandler(mockJob);
 
       expect(mockFetchIssues).toHaveBeenCalledWith({
+        owner: 'test-owner',
+        repo: 'test-repo',
         state: 'open',
         since: new Date('2024-01-01T00:00:00.000Z'),
       });
@@ -257,6 +263,145 @@ describe('issue watcher', () => {
 
       const mockJob = createMockJob('2024-01-01T00:00:00Z');
       await expect(issueWatcherHandler(mockJob)).rejects.toThrow('Network error');
+    });
+
+    it('should fall back to configured default repo when no repos registered', async () => {
+      const { issueWatcherHandler } = await import('./issue-watcher.js');
+
+      mockFetchIssues.mockResolvedValue([]);
+      mockRedisClient.get.mockResolvedValue(null);
+      mockRedisClient.smembers.mockResolvedValue([]);
+
+      const mockJob = createMockJob(undefined);
+      await issueWatcherHandler(mockJob);
+
+      expect(mockFetchIssues).toHaveBeenCalledWith({
+        owner: 'test-owner',
+        repo: 'test-repo',
+        state: 'open',
+        since: undefined,
+      });
+    });
+
+    it('should fetch issues for each registered repo', async () => {
+      const { issueWatcherHandler } = await import('./issue-watcher.js');
+
+      const registeredRepos = [
+        JSON.stringify({ owner: 'owner1', repo: 'repo1', addedAt: '2024-01-01T00:00:00Z' }),
+        JSON.stringify({ owner: 'owner2', repo: 'repo2', addedAt: '2024-01-01T00:00:00Z' }),
+      ];
+
+      mockFetchIssues.mockResolvedValue([]);
+      mockRedisClient.get.mockResolvedValue(null);
+      mockRedisClient.smembers.mockResolvedValue(registeredRepos);
+
+      const mockJob = createMockJob(undefined);
+      await issueWatcherHandler(mockJob);
+
+      expect(mockFetchIssues).toHaveBeenCalledTimes(2);
+      expect(mockFetchIssues).toHaveBeenNthCalledWith(1, {
+        owner: 'owner1',
+        repo: 'repo1',
+        state: 'open',
+        since: undefined,
+      });
+      expect(mockFetchIssues).toHaveBeenNthCalledWith(2, {
+        owner: 'owner2',
+        repo: 'repo2',
+        state: 'open',
+        since: undefined,
+      });
+    });
+
+    it('should process issues from all registered repos', async () => {
+      const { issueWatcherHandler } = await import('./issue-watcher.js');
+
+      const registeredRepos = [
+        JSON.stringify({ owner: 'owner1', repo: 'repo1', addedAt: '2024-01-01T00:00:00Z' }),
+        JSON.stringify({ owner: 'owner2', repo: 'repo2', addedAt: '2024-01-01T00:00:00Z' }),
+      ];
+
+      const mockIssues1 = [
+        {
+          id: 1,
+          number: 42,
+          title: 'Issue 1',
+          body: 'Body 1',
+          state: 'open' as const,
+          labels: [],
+          assignee: null,
+          createdAt: '2024-01-01T00:00:00Z',
+          updatedAt: '2024-01-01T00:00:00Z',
+        },
+      ];
+
+      const mockIssues2 = [
+        {
+          id: 2,
+          number: 43,
+          title: 'Issue 2',
+          body: 'Body 2',
+          state: 'open' as const,
+          labels: [],
+          assignee: null,
+          createdAt: '2024-01-02T00:00:00Z',
+          updatedAt: '2024-01-02T00:00:00Z',
+        },
+      ];
+
+      mockFetchIssues
+        .mockResolvedValueOnce(mockIssues1)
+        .mockResolvedValueOnce(mockIssues2);
+      mockRedisClient.get.mockResolvedValue(null);
+      mockRedisClient.smembers.mockResolvedValue(registeredRepos);
+
+      const mockJob = createMockJob(undefined);
+      await issueWatcherHandler(mockJob);
+
+      // Should have added 2 issue processor jobs (one from each repo)
+      expect(mockJobQueueAdd).toHaveBeenCalledTimes(2);
+      expect(mockJobQueueAdd).toHaveBeenNthCalledWith(
+        1,
+        'issue-processor',
+        expect.objectContaining({
+          type: 'issue-processor',
+          issue: mockIssues1[0],
+        })
+      );
+      expect(mockJobQueueAdd).toHaveBeenNthCalledWith(
+        2,
+        'issue-processor',
+        expect.objectContaining({
+          type: 'issue-processor',
+          issue: mockIssues2[0],
+        })
+      );
+    });
+
+    it('should skip invalid JSON members in repo list', async () => {
+      const { issueWatcherHandler } = await import('./issue-watcher.js');
+
+      const registeredRepos = [
+        'invalid-json',
+        JSON.stringify({ owner: 'valid-owner', repo: 'valid-repo', addedAt: '2024-01-01T00:00:00Z' }),
+        '{ broken json',
+      ];
+
+      mockFetchIssues.mockResolvedValue([]);
+      mockRedisClient.get.mockResolvedValue(null);
+      mockRedisClient.smembers.mockResolvedValue(registeredRepos);
+
+      const mockJob = createMockJob(undefined);
+      await issueWatcherHandler(mockJob);
+
+      // Should only call fetchIssues once for the valid repo
+      expect(mockFetchIssues).toHaveBeenCalledTimes(1);
+      expect(mockFetchIssues).toHaveBeenCalledWith({
+        owner: 'valid-owner',
+        repo: 'valid-repo',
+        state: 'open',
+        since: undefined,
+      });
     });
   });
 
