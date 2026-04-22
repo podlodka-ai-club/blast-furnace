@@ -2,6 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Job } from 'bullmq';
 import type { CodexProviderJobData, GitHubIssue } from '../types/index.js';
 
+// Use vi.hoisted to avoid hoisting issues with vi.mock
+const { mockCreateJobLogger } = vi.hoisted(() => ({
+  mockCreateJobLogger: vi.fn(),
+}));
+
 // Mock the config module
 vi.mock('../config/index.js', () => ({
   config: {
@@ -26,12 +31,7 @@ vi.mock('child_process', () => ({
 
 // Mock the logger
 vi.mock('../utils/logger.js', () => ({
-  createLogger: () => ({
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-  }),
+  createLogger: mockCreateJobLogger,
 }));
 
 import { spawn } from 'child_process';
@@ -104,6 +104,13 @@ describe('processCodex', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    // Setup default mock logger
+    mockCreateJobLogger.mockReturnValue({
+      info: vi.fn(),
+      error: vi.fn(),
+      warn: vi.fn(),
+      debug: vi.fn(),
+    });
   });
 
   it('should export codexProviderHandler', async () => {
@@ -131,8 +138,10 @@ describe('processCodex', () => {
 
     await processCodex(job);
 
-    // Verify checkout was called
-    expect(mockSpawn).toHaveBeenCalledWith('git', ['checkout', 'issue-1-test-issue'], expect.any(Object));
+    // Verify fetch was called first to get the remote branch
+    expect(mockSpawn).toHaveBeenCalledWith('git', ['fetch', 'origin', 'heads/issue-1-test-issue'], expect.any(Object));
+    // Verify checkout was called to create local tracking branch
+    expect(mockSpawn).toHaveBeenCalledWith('git', ['checkout', '-b', 'issue-1-test-issue', '--track', 'origin/issue-1-test-issue'], expect.any(Object));
 
     // Verify codex was spawned
     expect(mockSpawn).toHaveBeenCalledWith(
@@ -296,7 +305,7 @@ describe('processCodex', () => {
 
     mockSpawn.mockImplementation((cmd: string, args: string[]) => {
       if (cmd === 'git') {
-        if (args[0] === 'checkout') {
+        if (args[0] === 'fetch' || args[0] === 'checkout') {
           return createGitMockProcess();
         }
         if (args[0] === 'status') {
@@ -325,8 +334,10 @@ describe('processCodex', () => {
 
     await processCodex(job);
 
-    // Verify checkout was called but no commit was made
-    expect(mockSpawn).toHaveBeenCalledWith('git', ['checkout', 'issue-1-test-issue'], expect.any(Object));
+    // Verify fetch was called first
+    expect(mockSpawn).toHaveBeenCalledWith('git', ['fetch', 'origin', 'heads/issue-1-test-issue'], expect.any(Object));
+    // Verify checkout was called to create local tracking branch
+    expect(mockSpawn).toHaveBeenCalledWith('git', ['checkout', '-b', 'issue-1-test-issue', '--track', 'origin/issue-1-test-issue'], expect.any(Object));
     // Verify git add was NOT called (no changes to commit)
     const addCalls = mockSpawn.mock.calls.filter(([cmd, args]) => cmd === 'git' && args[0] === 'add');
     expect(addCalls).toHaveLength(0);
@@ -334,16 +345,18 @@ describe('processCodex', () => {
 
   it('should not throw when git commit fails gracefully', async () => {
     const mockSpawn = vi.mocked(spawn);
+    const mockLogger = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() };
+    mockCreateJobLogger.mockReturnValue(mockLogger);
 
     mockSpawn.mockImplementation((cmd: string, args: string[]) => {
       if (cmd === 'git') {
-        if (args[0] === 'checkout') {
+        if (args[0] === 'fetch' || args[0] === 'checkout') {
           return createGitMockProcess();
         }
         if (args[0] === 'status') {
-          // Return non-empty to indicate changes
+          // Return non-empty to indicate changes exist
           return {
-            stdout: { on: vi.fn((e, cb) => cb(Buffer.from(''))) },
+            stdout: { on: vi.fn((e, cb) => cb(Buffer.from('M modified-file.txt'))) },
             stderr: { on: vi.fn() },
             on: vi.fn((event: string, cb: (code: number) => void) => {
               if (event === 'close') setTimeout(() => cb(0), 0);
@@ -388,11 +401,19 @@ describe('processCodex', () => {
 
     // Should not throw, just log a warning
     await expect(processCodex(job)).resolves.not.toThrow();
+
+    // Verify the warning was logged about commit failure
+    expect(mockLogger.warn).toHaveBeenCalled();
+    expect(mockLogger.warn.mock.calls[0][0]).toContain('Git commit note');
   });
 
   it('should stream stderr from codex process to logger', async () => {
     const mockSpawn = vi.mocked(spawn);
-    const stderrHandler = vi.fn();
+    const stderrHandlers: ((data: Buffer) => void)[] = [];
+
+    // Set up mock logger BEFORE calling processCodex
+    const mockLogger = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() };
+    mockCreateJobLogger.mockReturnValue(mockLogger);
 
     mockSpawn.mockImplementation((cmd: string) => {
       if (cmd === 'git') {
@@ -404,7 +425,7 @@ describe('processCodex', () => {
         },
         stderr: {
           on: vi.fn((event: string, cb: (data: Buffer) => void) => {
-            if (event === 'data') stderrHandler(cb);
+            if (event === 'data') stderrHandlers.push(cb);
           }),
         },
         on: vi.fn((event: string, cb: (code: number) => void) => {
@@ -424,9 +445,14 @@ describe('processCodex', () => {
 
     await processCodex(job);
 
-    // The mock should have registered a stderr data handler
-    // (covered by the fact that stderrHandler was set up in the mock)
-    expect(stderrHandler).toBeDefined();
+    // Verify a stderr data handler was registered
+    expect(stderrHandlers.length).toBe(1);
+
+    // Simulate codex writing to stderr and verify logger is called
+    stderrHandlers[0](Buffer.from('error message from codex'));
+
+    // Verify the error was logged with [codex] prefix
+    expect(mockLogger.error).toHaveBeenCalledWith('[codex] error message from codex');
   });
 
 });

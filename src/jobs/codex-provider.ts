@@ -67,10 +67,13 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
   // Determine the working directory (repository root)
   const repoCwd = process.env['GIT_WORKING_DIR'] ?? process.cwd();
 
-  // Step 1: Checkout the specified branch
+  // Step 1: Fetch the branch and checkout as a local tracking branch
   try {
     logger.info(`Checking out branch: ${branchName}`);
-    await execGitCommand(['checkout', branchName], repoCwd);
+    // First fetch the specific branch to ensure we have the remote ref
+    await execGitCommand(['fetch', 'origin', `heads/${branchName}`], repoCwd);
+    // Create a new local branch tracking the remote branch
+    await execGitCommand(['checkout', '-b', branchName, '--track', `origin/${branchName}`], repoCwd);
   } catch (err) {
     logger.error(`Failed to checkout branch ${branchName}: ${err}`);
     throw err;
@@ -80,10 +83,10 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
   const prompt = `Issue #${issue.number}: ${issue.title}\n\n${issue.body ?? '(No description provided)'}`;
 
   // Step 3: Spawn codex-cli as a child process
+  // Note: We avoid shell: true to prevent shell injection from user-controlled prompt
   logger.info(`Spawning codex-cli with issue prompt`);
   const codexProcess = spawn(config.codexCliPath, [prompt], {
     cwd: repoCwd,
-    shell: true,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
