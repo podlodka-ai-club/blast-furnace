@@ -19,7 +19,9 @@ const redisClient = new Redis({
 export async function startIssueWatcher(): Promise<void> {
   const jobName = 'issue-watcher';
 
-  await redisClient.connect();
+  if (redisClient.status !== 'ready') {
+    await redisClient.connect();
+  }
 
   // Add a repeatable job with no initial lastPollTimestamp
   // The handler will fetch all open issues on first run
@@ -66,4 +68,13 @@ export async function issueWatcherHandler(_job: Job<IssueWatcherJobData>): Promi
 
   // Store current timestamp in Redis for next poll cycle
   await redisClient.set(LAST_POLL_KEY, new Date().toISOString());
+}
+
+/**
+ * Close the issue watcher's Redis client
+ */
+export async function closeIssueWatcherRedis(): Promise<void> {
+  if (redisClient.status === 'ready' || redisClient.status === 'connecting') {
+    await redisClient.quit();
+  }
 }

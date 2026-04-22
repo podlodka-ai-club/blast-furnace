@@ -2,7 +2,7 @@ import { buildServer, startServer } from './server/index.js';
 import { config } from './config/index.js';
 import { closeQueue, closeWorker, createWorker } from './jobs/index.js';
 import { issueProcessorHandler } from './jobs/issue-processor.js';
-import { issueWatcherHandler, startIssueWatcher } from './jobs/issue-watcher.js';
+import { closeIssueWatcherRedis, issueWatcherHandler, startIssueWatcher } from './jobs/issue-watcher.js';
 import type { Job, Worker } from 'bullmq';
 import type { IssueProcessorJobData, IssueWatcherJobData, JobPayload } from './types/index.js';
 
@@ -89,6 +89,13 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   } catch (err) {
     shutdownError = err instanceof Error ? err : new Error(String(err));
     console.error('Error closing queue:', shutdownError);
+  }
+  try {
+    // Close issue watcher Redis client
+    await closeIssueWatcherRedis();
+  } catch (err) {
+    shutdownError = err instanceof Error ? err : new Error(String(err));
+    console.error('Error closing issue watcher Redis:', shutdownError);
   }
 
   clearTimeout(timeout);

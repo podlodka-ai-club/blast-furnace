@@ -62,6 +62,18 @@ export async function githubWebhooksRoute(
       return reply.status(400).send({ error: 'Missing required fields' });
     }
 
+    // Validate issue has required fields
+    const issue = event.issue;
+    if (
+      typeof issue.id !== 'number' ||
+      typeof issue.number !== 'number' ||
+      typeof issue.title !== 'string' ||
+      !issue.createdAt ||
+      !issue.updatedAt
+    ) {
+      return reply.status(400).send({ error: 'Invalid issue payload' });
+    }
+
     // Handle issues.opened event
     if (event.action === 'opened' && event.issue) {
       const processorJob: IssueProcessorJobData = {
