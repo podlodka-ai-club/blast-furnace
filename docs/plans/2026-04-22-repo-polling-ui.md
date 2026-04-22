@@ -37,12 +37,12 @@ Add a web UI page with a form to register GitHub repositories for polling, with 
 **Files:**
 - Create: `src/server/routes/repos.ts`
 
-- [ ] Create `addRepo(owner: string, repo: string): Promise<{ added: boolean; repo?: GitHubRepo }>` - adds repo to Redis set, returns false if duplicate
-- [ ] Create `listRepos(): Promise<GitHubRepo[]>` - returns all registered repos
-- [ ] Create `removeRepo(owner: string, repo: string): Promise<boolean>` - removes repo from Redis set
-- [ ] Create `repoExists(owner: string, repo: string): Promise<boolean>` - checks if repo exists
-- [ ] Create Fastify route plugin `reposRoute` with GET `/repos` and POST `/repos`
-- [ ] Write tests for repo management module
+- [x] Create `addRepo(owner: string, repo: string): Promise<{ added: boolean; repo?: GitHubRepo }>` - adds repo to Redis set, returns false if duplicate
+- [x] Create `listRepos(): Promise<GitHubRepo[]>` - returns all registered repos
+- [x] Create `removeRepo(owner: string, repo: string): Promise<boolean>` - removes repo from Redis set
+- [x] Create `repoExists(owner: string, repo: string): Promise<boolean>` - checks if repo exists
+- [x] Create Fastify route plugin `reposRoute` with GET `/repos` and POST `/repos`
+- [x] Write tests for repo management module
 
 ---
 
