@@ -64,10 +64,10 @@ Add a new BullMQ job type `codex-provider` that runs OpenAI's codex-cli on a Git
 **Files:**
 - Modify: `src/jobs/issue-processor.ts`
 
-- [ ] After creating branch, add a `CodexProviderJobData` job to the queue instead of creating PR immediately
-- [ ] Remove PR creation from issue processor (defer to after codex completes, or let codex/provider handle it)
-- [ ] Update tests accordingly
-- [ ] Run project test suite - must pass before Task 5
+- [x] After creating branch, add a `CodexProviderJobData` job to the queue instead of creating PR immediately
+- [x] Remove PR creation from issue processor (defer to after codex completes, or let codex/provider handle it)
+- [x] Update tests accordingly
+- [x] Run project test suite - must pass before Task 5
 
 ### Task 5: Add optional CODEX_CLI_PATH config
 

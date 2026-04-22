@@ -1,8 +1,8 @@
 import type { Job } from 'bullmq';
-import type { IssueProcessorJobData } from '../types/index.js';
+import type { CodexProviderJobData, IssueProcessorJobData } from '../types/index.js';
 import { createJobLogger } from './logger.js';
 import { getRef, pushBranch } from '../github/branches.js';
-import { createPullRequest } from '../github/pullRequests.js';
+import { jobQueue } from './queue.js';
 
 /**
  * Slugify a string for use in branch names
@@ -63,22 +63,22 @@ export async function processIssue(job: Job<IssueProcessorJobData>): Promise<voi
     throw err;
   }
 
-  // Create PR with issue title and body
-  logger.info(`Creating PR from issue #${issue.number}`);
-  let pr: { number: number; htmlUrl: string };
+  // Enqueue codex provider job to process the issue
+  logger.info(`Enqueueing codex provider job for issue #${issue.number}`);
+  const codexJobData: CodexProviderJobData = {
+    taskId: job.data.taskId,
+    type: 'codex-provider',
+    issue,
+    branchName,
+  };
+
   try {
-    pr = await createPullRequest({
-      title: issue.title,
-      head: branchName,
-      base: 'main',
-      body: issue.body ?? '',
-    });
+    await jobQueue.add('codex-provider', codexJobData);
+    logger.info(`Codex provider job enqueued for branch: ${branchName}`);
   } catch (err) {
-    logger.error(`Failed to create PR for issue #${issue.number}: ${err}`);
+    logger.error(`Failed to enqueue codex provider job for issue #${issue.number}: ${err}`);
     throw err;
   }
-
-  logger.info(`Created PR #${pr.number}: ${pr.htmlUrl}`);
 }
 
 /**

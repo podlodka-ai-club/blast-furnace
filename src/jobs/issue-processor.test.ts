@@ -3,11 +3,11 @@ import type { Job } from 'bullmq';
 import type { IssueProcessorJobData } from '../types/index.js';
 
 // Use vi.hoisted to avoid hoisting issues with vi.mock
-const { mockGetRef, mockPushBranch, mockCreatePullRequest, mockCreateJobLogger } = vi.hoisted(() => ({
+const { mockGetRef, mockPushBranch, mockCreateJobLogger, mockJobQueueAdd } = vi.hoisted(() => ({
   mockGetRef: vi.fn(),
   mockPushBranch: vi.fn(),
-  mockCreatePullRequest: vi.fn(),
   mockCreateJobLogger: vi.fn(),
+  mockJobQueueAdd: vi.fn(),
 }));
 
 // Mock the GitHub modules
@@ -16,8 +16,10 @@ vi.mock('../github/branches.js', () => ({
   pushBranch: mockPushBranch,
 }));
 
-vi.mock('../github/pullRequests.js', () => ({
-  createPullRequest: mockCreatePullRequest,
+vi.mock('./queue.js', () => ({
+  jobQueue: {
+    add: mockJobQueueAdd,
+  },
 }));
 
 vi.mock('./logger.js', () => ({
@@ -86,7 +88,7 @@ describe('issue processor', () => {
       });
       mockGetRef.mockResolvedValue('abc123');
       mockPushBranch.mockResolvedValue();
-      mockCreatePullRequest.mockResolvedValue({ number: 1, htmlUrl: 'https://github.com/test/test/pull/1' });
+      mockJobQueueAdd.mockResolvedValue();
 
       const mockJob = createMockJob();
       await processIssue(mockJob);
@@ -107,16 +109,19 @@ describe('issue processor', () => {
       });
       mockGetRef.mockResolvedValue('abc123');
       mockPushBranch.mockResolvedValue();
-      mockCreatePullRequest.mockResolvedValue({ number: 1, htmlUrl: 'https://github.com/test/test/pull/1' });
+      mockJobQueueAdd.mockResolvedValue();
 
       const mockJob = createMockJob({ title: 'Test Issue Title' });
       await processIssue(mockJob);
 
       expect(mockGetRef).toHaveBeenCalledWith('main');
       expect(mockPushBranch).toHaveBeenCalledWith('issue-42-test-issue-title', 'abc123');
+      expect(mockJobQueueAdd).toHaveBeenCalledWith('codex-provider', expect.objectContaining({
+        branchName: 'issue-42-test-issue-title',
+      }));
     });
 
-    it('should create PR with issue data', async () => {
+    it('should enqueue codex provider job with issue data', async () => {
       const { processIssue } = await import('./issue-processor.js');
 
       const mockInfo = vi.fn();
@@ -128,22 +133,32 @@ describe('issue processor', () => {
       });
       mockGetRef.mockResolvedValue('abc123');
       mockPushBranch.mockResolvedValue();
-      mockCreatePullRequest.mockResolvedValue({ number: 5, htmlUrl: 'https://github.com/test/test/pull/5' });
+      mockJobQueueAdd.mockResolvedValue();
 
       const mockJob = createMockJob({
         title: 'Test Issue',
-        body: 'PR body from issue',
+        body: 'Issue body content',
         labels: ['enhancement'],
       });
       await processIssue(mockJob);
 
-      expect(mockCreatePullRequest).toHaveBeenCalledWith({
-        title: 'Test Issue',
-        head: 'issue-42-test-issue',
-        base: 'main',
-        body: 'PR body from issue',
+      expect(mockJobQueueAdd).toHaveBeenCalledWith('codex-provider', {
+        taskId: 'task-456',
+        type: 'codex-provider',
+        issue: {
+          id: 1,
+          number: 42,
+          title: 'Test Issue',
+          body: 'Issue body content',
+          state: 'open',
+          labels: ['enhancement'],
+          assignee: null,
+          createdAt: '2024-01-01T00:00:00Z',
+          updatedAt: '2024-01-01T00:00:00Z',
+        },
+        branchName: 'issue-42-test-issue',
       });
-      expect(mockInfo).toHaveBeenCalledWith('Created PR #5: https://github.com/test/test/pull/5');
+      expect(mockInfo).toHaveBeenCalledWith('Codex provider job enqueued for branch: issue-42-test-issue');
     });
 
     it('should handle issue with null body', async () => {
@@ -158,18 +173,15 @@ describe('issue processor', () => {
       });
       mockGetRef.mockResolvedValue('abc123');
       mockPushBranch.mockResolvedValue();
-      mockCreatePullRequest.mockResolvedValue({ number: 1, htmlUrl: 'https://github.com/test/test/pull/1' });
+      mockJobQueueAdd.mockResolvedValue();
 
       const mockJob = createMockJob({ body: null });
       await processIssue(mockJob);
 
       expect(mockInfo).toHaveBeenCalledWith('Issue body: (no body)');
-      expect(mockCreatePullRequest).toHaveBeenCalledWith({
-        title: 'Test Issue',
-        head: 'issue-42-test-issue',
-        base: 'main',
-        body: '',
-      });
+      expect(mockJobQueueAdd).toHaveBeenCalledWith('codex-provider', expect.objectContaining({
+        branchName: 'issue-42-test-issue',
+      }));
     });
 
     it('should handle special characters in issue title', async () => {
@@ -184,13 +196,16 @@ describe('issue processor', () => {
       });
       mockGetRef.mockResolvedValue('abc123');
       mockPushBranch.mockResolvedValue();
-      mockCreatePullRequest.mockResolvedValue({ number: 1, htmlUrl: 'https://github.com/test/test/pull/1' });
+      mockJobQueueAdd.mockResolvedValue();
 
       const mockJob = createMockJob({ title: 'Fix: "Awesome" bug #1 & other stuff!' });
       await processIssue(mockJob);
 
       // Special chars like # and & are removed by slugify, leaving only alphanumeric and hyphens
       expect(mockPushBranch).toHaveBeenCalledWith('issue-42-fix-awesome-bug-1-other-stuff', 'abc123');
+      expect(mockJobQueueAdd).toHaveBeenCalledWith('codex-provider', expect.objectContaining({
+        branchName: 'issue-42-fix-awesome-bug-1-other-stuff',
+      }));
     });
 
     it('should slugify title correctly', async () => {
@@ -205,12 +220,15 @@ describe('issue processor', () => {
       });
       mockGetRef.mockResolvedValue('abc123');
       mockPushBranch.mockResolvedValue();
-      mockCreatePullRequest.mockResolvedValue({ number: 1, htmlUrl: 'https://github.com/test/test/pull/1' });
+      mockJobQueueAdd.mockResolvedValue();
 
       const mockJob = createMockJob({ title: 'My   Multiple   Spaces' });
       await processIssue(mockJob);
 
       expect(mockPushBranch).toHaveBeenCalledWith('issue-42-my-multiple-spaces', 'abc123');
+      expect(mockJobQueueAdd).toHaveBeenCalledWith('codex-provider', expect.objectContaining({
+        branchName: 'issue-42-my-multiple-spaces',
+      }));
     });
 
     it('should propagate error when getRef fails', async () => {
@@ -244,7 +262,7 @@ describe('issue processor', () => {
       await expect(processIssue(mockJob)).rejects.toThrow('Push failed');
     });
 
-    it('should propagate error when createPullRequest fails', async () => {
+    it('should propagate error when jobQueue.add fails', async () => {
       const { processIssue } = await import('./issue-processor.js');
 
       mockCreateJobLogger.mockReturnValue({
@@ -255,10 +273,10 @@ describe('issue processor', () => {
       });
       mockGetRef.mockResolvedValue('abc123');
       mockPushBranch.mockResolvedValue();
-      mockCreatePullRequest.mockRejectedValue(new Error('PR creation failed'));
+      mockJobQueueAdd.mockRejectedValue(new Error('Queue add failed'));
 
       const mockJob = createMockJob();
-      await expect(processIssue(mockJob)).rejects.toThrow('PR creation failed');
+      await expect(processIssue(mockJob)).rejects.toThrow('Queue add failed');
     });
   });
 
