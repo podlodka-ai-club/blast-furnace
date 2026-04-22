@@ -51,16 +51,16 @@ Add a web UI page with a form to register GitHub repositories for polling, with 
 **Files:**
 - Create: `src/server/routes/repos-ui.ts`
 
-- [ ] Create simple HTML page with form: owner input, repo input, submit button
-- [ ] Display list of registered repositories with remove button
-- [ ] Use vanilla HTML/CSS/JS (no framework)
-- [ ] Fastify route to serve HTML at GET `/repos`
-- [ ] Write tests for UI route
+- [x] Create simple HTML page with form: owner input, repo input, submit button
+- [x] Display list of registered repositories with remove button
+- [x] Use vanilla HTML/CSS/JS (no framework)
+- [x] Fastify route to serve HTML at GET `/repos`
+- [x] Write tests for UI route
 
 **Files:**
 - Modify: `src/server/index.ts`
 
-- [ ] Register `reposRoute` plugin
+- [x] Register `reposRoute` plugin
 
 ---
 

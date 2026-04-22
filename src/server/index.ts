@@ -2,6 +2,8 @@ import Fastify, { FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import { healthRoute } from './routes/health.js';
 import { githubWebhooksRoute } from './routes/github-webhooks.js';
+import { reposRoute } from './routes/repos.js';
+import { reposUIRoute } from './routes/repos-ui.js';
 import { config } from '../config/index.js';
 import type { ServerOptions } from '../types/index.js';
 
@@ -58,6 +60,13 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
   if (config.github.issueStrategy === 'webhook') {
     await server.register(githubWebhooksRoute);
   }
+
+  // Register repository management routes
+  await server.register(reposRoute);
+  // Register UI at /repos/manage to avoid conflict with repos JSON API at /repos
+  await server.register(async (instance) => {
+    await instance.register(reposUIRoute);
+  }, { prefix: '/repos/manage' });
 
   return server;
 }
