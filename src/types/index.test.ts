@@ -21,6 +21,7 @@ import type {
   GitHubIssueEventPayload,
   IssueProcessorJobData,
   IssueWatcherJobData,
+  RepoWatcherJobData,
   CodexProviderJobData,
 } from './index.js';
 
@@ -435,6 +436,55 @@ describe('types', () => {
         type: 'issue-watcher',
       };
       expect(jobData.lastPollTimestamp).toBeUndefined();
+    });
+
+    it('should accept optional owner and repo for targeted polling', () => {
+      const jobData: IssueWatcherJobData = {
+        taskId: 'task-456',
+        type: 'issue-watcher',
+        owner: 'my-org',
+        repo: 'my-repo',
+      };
+      expect(jobData.owner).toBe('my-org');
+      expect(jobData.repo).toBe('my-repo');
+    });
+
+    it('should allow owner without repo and vice versa', () => {
+      const jobDataWithOwner: IssueWatcherJobData = {
+        taskId: 'task-456',
+        type: 'issue-watcher',
+        owner: 'my-org',
+      };
+      expect(jobDataWithOwner.owner).toBe('my-org');
+      expect(jobDataWithOwner.repo).toBeUndefined();
+
+      const jobDataWithRepo: IssueWatcherJobData = {
+        taskId: 'task-456',
+        type: 'issue-watcher',
+        repo: 'my-repo',
+      };
+      expect(jobDataWithRepo.owner).toBeUndefined();
+      expect(jobDataWithRepo.repo).toBe('my-repo');
+    });
+  });
+
+  describe('RepoWatcherJobData', () => {
+    it('should accept valid repo watcher job data', () => {
+      const jobData: RepoWatcherJobData = {
+        taskId: 'task-789',
+        type: 'repo-watcher',
+      };
+      expect(jobData.taskId).toBe('task-789');
+      expect(jobData.type).toBe('repo-watcher');
+    });
+
+    it('should allow optional payload', () => {
+      const jobData: RepoWatcherJobData = {
+        taskId: 'task-789',
+        type: 'repo-watcher',
+        payload: { key: 'value' },
+      };
+      expect(jobData.payload).toEqual({ key: 'value' });
     });
   });
 

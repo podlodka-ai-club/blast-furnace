@@ -85,8 +85,8 @@ Add a web UI page with a form to register GitHub repositories for polling, with 
 **Files:**
 - Modify: `src/types/index.ts`
 
-- [ ] Add `RepoWatcherJobData` job data type for multi-repo polling
-- [ ] Add `IssueWatcherJobData` update for multi-repo support
+- [x] Add `RepoWatcherJobData` job data type for multi-repo polling
+- [x] Add `IssueWatcherJobData` update for multi-repo support
 
 ---
 

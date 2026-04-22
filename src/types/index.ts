@@ -152,6 +152,12 @@ export interface IssueProcessorJobData extends JobPayload {
 export interface IssueWatcherJobData extends JobPayload {
   type: 'issue-watcher';
   lastPollTimestamp?: string;
+  owner?: string;
+  repo?: string;
+}
+
+export interface RepoWatcherJobData extends JobPayload {
+  type: 'repo-watcher';
 }
 
 export interface CodexProviderJobData extends JobPayload {
