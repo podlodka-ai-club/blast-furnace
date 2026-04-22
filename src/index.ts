@@ -2,9 +2,10 @@ import { buildServer, startServer } from './server/index.js';
 import { config } from './config/index.js';
 import { closeQueue, closeWorker, createWorker } from './jobs/index.js';
 import { issueProcessorHandler } from './jobs/issue-processor.js';
+import { codexProviderHandler } from './jobs/codex-provider.js';
 import { closeIssueWatcherRedis, issueWatcherHandler, startIssueWatcher } from './jobs/issue-watcher.js';
 import type { Job, Worker } from 'bullmq';
-import type { IssueProcessorJobData, IssueWatcherJobData, JobPayload } from './types/index.js';
+import type { CodexProviderJobData, IssueProcessorJobData, IssueWatcherJobData, JobPayload } from './types/index.js';
 
 let server: Awaited<ReturnType<typeof buildServer>> | undefined;
 let worker: Worker<JobPayload> | undefined;
@@ -19,6 +20,8 @@ export async function multiHandler(job: Job<JobPayload>): Promise<void> {
       return issueProcessorHandler(job as Job<IssueProcessorJobData>);
     case 'issue-watcher':
       return issueWatcherHandler(job as Job<IssueWatcherJobData>);
+    case 'codex-provider':
+      return codexProviderHandler(job as Job<CodexProviderJobData>);
     default:
       throw new Error(`Unknown job type: ${job.data.type}`);
   }

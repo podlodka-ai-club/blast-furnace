@@ -55,9 +55,9 @@ Add a new BullMQ job type `codex-provider` that runs OpenAI's codex-cli on a Git
 **Files:**
 - Modify: `src/jobs/index.ts`
 
-- [ ] Add `codex-provider` case in `multiHandler` routing to `codexProviderHandler`
-- [ ] Write tests for routing in `src/jobs/index.test.ts`
-- [ ] Run project test suite - must pass before Task 4
+- [x] Add `codex-provider` case in `multiHandler` routing to `codexProviderHandler`
+- [x] Write tests for routing in `src/jobs/index.test.ts`
+- [x] Run project test suite - must pass before Task 4
 
 ### Task 4: Modify issue processor to call codex provider
 

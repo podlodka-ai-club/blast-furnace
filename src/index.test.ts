@@ -39,6 +39,10 @@ vi.mock('./jobs/issue-watcher.js', () => ({
   startIssueWatcher: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('./jobs/codex-provider.js', () => ({
+  codexProviderHandler: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('./server/index.js', () => ({
   buildServer: vi.fn().mockResolvedValue({
     close: vi.fn().mockResolvedValue(undefined),
@@ -97,6 +101,34 @@ describe('index', () => {
       await multiHandler(mockJob);
 
       expect(issueWatcherHandler).toHaveBeenCalledWith(mockJob);
+    });
+
+    it('should route codex-provider jobs to codexProviderHandler', async () => {
+      const { codexProviderHandler } = await import('./jobs/codex-provider.js');
+      const { multiHandler } = await import('./index.js');
+
+      const mockJob = {
+        data: {
+          taskId: 'task-3',
+          type: 'codex-provider',
+          issue: {
+            id: 1,
+            number: 42,
+            title: 'Test Issue',
+            body: 'Test body',
+            state: 'open' as const,
+            labels: [],
+            assignee: null,
+            createdAt: '2024-01-01T00:00:00Z',
+            updatedAt: '2024-01-01T00:00:00Z',
+          },
+          branchName: 'issue-42-test-issue',
+        },
+      } as unknown as Job;
+
+      await multiHandler(mockJob);
+
+      expect(codexProviderHandler).toHaveBeenCalledWith(mockJob);
     });
 
     it('should throw error for unknown job type', async () => {
