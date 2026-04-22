@@ -92,9 +92,9 @@ Add a web UI page with a form to register GitHub repositories for polling, with 
 
 ### Task 6: Verify acceptance criteria
 
-- [ ] Run full test suite (`npm test`)
-- [ ] Run linter (`npm run lint`)
-- [ ] Verify test coverage meets 80%+
+- [x] Run full test suite (`npm test`)
+- [x] Run linter (`npm run lint`)
+- [x] Verify test coverage meets 80%+
 
 ### Task 7: Update documentation
 
