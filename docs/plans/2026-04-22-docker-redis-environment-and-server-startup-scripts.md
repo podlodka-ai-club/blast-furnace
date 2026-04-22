@@ -42,8 +42,8 @@ Create a Docker Compose environment for Redis and scripts to start/stop the serv
 **Files:**
 - Create: `scripts/stop.sh`
 
-- [ ] Stop the Node.js server (kill background process)
-- [ ] Stop Redis via docker-compose down
+- [x] Stop the Node.js server (kill background process)
+- [x] Stop Redis via docker-compose down
 
 ### Task 4: Verify the setup works
 
