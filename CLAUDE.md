@@ -39,7 +39,8 @@ src/
     worker.ts        - BullMQ Worker factory with logging middleware
     logger.ts        - Job-specific logging helper
     issue-watcher.ts - Polling-based GitHub issue watcher (repeatable job)
-    issue-processor.ts - Shared issue processing job (logs issue, creates PR)
+    issue-processor.ts - Shared issue processing job (logs issue, enqueues codex provider)
+    codex-provider.ts - AI-assisted codex-cli job handler
   github/
     index.ts         - GitHub API client exports
     types.ts         - GitHub-specific TypeScript types
@@ -58,7 +59,7 @@ Defined in `src/types/index.ts`:
 - `GitHubIssue`, `GitHubComment`
 - `AppConfig`, `RedisConfig`, `GitHubConfig`
 - `JobPayload`
-- `IssueProcessorJobData`, `IssueWatcherJobData` (job data types)
+- `IssueProcessorJobData`, `IssueWatcherJobData`, `CodexProviderJobData` (job data types)
 - `GitHubWebhookEvent`, `GitHubIssueEventPayload` (webhook types)
 
 ## Configuration
@@ -73,6 +74,8 @@ Most configuration is loaded from environment variables in `src/config/index.ts`
 - `GITHUB_ISSUE_STRATEGY` (polling | webhook, default: polling) - how to receive GitHub issues
 - `GITHUB_POLL_INTERVAL_MS` (default: 60000) - polling interval in milliseconds
 - `GITHUB_WEBHOOK_SECRET` (optional) - HMAC secret for webhook signature validation
+- `CODEX_CLI_PATH` (optional, default: npx @openai/codex) - path to codex CLI
+- `CODEX_TIMEOUT_MS` (optional, default: 300000 = 5 minutes) - timeout for codex CLI execution
 
 Additional configuration read directly from environment:
 - `CORS_ORIGIN` (used in `src/server/index.ts`, default: true for development)
