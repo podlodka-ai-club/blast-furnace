@@ -4,7 +4,7 @@ export const jobQueue = new Queue('agent-orchestrator', {
     connection: {
         host: config.redis.host,
         port: config.redis.port,
-        ...(config.redis.password && { password: config.redis.password }),
+        ...(config.redis.password !== undefined && { password: config.redis.password }),
     },
     defaultJobOptions: {
         attempts: 3,
@@ -26,7 +26,7 @@ export const queueEvents = new QueueEvents('agent-orchestrator', {
     connection: {
         host: config.redis.host,
         port: config.redis.port,
-        ...(config.redis.password && { password: config.redis.password }),
+        ...(config.redis.password !== undefined && { password: config.redis.password }),
     },
 });
 export async function closeQueue() {

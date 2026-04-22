@@ -50,7 +50,8 @@ describe('repos module', () => {
 
   describe('addRepo', () => {
     it('should add a new repo and return added: true', async () => {
-      mockRedisClient.smembers.mockResolvedValue([]);
+      // sadd returns 1 when element is newly added
+      mockRedisClient.sadd.mockResolvedValue(1);
 
       const result = await addRepo('owner', 'repo');
 
@@ -67,32 +68,13 @@ describe('repos module', () => {
     });
 
     it('should return added: false if repo already exists', async () => {
-      const existingRepo = { owner: 'owner', repo: 'repo', addedAt: '2024-01-01T00:00:00Z' };
-      mockRedisClient.smembers.mockResolvedValue([JSON.stringify(existingRepo)]);
+      // sadd returns 0 when element already exists in the set
+      mockRedisClient.sadd.mockResolvedValue(0);
 
       const result = await addRepo('owner', 'repo');
 
       expect(result.added).toBe(false);
       expect(result.repo).toBeUndefined();
-      expect(mockRedisClient.sadd).not.toHaveBeenCalled();
-    });
-
-    it('should skip invalid JSON members when checking for duplicates', async () => {
-      const existingRepo = { owner: 'owner', repo: 'repo', addedAt: '2024-01-01T00:00:00Z' };
-      mockRedisClient.smembers.mockResolvedValue(['invalid-json', JSON.stringify(existingRepo)]);
-
-      const result = await addRepo('owner', 'repo');
-
-      expect(result.added).toBe(false);
-    });
-
-    it('should add repo when only owner matches but repo differs', async () => {
-      const existingRepo = { owner: 'owner', repo: 'other-repo', addedAt: '2024-01-01T00:00:00Z' };
-      mockRedisClient.smembers.mockResolvedValue([JSON.stringify(existingRepo)]);
-
-      const result = await addRepo('owner', 'repo');
-
-      expect(result.added).toBe(true);
     });
   });
 
@@ -245,7 +227,8 @@ describe('repos route plugin', () => {
 
   describe('POST /repos', () => {
     it('should add a new repo and return 201', async () => {
-      mockRedisClient.smembers.mockResolvedValue([]);
+      // sadd returns 1 when element is newly added
+      mockRedisClient.sadd.mockResolvedValue(1);
 
       const response = await server.inject({
         method: 'POST',
@@ -265,8 +248,8 @@ describe('repos route plugin', () => {
     });
 
     it('should return 409 if repo already exists', async () => {
-      const existingRepo = { owner: 'test-owner', repo: 'test-repo', addedAt: '2024-01-01T00:00:00Z' };
-      mockRedisClient.smembers.mockResolvedValue([JSON.stringify(existingRepo)]);
+      // sadd returns 0 when element already exists in the set
+      mockRedisClient.sadd.mockResolvedValue(0);
 
       const response = await server.inject({
         method: 'POST',

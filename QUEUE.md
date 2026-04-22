@@ -2,4 +2,5 @@
 [x] design github module
 [x] receive issues polling/webhook
 [x] README.md
-[ ] call codex
+[x] call codex
+[ ] create docker env to start application

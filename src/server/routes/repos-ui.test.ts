@@ -49,11 +49,11 @@ describe('reposUIRoute', () => {
     await server.close();
   });
 
-  describe('GET /repos', () => {
+  describe('GET /', () => {
     it('should return HTML page with correct content-type', async () => {
       const response = await server.inject({
         method: 'GET',
-        url: '/repos',
+        url: '/',
       });
 
       expect(response.statusCode).toBe(200);
@@ -63,7 +63,7 @@ describe('reposUIRoute', () => {
     it('should include form elements in HTML', async () => {
       const response = await server.inject({
         method: 'GET',
-        url: '/repos',
+        url: '/',
       });
 
       const html = response.body;
@@ -76,7 +76,7 @@ describe('reposUIRoute', () => {
     it('should include repository list container', async () => {
       const response = await server.inject({
         method: 'GET',
-        url: '/repos',
+        url: '/',
       });
 
       const html = response.body;
@@ -87,7 +87,7 @@ describe('reposUIRoute', () => {
     it('should include JavaScript for form handling', async () => {
       const response = await server.inject({
         method: 'GET',
-        url: '/repos',
+        url: '/',
       });
 
       const html = response.body;
@@ -99,7 +99,7 @@ describe('reposUIRoute', () => {
     it('should include styling', async () => {
       const response = await server.inject({
         method: 'GET',
-        url: '/repos',
+        url: '/',
       });
 
       const html = response.body;
@@ -111,7 +111,7 @@ describe('reposUIRoute', () => {
     it('should inject API base URL into page', async () => {
       const response = await server.inject({
         method: 'GET',
-        url: '/repos',
+        url: '/',
       });
 
       const html = response.body;
@@ -121,7 +121,7 @@ describe('reposUIRoute', () => {
     it('should return complete HTML document', async () => {
       const response = await server.inject({
         method: 'GET',
-        url: '/repos',
+        url: '/',
       });
 
       const html = response.body;
@@ -137,7 +137,7 @@ describe('reposUIRoute', () => {
     it('should have proper title', async () => {
       const response = await server.inject({
         method: 'GET',
-        url: '/repos',
+        url: '/',
       });
 
       const html = response.body;
@@ -163,7 +163,7 @@ describe('reposUIRoute with custom apiBaseUrl', () => {
   it('should use custom API base URL when provided', async () => {
     const response = await server.inject({
       method: 'GET',
-      url: '/repos',
+      url: '/',
     });
 
     const html = response.body;

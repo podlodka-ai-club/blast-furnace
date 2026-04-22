@@ -7,7 +7,7 @@ export function createWorker(processor, options = {}) {
         connection: {
             host: config.redis.host,
             port: config.redis.port,
-            ...(config.redis.password && { password: config.redis.password }),
+            ...(config.redis.password !== undefined && { password: config.redis.password }),
         },
         concurrency: options.concurrency ?? 5,
     });
@@ -30,11 +30,13 @@ export function createWorker(processor, options = {}) {
             const logger = createJobLogger(job);
             logger.info(`Job ${job.id} progress: ${JSON.stringify(progress)}`);
         }
-        catch {
+        catch (err) {
+            const logger = createLogger({ component: 'worker' });
+            logger.warn(`Job ${job?.id} progress serialization error: ${err}`);
         }
     });
     worker.on('stalled', (jobId) => {
-        const logger = createLogger({ component: 'worker' });
+        const logger = createLogger({ component: 'worker', jobId });
         logger.warn(`Job ${jobId} stalled and will be retried`);
     });
     worker.on('error', (err) => {

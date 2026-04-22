@@ -49,6 +49,15 @@ export interface GitHubComment {
     user: string;
     createdAt: string;
 }
+export interface GitHubRepo {
+    owner: string;
+    repo: string;
+    addedAt: string;
+}
+export interface RepoListResponse {
+    repos: GitHubRepo[];
+    total: number;
+}
 export interface RedisConfig {
     host: string;
     port: number;
@@ -58,12 +67,20 @@ export interface GitHubConfig {
     token: string;
     owner: string;
     repo: string;
+    issueStrategy: 'polling' | 'webhook';
+    pollIntervalMs: number;
+    webhookSecret?: string;
+}
+export interface CodexConfig {
+    cliPath: string;
+    timeoutMs: number;
 }
 export interface AppConfig {
     env: string;
     port: number;
     redis: RedisConfig;
     github: GitHubConfig;
+    codex: CodexConfig;
 }
 export interface ServerOptions {
     logger?: boolean;
@@ -77,4 +94,38 @@ export interface JobPayload {
     taskId: string;
     type: string;
     payload?: Record<string, unknown>;
+}
+export interface GitHubWebhookEvent {
+    action: string;
+    issue: GitHubIssue;
+    repository: {
+        id: number;
+        name: string;
+        fullName: string;
+    };
+    sender: {
+        login: string;
+    };
+}
+export interface GitHubIssueEventPayload {
+    action: 'opened' | 'closed' | 'assigned' | 'unassigned' | 'labeled' | 'unlabeled' | 'synchronize';
+    issue: GitHubIssue;
+}
+export interface IssueProcessorJobData extends JobPayload {
+    type: 'issue-processor';
+    issue: GitHubIssue;
+}
+export interface IssueWatcherJobData extends JobPayload {
+    type: 'issue-watcher';
+    lastPollTimestamp?: string;
+    owner?: string;
+    repo?: string;
+}
+export interface RepoWatcherJobData extends JobPayload {
+    type: 'repo-watcher';
+}
+export interface CodexProviderJobData extends JobPayload {
+    type: 'codex-provider';
+    issue: GitHubIssue;
+    branchName: string;
 }

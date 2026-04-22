@@ -32,26 +32,20 @@ export function setRedisClient(client: Redis): void {
 export async function addRepo(owner: string, repo: string): Promise<{ added: boolean; repo?: GitHubRepo }> {
   const client = getRedisClient();
 
-  // Check if repo already exists by scanning members
-  const members = await client.smembers(REPO_LIST_KEY);
-  for (const member of members) {
-    try {
-      const parsed = JSON.parse(member) as GitHubRepo;
-      if (parsed.owner === owner && parsed.repo === repo) {
-        return { added: false };
-      }
-    } catch {
-      // Skip invalid JSON members
-    }
-  }
-
   const newRepo: GitHubRepo = {
     owner,
     repo,
     addedAt: new Date().toISOString(),
   };
 
-  await client.sadd(REPO_LIST_KEY, JSON.stringify(newRepo));
+  // Use SADD return value to check if the repo was actually added
+  // SADD returns 1 if the element was added, 0 if it already exists
+  const added = await client.sadd(REPO_LIST_KEY, JSON.stringify(newRepo));
+
+  if (added === 0) {
+    return { added: false };
+  }
+
   return { added: true, repo: newRepo };
 }
 

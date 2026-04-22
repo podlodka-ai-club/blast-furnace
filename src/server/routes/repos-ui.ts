@@ -176,7 +176,7 @@ const HTML_PAGE = `<!DOCTYPE html>
             '<span class="repo-info">' + escapeHtml(repo.owner) + ' / ' + escapeHtml(repo.repo) + '</span>' +
             '<div class="repo-date">Added: ' + date + '</div>' +
           '</div>' +
-          '<button class="danger" onclick="removeRepo(\\'' + escapeHtml(repo.owner) + '\\', \\'' + escapeHtml(repo.repo) + '\\')">Remove</button>' +
+          '<button class="danger" onclick="removeRepo(' + JSON.stringify(repo.owner) + ', ' + JSON.stringify(repo.repo) + ')">Remove</button>' +
         '</li>';
       }).join('');
     }
@@ -250,7 +250,7 @@ export async function reposUIRoute(
 ): Promise<void> {
   const apiBaseUrl = options.apiBaseUrl ?? '/repos';
 
-  server.get('/repos', async (_request, reply) => {
+  server.get('/', async (_request, reply) => {
     reply.header('Content-Type', 'text/html');
     // Inject API base URL into the page so JavaScript knows where to make API calls
     return HTML_PAGE.replace('<body>', `<body data-api-base="${apiBaseUrl}">`);
