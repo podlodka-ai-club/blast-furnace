@@ -19,6 +19,7 @@ import type {
   GitHubIssueEventPayload,
   IssueProcessorJobData,
   IssueWatcherJobData,
+  CodexProviderJobData,
 } from './index.js';
 
 describe('types', () => {
@@ -378,6 +379,51 @@ describe('types', () => {
         type: 'issue-watcher',
       };
       expect(jobData.lastPollTimestamp).toBeUndefined();
+    });
+  });
+
+  describe('CodexProviderJobData', () => {
+    it('should accept valid codex provider job data', () => {
+      const jobData: CodexProviderJobData = {
+        taskId: 'task-789',
+        type: 'codex-provider',
+        issue: {
+          id: 1,
+          number: 42,
+          title: 'Test issue',
+          body: 'Issue body',
+          state: 'open',
+          labels: ['enhancement'],
+          assignee: 'user',
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+        },
+        branchName: 'feature/codex-42',
+      };
+      expect(jobData.taskId).toBe('task-789');
+      expect(jobData.type).toBe('codex-provider');
+      expect(jobData.issue.number).toBe(42);
+      expect(jobData.branchName).toBe('feature/codex-42');
+    });
+
+    it('should allow optional payload', () => {
+      const jobData: CodexProviderJobData = {
+        taskId: 'task-789',
+        type: 'codex-provider',
+        issue: {
+          id: 1,
+          number: 42,
+          title: 'Test issue',
+          body: null,
+          state: 'open',
+          labels: [],
+          assignee: null,
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+        },
+        branchName: 'feature/codex-42',
+      };
+      expect(jobData.payload).toBeUndefined();
     });
   });
 });

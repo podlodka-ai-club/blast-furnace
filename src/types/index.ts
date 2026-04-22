@@ -134,3 +134,9 @@ export interface IssueWatcherJobData extends JobPayload {
   type: 'issue-watcher';
   lastPollTimestamp?: string;
 }
+
+export interface CodexProviderJobData extends JobPayload {
+  type: 'codex-provider';
+  issue: GitHubIssue;
+  branchName: string;
+}
