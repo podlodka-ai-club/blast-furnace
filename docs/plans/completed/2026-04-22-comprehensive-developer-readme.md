@@ -54,4 +54,4 @@ Structure:
 
 ### Task 3: Move plan to completed
 
-- [ ] Move this plan to `docs/plans/completed/`
+- [x] Move this plan to `docs/plans/completed/`
