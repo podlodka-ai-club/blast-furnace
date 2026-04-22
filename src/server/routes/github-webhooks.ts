@@ -2,7 +2,36 @@ import { FastifyInstance, FastifyPluginOptions } from 'fastify';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { config } from '../../config/index.js';
 import { jobQueue } from '../../jobs/queue.js';
-import type { GitHubWebhookEvent, IssueProcessorJobData } from '../../types/index.js';
+import type { GitHubIssue, GitHubWebhookEvent, IssueProcessorJobData } from '../../types/index.js';
+
+interface RawGitHubWebhookIssue {
+  id: number;
+  number: number;
+  title: string;
+  body: string | null;
+  state: 'open' | 'closed';
+  labels: string[];
+  assignee: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Map raw GitHub webhook issue payload (snake_case) to GitHubIssue type (camelCase)
+ */
+function mapWebhookIssue(rawIssue: RawGitHubWebhookIssue): GitHubIssue {
+  return {
+    id: rawIssue.id,
+    number: rawIssue.number,
+    title: rawIssue.title,
+    body: rawIssue.body,
+    state: rawIssue.state,
+    labels: rawIssue.labels,
+    assignee: rawIssue.assignee,
+    createdAt: rawIssue.created_at,
+    updatedAt: rawIssue.updated_at,
+  };
+}
 
 interface GitHubWebhooksRouteOptions extends FastifyPluginOptions {
   skipSignatureValidation?: boolean;
@@ -63,28 +92,31 @@ export async function githubWebhooksRoute(
     }
 
     // Validate issue has required fields
-    const issue = event.issue;
+    const rawIssue = event.issue as unknown as RawGitHubWebhookIssue;
     if (
-      typeof issue.id !== 'number' ||
-      typeof issue.number !== 'number' ||
-      typeof issue.title !== 'string' ||
-      !issue.createdAt ||
-      !issue.updatedAt
+      typeof rawIssue.id !== 'number' ||
+      typeof rawIssue.number !== 'number' ||
+      typeof rawIssue.title !== 'string' ||
+      !rawIssue.created_at ||
+      !rawIssue.updated_at
     ) {
       return reply.status(400).send({ error: 'Invalid issue payload' });
     }
 
+    // Map to camelCase GitHubIssue type
+    const issue = mapWebhookIssue(rawIssue);
+
     // Handle issues.opened event
     if (event.action === 'opened' && event.issue) {
       const processorJob: IssueProcessorJobData = {
-        taskId: `issue-processor-${event.issue.id}-${Date.now()}`,
+        taskId: `issue-processor-${issue.id}-${Date.now()}`,
         type: 'issue-processor',
-        issue: event.issue,
+        issue,
       };
 
       // Add job to queue for async processing
       await jobQueue.add('issue-processor', processorJob);
-      server.log.info(`Queued issue #${event.issue.number} for processing`);
+      server.log.info(`Queued issue #${issue.number} for processing`);
     }
 
     // Return 200 quickly to acknowledge receipt

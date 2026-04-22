@@ -1,4 +1,3 @@
-import type { Job } from 'bullmq';
 import type { IssueProcessorJobData, IssueWatcherJobData } from '../types/index.js';
 import { jobQueue } from './queue.js';
 import { config } from '../config/index.js';
@@ -19,26 +18,36 @@ const redisClient = new Redis({
 export async function startIssueWatcher(): Promise<void> {
   const jobName = 'issue-watcher';
 
+  let connectionEstablishedByThisCall = false;
   if (redisClient.status !== 'ready') {
     await redisClient.connect();
+    connectionEstablishedByThisCall = true;
   }
 
-  // Add a repeatable job with no initial lastPollTimestamp
-  // The handler will fetch all open issues on first run
-  await jobQueue.add(
-    jobName,
-    {
-      taskId: `issue-watcher-${Date.now()}`,
-      type: 'issue-watcher',
-      lastPollTimestamp: undefined,
-    },
-    {
-      repeat: {
-        every: config.github.pollIntervalMs,
+  try {
+    // Add a repeatable job with no initial lastPollTimestamp
+    // The handler will fetch all open issues on first run
+    await jobQueue.add(
+      jobName,
+      {
+        taskId: `issue-watcher-${Date.now()}`,
+        type: 'issue-watcher',
+        lastPollTimestamp: undefined,
       },
-      jobId: 'issue-watcher-repeatable',
+      {
+        repeat: {
+          every: config.github.pollIntervalMs,
+        },
+        jobId: 'issue-watcher-repeatable',
+      }
+    );
+  } catch (err) {
+    // If we established the connection and the operation failed, close the connection
+    if (connectionEstablishedByThisCall) {
+      await redisClient.quit();
     }
-  );
+    throw err;
+  }
 }
 
 /**

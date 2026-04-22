@@ -59,8 +59,8 @@ describe('github webhooks route', () => {
         state: 'open',
         labels: [],
         assignee: null,
-        createdAt: '2024-01-01T00:00:00Z',
-        updatedAt: '2024-01-01T00:00:00Z',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
       },
       repository: {
         id: 1,
@@ -152,8 +152,8 @@ describe('github webhooks route', () => {
         state: 'open',
         labels: [],
         assignee: null,
-        createdAt: '2024-01-01',
-        updatedAt: '2024-01-01',
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
       },
     };
     const response = await server.inject({

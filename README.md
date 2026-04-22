@@ -1,6 +1,6 @@
 # Blast Furnace
 
-Agent Orchestrator server that receives GitHub Issues via polling or webhooks (configurable) and processes tasks through a pipeline using background jobs.
+Agent Orchestrator server that receives GitHub Issues via polling or webhooks (configurable) and processes tasks through background jobs using BullMQ.
 
 ## Overview
 
@@ -67,12 +67,20 @@ All configuration is loaded from environment variables.
 
 Fastify v5 is used as the HTTP framework due to its performance and TypeScript compatibility.
 
-### Job Queue
+### Issue Reception
+
+Issues are received via one of two strategies:
+- **Polling**: A repeatable job periodically fetches open issues from GitHub
+- **Webhook**: GitHub sends webhook events to the server's `/webhooks/github` endpoint
+
+### Background Job Processing
 
 BullMQ v5 with Redis provides the background job infrastructure:
 - **Retry Policy**: 3 attempts with exponential backoff (1s initial delay)
 - **Concurrency**: 5 jobs processed simultaneously
 - **Cleanup**: Completed jobs removed after 100 jobs or 24 hours; failed jobs removed after 500 jobs or 7 days
+
+The job flow is linear: Issue Reception -> Job Queue -> Issue Processor (logs issue, creates branch, opens PR).
 
 ## Features
 
