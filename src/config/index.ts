@@ -23,6 +23,14 @@ function parseIssueStrategy(value: string | undefined): 'polling' | 'webhook' {
   return 'polling';
 }
 
+function parseTimeout(value: string | undefined, defaultVal: number): number {
+  const parsed = parseInt(value ?? String(defaultVal), 10);
+  if (Number.isNaN(parsed) || parsed < 1) {
+    return defaultVal;
+  }
+  return parsed;
+}
+
 function loadConfig(): AppConfig {
   return {
     env: process.env['NODE_ENV'] ?? 'development',
@@ -39,6 +47,10 @@ function loadConfig(): AppConfig {
       issueStrategy: parseIssueStrategy(process.env['GITHUB_ISSUE_STRATEGY']),
       pollIntervalMs: parsePollInterval(process.env['GITHUB_POLL_INTERVAL_MS'], 60000),
       webhookSecret: process.env['GITHUB_WEBHOOK_SECRET'] ?? undefined,
+    },
+    codex: {
+      cliPath: process.env['CODEX_CLI_PATH'] ?? 'npx @openai/codex',
+      timeoutMs: parseTimeout(process.env['CODEX_TIMEOUT_MS'], 300000),
     },
   };
 }

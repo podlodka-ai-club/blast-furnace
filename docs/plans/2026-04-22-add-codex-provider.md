@@ -74,10 +74,10 @@ Add a new BullMQ job type `codex-provider` that runs OpenAI's codex-cli on a Git
 **Files:**
 - Modify: `src/config/index.ts`
 
-- [ ] Add `CODEX_CLI_PATH` env var (optional, defaults to `npx @openai/codex`)
-- [ ] Add `CODEX_TIMEOUT_MS` env var (optional, default: 300000 = 5 minutes)
-- [ ] Write tests for new config in `src/config/index.test.ts`
-- [ ] Run project test suite - must pass before Task 6
+- [x] Add `CODEX_CLI_PATH` env var (optional, defaults to `npx @openai/codex`)
+- [x] Add `CODEX_TIMEOUT_MS` env var (optional, default: 300000 = 5 minutes)
+- [x] Write tests for new config in `src/config/index.test.ts`
+- [x] Run project test suite - must pass before Task 6
 
 ### Task 6: Verify acceptance criteria
 

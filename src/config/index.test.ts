@@ -25,6 +25,8 @@ describe('config', () => {
     delete process.env['GITHUB_ISSUE_STRATEGY'];
     delete process.env['GITHUB_POLL_INTERVAL_MS'];
     delete process.env['GITHUB_WEBHOOK_SECRET'];
+    delete process.env['CODEX_CLI_PATH'];
+    delete process.env['CODEX_TIMEOUT_MS'];
 
     // Import fresh module
     vi.resetModules();
@@ -40,6 +42,8 @@ describe('config', () => {
     expect(config.github.issueStrategy).toBe('polling');
     expect(config.github.pollIntervalMs).toBe(60000);
     expect(config.github.webhookSecret).toBeUndefined();
+    expect(config.codex.cliPath).toBe('npx @openai/codex');
+    expect(config.codex.timeoutMs).toBe(300000);
   });
 
   it('should load config from environment variables', async () => {
@@ -53,6 +57,8 @@ describe('config', () => {
     process.env['GITHUB_ISSUE_STRATEGY'] = 'webhook';
     process.env['GITHUB_POLL_INTERVAL_MS'] = '30000';
     process.env['GITHUB_WEBHOOK_SECRET'] = 'test-secret';
+    process.env['CODEX_CLI_PATH'] = '/usr/local/bin/codex';
+    process.env['CODEX_TIMEOUT_MS'] = '600000';
 
     // Import fresh module
     vi.resetModules();
@@ -68,6 +74,8 @@ describe('config', () => {
     expect(config.github.issueStrategy).toBe('webhook');
     expect(config.github.pollIntervalMs).toBe(30000);
     expect(config.github.webhookSecret).toBe('test-secret');
+    expect(config.codex.cliPath).toBe('/usr/local/bin/codex');
+    expect(config.codex.timeoutMs).toBe(600000);
   });
 
   it('should default to polling strategy for invalid issue strategy value', async () => {
@@ -95,5 +103,23 @@ describe('config', () => {
     const { config } = await import('./index.js');
 
     expect(config.github.pollIntervalMs).toBe(60000);
+  });
+
+  it('should use default timeout for invalid timeout value', async () => {
+    process.env['CODEX_TIMEOUT_MS'] = 'invalid';
+
+    vi.resetModules();
+    const { config } = await import('./index.js');
+
+    expect(config.codex.timeoutMs).toBe(300000);
+  });
+
+  it('should use default timeout for values less than 1ms', async () => {
+    process.env['CODEX_TIMEOUT_MS'] = '0';
+
+    vi.resetModules();
+    const { config } = await import('./index.js');
+
+    expect(config.codex.timeoutMs).toBe(300000);
   });
 });

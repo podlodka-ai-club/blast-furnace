@@ -80,11 +80,17 @@ export interface GitHubConfig {
   webhookSecret?: string;
 }
 
+export interface CodexConfig {
+  cliPath: string;
+  timeoutMs: number;
+}
+
 export interface AppConfig {
   env: string;
   port: number;
   redis: RedisConfig;
   github: GitHubConfig;
+  codex: CodexConfig;
 }
 
 // Server types
