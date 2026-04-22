@@ -66,6 +66,17 @@ export interface GitHubComment {
   createdAt: string;
 }
 
+export interface GitHubRepo {
+  owner: string;
+  repo: string;
+  addedAt: string;
+}
+
+export interface RepoListResponse {
+  repos: GitHubRepo[];
+  total: number;
+}
+
 // Config types
 export interface RedisConfig {
   host: string;

@@ -5,6 +5,7 @@ import { fetchIssues } from '../github/issues.js';
 import Redis from 'ioredis';
 
 const LAST_POLL_KEY = 'github:issue-watcher:last-poll';
+export const REPO_LIST_KEY = 'github:repos';
 const redisClient = new Redis({
   host: config.redis.host,
   port: config.redis.port,

@@ -9,6 +9,8 @@ import type {
   AgentResult,
   GitHubIssue,
   GitHubComment,
+  GitHubRepo,
+  RepoListResponse,
   AppConfig,
   RedisConfig,
   GitHubConfig,
@@ -165,6 +167,60 @@ describe('types', () => {
         createdAt: '2024-01-01T00:00:00.000Z',
       };
       expect(comment.body).toBe('Comment body');
+    });
+  });
+
+  describe('GitHubRepo', () => {
+    it('should accept valid GitHub repo', () => {
+      const repo: GitHubRepo = {
+        owner: 'owner',
+        repo: 'repo',
+        addedAt: '2024-01-01T00:00:00.000Z',
+      };
+      expect(repo.owner).toBe('owner');
+      expect(repo.repo).toBe('repo');
+      expect(repo.addedAt).toBe('2024-01-01T00:00:00.000Z');
+    });
+
+    it('should store repo with all required fields', () => {
+      const repo: GitHubRepo = {
+        owner: 'my-org',
+        repo: 'my-repo',
+        addedAt: '2024-06-15T10:30:00.000Z',
+      };
+      expect(repo.owner).toBe('my-org');
+      expect(repo.repo).toBe('my-repo');
+    });
+  });
+
+  describe('RepoListResponse', () => {
+    it('should accept valid repo list response', () => {
+      const response: RepoListResponse = {
+        repos: [
+          {
+            owner: 'owner1',
+            repo: 'repo1',
+            addedAt: '2024-01-01T00:00:00.000Z',
+          },
+          {
+            owner: 'owner2',
+            repo: 'repo2',
+            addedAt: '2024-01-02T00:00:00.000Z',
+          },
+        ],
+        total: 2,
+      };
+      expect(response.repos).toHaveLength(2);
+      expect(response.total).toBe(2);
+    });
+
+    it('should allow empty repos list', () => {
+      const response: RepoListResponse = {
+        repos: [],
+        total: 0,
+      };
+      expect(response.repos).toHaveLength(0);
+      expect(response.total).toBe(0);
     });
   });
 
