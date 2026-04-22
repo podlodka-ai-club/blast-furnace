@@ -2,6 +2,8 @@
  * GitHub-specific types not covered by existing GitHubIssue/GitHubComment
  * These types represent raw API response structures
  */
+/* istanbul ignore file */
+// This file contains only TypeScript type definitions with no runtime code
 
 // Branch/Reference types
 export interface GitRef {

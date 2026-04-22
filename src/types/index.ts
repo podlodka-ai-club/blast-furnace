@@ -1,4 +1,6 @@
 // Shared TypeScript interfaces for Agent Orchestrator
+/* istanbul ignore file */
+// This file contains only TypeScript type definitions with no runtime code
 
 // Task types
 export interface TaskData {

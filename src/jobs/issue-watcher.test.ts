@@ -10,6 +10,8 @@ const { mockFetchIssues, mockJobQueueAdd, mockRedisClient } = vi.hoisted(() => (
     connect: vi.fn().mockResolvedValue(undefined),
     get: vi.fn().mockResolvedValue(null),
     set: vi.fn().mockResolvedValue('OK'),
+    quit: vi.fn().mockResolvedValue('OK'),
+    status: 'ready',
   },
 }));
 
@@ -255,6 +257,111 @@ describe('issue watcher', () => {
 
       const mockJob = createMockJob('2024-01-01T00:00:00Z');
       await expect(issueWatcherHandler(mockJob)).rejects.toThrow('Network error');
+    });
+  });
+
+  describe('closeIssueWatcherRedis', () => {
+    it('should close Redis connection when status is ready', async () => {
+      const { closeIssueWatcherRedis } = await import('./issue-watcher.js');
+
+      mockRedisClient.status = 'ready';
+      mockRedisClient.quit.mockResolvedValue('OK');
+
+      await closeIssueWatcherRedis();
+
+      expect(mockRedisClient.quit).toHaveBeenCalled();
+    });
+
+    it('should close Redis connection when status is connecting', async () => {
+      const { closeIssueWatcherRedis } = await import('./issue-watcher.js');
+
+      mockRedisClient.status = 'connecting';
+      mockRedisClient.quit.mockResolvedValue('OK');
+
+      await closeIssueWatcherRedis();
+
+      expect(mockRedisClient.quit).toHaveBeenCalled();
+    });
+
+    it('should not close Redis connection when status is other', async () => {
+      const { closeIssueWatcherRedis } = await import('./issue-watcher.js');
+
+      mockRedisClient.status = 'closed';
+      mockRedisClient.quit.mockResolvedValue('OK');
+
+      await closeIssueWatcherRedis();
+
+      expect(mockRedisClient.quit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('startIssueWatcher error handling', () => {
+    it('should close Redis connection when jobQueue.add fails after connecting', async () => {
+      // We need to re-import to reset module state and test with different conditions
+      vi.resetModules();
+
+      const mockFetchIssues2 = vi.fn();
+      const mockJobQueueAdd2 = vi.fn();
+      const mockRedisClient2 = {
+        connect: vi.fn().mockResolvedValue(undefined),
+        get: vi.fn().mockResolvedValue(null),
+        set: vi.fn().mockResolvedValue('OK'),
+        quit: vi.fn().mockResolvedValue('OK'),
+        status: 'connecting', // Not 'ready', so we will connect
+      };
+
+      vi.doMock('../github/issues.js', () => ({
+        fetchIssues: mockFetchIssues2,
+      }));
+
+      vi.doMock('./queue.js', () => ({
+        jobQueue: {
+          add: mockJobQueueAdd2,
+        },
+      }));
+
+      vi.doMock('ioredis', () => ({
+        default: vi.fn().mockImplementation(() => mockRedisClient2),
+      }));
+
+      vi.doMock('../config/index.js', () => ({
+        config: {
+          redis: {
+            host: 'localhost',
+            port: 6379,
+          },
+          github: {
+            token: 'test-token',
+            owner: 'test-owner',
+            repo: 'test-repo',
+            issueStrategy: 'polling',
+            pollIntervalMs: 60000,
+          },
+        },
+      }));
+
+      // Mock createLogger to avoid issues
+      vi.doMock('./logger.js', () => ({
+        createJobLogger: vi.fn().mockReturnValue({
+          info: vi.fn(),
+          error: vi.fn(),
+          warn: vi.fn(),
+          debug: vi.fn(),
+        }),
+      }));
+
+      const { startIssueWatcher } = await import('./issue-watcher.js');
+
+      // Make jobQueue.add fail
+      mockJobQueueAdd2.mockRejectedValue(new Error('Queue error'));
+
+      // Make sure redis client is not ready so we connect
+      mockRedisClient2.status = 'connecting';
+
+      await expect(startIssueWatcher()).rejects.toThrow('Queue error');
+
+      // Verify we tried to quit the connection since we established it
+      expect(mockRedisClient2.quit).toHaveBeenCalled();
     });
   });
 });
