@@ -114,36 +114,9 @@ describe('index', () => {
   });
 });
 
-describe('strategy selection with polling', () => {
-  it('should call startIssueWatcher when issueStrategy is polling', async () => {
-    // Set polling strategy
-    mockConfig.github.issueStrategy = 'polling';
-
-    vi.resetModules();
-    vi.clearAllMocks();
-
-    // Import the module fresh
-    const { startIssueWatcher: mockStartWatcher } = await import('./jobs/issue-watcher.js');
-
-    // Verify the function is called when strategy is polling
-    // The actual behavior is tested via integration - this just verifies the mock exists
-    expect(typeof mockStartWatcher).toBe('function');
-  });
-});
-
-describe('strategy selection with webhook', () => {
-  it('should not call startIssueWatcher when issueStrategy is webhook', async () => {
-    // Set webhook strategy
-    mockConfig.github.issueStrategy = 'webhook';
-
-    vi.resetModules();
-    vi.clearAllMocks();
-
-    // Import the module fresh
-    const { startIssueWatcher: mockStartWatcher } = await import('./jobs/issue-watcher.js');
-
-    // When webhook strategy is set, startIssueWatcher is not invoked by main()
-    // The webhook route is registered via buildServer instead
-    expect(typeof mockStartWatcher).toBe('function');
+describe('strategy selection', () => {
+  it('should export startIssueWatcher function', async () => {
+    const { startIssueWatcher } = await import('./jobs/issue-watcher.js');
+    expect(typeof startIssueWatcher).toBe('function');
   });
 });

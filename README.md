@@ -72,15 +72,7 @@ Fastify v5 is used as the HTTP framework due to its performance and TypeScript c
 BullMQ v5 with Redis provides the background job infrastructure:
 - **Retry Policy**: 3 attempts with exponential backoff (1s initial delay)
 - **Concurrency**: 5 jobs processed simultaneously
-- **Cleanup**: Completed jobs removed after 100 jobs or 24 hours; failed jobs kept for 7 days
-
-### Pipeline Stages
-
-The issue processing pipeline follows these stages:
-1. **fetch** - Retrieve issue details from GitHub
-2. **analyze** - Parse issue content and determine processing path
-3. **execute** - Create branch and pull request
-4. **report** - Log results
+- **Cleanup**: Completed jobs removed after 100 jobs or 24 hours; failed jobs removed after 500 jobs or 7 days
 
 ## Features
 
