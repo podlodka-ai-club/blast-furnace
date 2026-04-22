@@ -32,6 +32,8 @@ src/
     routes/
       health.ts      - GET /health endpoint
       github-webhooks.ts - POST /webhooks/github for GitHub issue events
+      repos.ts       - Repository management (Redis-backed CRUD for GitHub repos)
+      repos-ui.ts    - Web UI for repository management (GET /repos/manage)
   jobs/
     index.ts         - Job infrastructure exports
     index.test.ts    - Job tests
@@ -56,11 +58,12 @@ Defined in `src/types/index.ts`:
 - `TaskData`, `TaskResult`, `TaskStatus`
 - `PipelineStage`, `StageResult`
 - `AgentConfig`, `AgentResult`
-- `GitHubIssue`, `GitHubComment`
+- `GitHubIssue`, `GitHubComment`, `GitHubRepo`
 - `AppConfig`, `RedisConfig`, `GitHubConfig`
 - `JobPayload`
-- `IssueProcessorJobData`, `IssueWatcherJobData`, `CodexProviderJobData` (job data types)
+- `IssueProcessorJobData`, `IssueWatcherJobData`, `RepoWatcherJobData`, `CodexProviderJobData` (job data types)
 - `GitHubWebhookEvent`, `GitHubIssueEventPayload` (webhook types)
+- `RepoListResponse` (API response type)
 
 ## Configuration
 
