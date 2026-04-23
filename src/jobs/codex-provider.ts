@@ -24,7 +24,7 @@ async function fetchBranchWithRetry(
     } catch (err) {
       if (attempt === maxRetries) throw err;
       const delay = Math.pow(2, attempt) * 1000;
-      logger.warn(`Fetch attempt ${attempt} failed for ${branchName}, retrying in ${delay}ms...`);
+      logger.warn(`Fetch attempt ${attempt} failed for ${branchName}: ${err}, retrying in ${delay}ms...`);
       await new Promise((r) => setTimeout(r, delay));
     }
   }
@@ -78,9 +78,10 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
   logger.info(`Running codex provider for issue #${issue.number} on branch ${branchName}`);
 
   // Create a unique temporary working directory for this job
-  const repoCwd = await createTempWorkingDir('codex');
+  let repoCwd: string | null = null;
 
   try {
+    repoCwd = await createTempWorkingDir('codex');
     // Clone the repository into the temp directory
     // This automatically sets origin to the correct URL since we pass it to clone
     const remoteUrl = getRepoRemoteUrl();
@@ -190,9 +191,11 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
 
     logger.info(`Codex provider completed for issue #${issue.number}`);
   } finally {
-    // Always clean up the temporary working directory
-    logger.info(`Cleaning up temp working directory: ${repoCwd}`);
-    await cleanupWorkingDir(repoCwd);
+    // Always clean up the temporary working directory if it was created
+    if (repoCwd) {
+      logger.info(`Cleaning up temp working directory: ${repoCwd}`);
+      await cleanupWorkingDir(repoCwd);
+    }
   }
 }
 

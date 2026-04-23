@@ -38,6 +38,9 @@ vi.mock('child_process', async () => {
 import { createTempWorkingDir, cloneRepoInto, cleanupWorkingDir, getRepoRemoteUrl } from './working-dir.js';
 
 describe('working-dir utilities', () => {
+  // Track temp directories created during tests for cleanup
+  const tempDirs: string[] = [];
+
   beforeEach(() => {
     vi.clearAllMocks();
     // Reset mock to default success behavior for spawn
@@ -50,33 +53,34 @@ describe('working-dir utilities', () => {
     }));
   });
 
+  afterEach(async () => {
+    // Clean up any temp directories created during tests
+    await Promise.all(
+      tempDirs.map((dir) => rm(dir, { recursive: true, force: true }).catch(() => {}))
+    );
+    tempDirs.length = 0;
+  });
+
   describe('createTempWorkingDir', () => {
     it('should create a directory in /tmp with the expected prefix', async () => {
       const prefix = 'codex-test';
       const result = await createTempWorkingDir(prefix);
+      tempDirs.push(result); // Track for cleanup
 
       // Verify it starts with /tmp and the prefix
       expect(result).toMatch(new RegExp(`^/tmp/${prefix}-[a-f0-9-]{36}$`));
 
       // Verify the directory actually exists (real fs operation)
       await expect(access(result)).resolves.not.toThrow();
-
-      // Clean up
-      await rm(result, { recursive: true, force: true });
     });
 
     it('should create directories with unique names', async () => {
       const prefix = 'codex-unique';
       const result1 = await createTempWorkingDir(prefix);
       const result2 = await createTempWorkingDir(prefix);
+      tempDirs.push(result1, result2); // Track for cleanup
 
       expect(result1).not.toBe(result2);
-
-      // Clean up
-      await Promise.all([
-        rm(result1, { recursive: true, force: true }),
-        rm(result2, { recursive: true, force: true }),
-      ]);
     });
   });
 

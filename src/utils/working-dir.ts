@@ -16,8 +16,8 @@ function execCommand(file: string, args: string[], cwd: string): Promise<{ exitC
     child.on('close', (code) => {
       resolve({ exitCode: code ?? 1, stderr });
     });
-    child.on('error', () => {
-      resolve({ exitCode: 1, stderr: '' });
+    child.on('error', (err) => {
+      resolve({ exitCode: 1, stderr: err.message });
     });
   });
 }

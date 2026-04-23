@@ -118,6 +118,9 @@ function createCodexMockProcess(exitCode: number = 0): ReturnType<typeof spawn> 
 }
 
 describe('processCodex', () => {
+  // Track original CODEX_CLI_PATH to restore after tests that modify it
+  const originalCodexPath = process.env['CODEX_CLI_PATH'];
+
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
@@ -132,6 +135,15 @@ describe('processCodex', () => {
     mockCreateTempWorkingDir.mockResolvedValue(TEMP_DIR);
     mockCloneRepoInto.mockResolvedValue(undefined);
     mockCleanupWorkingDir.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    // Restore CODEX_CLI_PATH after tests that modify it
+    if (originalCodexPath !== undefined) {
+      process.env['CODEX_CLI_PATH'] = originalCodexPath;
+    } else {
+      delete process.env['CODEX_CLI_PATH'];
+    }
   });
 
   it('should export codexProviderHandler', async () => {
@@ -265,7 +277,6 @@ describe('processCodex', () => {
   });
 
   it('should use CODEX_CLI_PATH from environment when set', async () => {
-    const originalPath = process.env['CODEX_CLI_PATH'];
     process.env['CODEX_CLI_PATH'] = '/custom/path/to/codex';
 
     const mockSpawn = vi.mocked(spawn);
@@ -292,12 +303,6 @@ describe('processCodex', () => {
       expect.any(Array),
       expect.objectContaining({ cwd: TEMP_DIR })
     );
-
-    if (originalPath !== undefined) {
-      process.env['CODEX_CLI_PATH'] = originalPath;
-    } else {
-      delete process.env['CODEX_CLI_PATH'];
-    }
   });
 
   it('should handle issue with null body', async () => {
