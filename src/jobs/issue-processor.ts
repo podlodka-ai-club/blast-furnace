@@ -1,7 +1,7 @@
 import type { Job } from 'bullmq';
 import type { CodexProviderJobData, IssueProcessorJobData } from '../types/index.js';
 import { createJobLogger } from './logger.js';
-import { getRef, pushBranch } from '../github/branches.js';
+import { getRef, pushBranch, deleteBranch } from '../github/branches.js';
 import { jobQueue } from './queue.js';
 
 /**
@@ -63,29 +63,30 @@ export async function processIssue(job: Job<IssueProcessorJobData>): Promise<voi
     throw err;
   }
 
-  // Verify branch was created successfully
+  // Verify branch was created and enqueue codex job
+  // If either fails, attempt to clean up the orphaned branch
   try {
     const verifySha = await getRef(branchName);
     logger.info(`Branch ${branchName} created successfully (SHA: ${verifySha})`);
-  } catch (err) {
-    logger.error(`Branch ${branchName} was not found after creation: ${err}`);
-    throw new Error(`Branch ${branchName} verification failed`);
-  }
 
-  // Enqueue codex provider job to process the issue
-  logger.info(`Enqueueing codex provider job for issue #${issue.number}`);
-  const codexJobData: CodexProviderJobData = {
-    taskId: job.data.taskId,
-    type: 'codex-provider',
-    issue,
-    branchName,
-  };
+    logger.info(`Enqueueing codex provider job for issue #${issue.number}`);
+    const codexJobData: CodexProviderJobData = {
+      taskId: job.data.taskId,
+      type: 'codex-provider',
+      issue,
+      branchName,
+    };
 
-  try {
     await jobQueue.add('codex-provider', codexJobData);
     logger.info(`Codex provider job enqueued for branch: ${branchName}`);
   } catch (err) {
-    logger.error(`Failed to enqueue codex provider job for issue #${issue.number}: ${err}`);
+    // Attempt to clean up the orphaned branch before re-throwing
+    try {
+      await deleteBranch(branchName);
+      logger.info(`Cleaned up orphaned branch ${branchName}`);
+    } catch (cleanupErr) {
+      logger.error(`Failed to clean up orphaned branch ${branchName}: ${cleanupErr}`);
+    }
     throw err;
   }
 }

@@ -56,8 +56,13 @@ export async function startIssueWatcher(): Promise<void> {
 export async function issueWatcherHandler(_job: Job<IssueWatcherJobData>): Promise<void> {
   // Get lastPollTimestamp from Redis (not from job data, which is static for repeatable jobs)
   const storedTimestamp = await redisClient.get(LAST_POLL_KEY);
-  const lastPollTimestamp = storedTimestamp ? new Date(storedTimestamp) : undefined;
-  const sinceTimestamp = lastPollTimestamp?.toISOString();
+  let sinceTimestamp: string | undefined;
+  if (storedTimestamp) {
+    const date = new Date(storedTimestamp);
+    if (!Number.isNaN(date.getTime())) {
+      sinceTimestamp = date.toISOString();
+    }
+  }
 
   // Get list of registered repos from Redis
   const repoMembers = await redisClient.smembers(REPO_LIST_KEY);

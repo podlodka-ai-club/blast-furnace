@@ -32,6 +32,14 @@ async function fetchBranchWithRetry(
 }
 
 /**
+ * Sanitize a string for use in git messages and PR titles
+ * Removes newlines and limits length
+ */
+function sanitizeForGit(text: string, maxLength = 200): string {
+  return text.replace(/[\r\n]/g, ' ').slice(0, maxLength);
+}
+
+/**
  * Execute a git command in the repository
  */
 function execGitCommand(args: string[], cwd: string): Promise<string> {
@@ -176,8 +184,9 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
       if (status) {
         logger.info('Changes detected, committing...');
         await execGitCommand(['add', '-A'], repoCwd);
+        const sanitizedTitle = sanitizeForGit(issue.title);
         const commitResult = await execGitCommand(
-          ['commit', '-m', `Processed issue #${issue.number} via codex: ${issue.title}`],
+          ['commit', '-m', `Processed issue #${issue.number} via codex: ${sanitizedTitle}`],
           repoCwd
         );
         logger.info(`Changes committed: ${commitResult}`);
@@ -191,7 +200,7 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
         // Step 7: Create pull request
         logger.info('Creating pull request...');
         const prResult = await createPullRequest({
-          title: `Process issue #${issue.number}: ${issue.title}`,
+          title: `Process issue #${issue.number}: ${sanitizedTitle}`,
           head: branchName,
           base: 'main',
           body: `Closes #${issue.number}`,

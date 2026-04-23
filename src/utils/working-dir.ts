@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { mkdir, rm } from 'fs/promises';
+import { mkdir, rm, lstat } from 'fs/promises';
 import { spawn } from 'child_process';
 import path from 'path';
 import { config } from '../config/index.js';
@@ -63,6 +63,10 @@ export async function cleanupWorkingDir(workingDir: string): Promise<void> {
   const resolved = path.resolve(workingDir);
   if (!resolved.startsWith('/tmp/')) {
     throw new Error(`Refusing to delete non-temp directory: ${workingDir}`);
+  }
+  const stats = await lstat(workingDir);
+  if (stats.isSymbolicLink()) {
+    throw new Error('Refusing to delete symbolic link');
   }
   await rm(workingDir, { recursive: true, force: true });
 }
