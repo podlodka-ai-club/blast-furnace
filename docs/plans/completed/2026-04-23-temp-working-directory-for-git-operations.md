@@ -62,5 +62,5 @@ Modify the codex-provider job to perform all git operations inside a unique temp
 
 ### Task 4: Update documentation
 
-- [ ] Update CLAUDE.md if internal patterns changed (e.g., GIT_WORKING_DIR is no longer used)
-- [ ] Move this plan to `docs/plans/completed/`
+- [x] Update CLAUDE.md if internal patterns changed (e.g., GIT_WORKING_DIR is no longer used)
+- [x] Move this plan to `docs/plans/completed/`
