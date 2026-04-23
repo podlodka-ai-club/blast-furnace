@@ -35,14 +35,14 @@ Complete the issue processing pipeline by adding push and PR creation steps to t
 **Files:**
 - Modify: `src/jobs/codex-provider.ts`
 
-- [ ] Import and call `createPullRequest` from `src/github/pullRequests.js`
-- [ ] PR title: "Process issue #${issue.number}: ${issue.title}"
-- [ ] PR head: the branch name
-- [ ] PR base: "main"
-- [ ] PR body: Include issue number and link, e.g. "Closes #${issue.number}"
-- [ ] Log PR creation success with the PR URL
-- [ ] Write/update tests for PR creation (mock the pullRequests module)
-- [ ] Run project test suite - must pass before Task 3
+- [x] Import and call `createPullRequest` from `src/github/pullRequests.js`
+- [x] PR title: "Process issue #${issue.number}: ${issue.title}"
+- [x] PR head: the branch name
+- [x] PR base: "main"
+- [x] PR body: Include issue number and link, e.g. "Closes #${issue.number}"
+- [x] Log PR creation success with the PR URL
+- [x] Write/update tests for PR creation (mock the pullRequests module)
+- [x] Run project test suite - must pass before Task 3
 
 ### Task 3: Reorder cleanup to happen after push and PR
 

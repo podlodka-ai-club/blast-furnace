@@ -3,6 +3,7 @@ import type { Job } from 'bullmq';
 import type { CodexProviderJobData } from '../types/index.js';
 import { createJobLogger } from './logger.js';
 import { createTempWorkingDir, cloneRepoInto, cleanupWorkingDir, getRepoRemoteUrl } from '../utils/working-dir.js';
+import { createPullRequest } from '../github/pullRequests.js';
 
 const DEFAULT_CODEX_CLI_PATH = 'npx @openai/codex';
 const DEFAULT_TIMEOUT_MS = 300000; // 5 minutes
@@ -179,6 +180,16 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
         const pushRemoteUrl = getRepoRemoteUrl();
         await execGitCommand(['push', pushRemoteUrl, branchName], repoCwd);
         logger.info(`Changes pushed to ${branchName}`);
+
+        // Step 7: Create pull request
+        logger.info('Creating pull request...');
+        const prResult = await createPullRequest({
+          title: `Process issue #${issue.number}: ${issue.title}`,
+          head: branchName,
+          base: 'main',
+          body: `Closes #${issue.number}`,
+        });
+        logger.info(`Pull request created: ${prResult.htmlUrl}`);
       } else {
         logger.info('No changes detected, skipping commit and push');
       }

@@ -14,6 +14,11 @@ const { mockCreateTempWorkingDir, mockCloneRepoInto, mockCleanupWorkingDir } = v
   mockCleanupWorkingDir: vi.fn(),
 }));
 
+// Mock pullRequests module
+const { mockCreatePullRequest } = vi.hoisted(() => ({
+  mockCreatePullRequest: vi.fn(),
+}));
+
 // Mock the config module
 vi.mock('../config/index.js', () => ({
   config: {
@@ -47,6 +52,11 @@ vi.mock('../utils/working-dir.js', () => ({
   cloneRepoInto: mockCloneRepoInto,
   cleanupWorkingDir: mockCleanupWorkingDir,
   getRepoRemoteUrl: () => 'https://test-token@github.com/test-owner/test-repo.git',
+}));
+
+// Mock pullRequests module
+vi.mock('../github/pullRequests.js', () => ({
+  createPullRequest: mockCreatePullRequest,
 }));
 
 import { spawn } from 'child_process';
@@ -135,6 +145,11 @@ describe('processCodex', () => {
     mockCreateTempWorkingDir.mockResolvedValue(TEMP_DIR);
     mockCloneRepoInto.mockResolvedValue(undefined);
     mockCleanupWorkingDir.mockResolvedValue(undefined);
+    // Setup default createPullRequest mock
+    mockCreatePullRequest.mockResolvedValue({
+      number: 42,
+      htmlUrl: 'https://github.com/test-owner/test-repo/pull/42',
+    });
   });
 
   afterEach(() => {
@@ -401,6 +416,13 @@ describe('processCodex', () => {
       ['push', 'https://test-token@github.com/test-owner/test-repo.git', 'issue-1-test-issue'],
       expect.any(Object)
     );
+    // Verify PR was created after push
+    expect(mockCreatePullRequest).toHaveBeenCalledWith({
+      title: 'Process issue #1: Test Issue',
+      head: 'issue-1-test-issue',
+      base: 'main',
+      body: 'Closes #1',
+    });
   });
 
   it('should skip commit and push when no changes are detected', async () => {
@@ -451,6 +473,8 @@ describe('processCodex', () => {
     // Verify git push was NOT called (no changes)
     const pushCalls = mockSpawn.mock.calls.filter(([cmd, args]) => cmd === 'git' && args[0] === 'push');
     expect(pushCalls).toHaveLength(0);
+    // Verify PR was NOT created (no changes)
+    expect(mockCreatePullRequest).not.toHaveBeenCalled();
   });
 
   it('should throw when git commit fails with real error', async () => {
