@@ -49,10 +49,10 @@ Complete the issue processing pipeline by adding push and PR creation steps to t
 **Files:**
 - Modify: `src/jobs/codex-provider.ts`
 
-- [ ] Move `cleanupWorkingDir` call from the commit section to after PR creation
-- [ ] Ensure cleanup happens in a `finally` block or after both push and PR succeed
-- [ ] Update tests to reflect the new flow order
-- [ ] Run project test suite - must pass before Task 4
+- [x] Move `cleanupWorkingDir` call from the commit section to after PR creation
+- [x] Ensure cleanup happens in a `finally` block or after both push and PR succeed
+- [x] Update tests to reflect the new flow order
+- [x] Run project test suite - must pass before Task 4
 
 ### Task 4: Verify acceptance criteria
 
