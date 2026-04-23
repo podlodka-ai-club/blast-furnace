@@ -62,4 +62,4 @@ Complete the issue processing pipeline by adding push and PR creation steps to t
 
 ### Task 5: Update documentation
 
-- [ ] Move this plan to `docs/plans/completed/`
+- [x] Move this plan to `docs/plans/completed/`
