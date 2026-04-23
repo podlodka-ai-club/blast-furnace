@@ -82,6 +82,15 @@ describe('working-dir utilities', () => {
 
       expect(result1).not.toBe(result2);
     });
+
+    it('should throw error when prefix contains path separators', async () => {
+      await expect(createTempWorkingDir('codex/test')).rejects.toThrow('Invalid prefix');
+      await expect(createTempWorkingDir('codex\\test')).rejects.toThrow('Invalid prefix');
+    });
+
+    it('should throw error when prefix contains path traversal', async () => {
+      await expect(createTempWorkingDir('codex/../etc')).rejects.toThrow('Invalid prefix');
+    });
   });
 
   describe('cleanupWorkingDir', () => {
@@ -101,6 +110,11 @@ describe('working-dir utilities', () => {
 
       // Verify it's gone - access should throw
       await expect(access(testDir)).rejects.toThrow();
+    });
+
+    it('should throw error when path is not under /tmp', async () => {
+      await expect(cleanupWorkingDir('/home/user/somefile')).rejects.toThrow('Refusing to delete non-temp directory');
+      await expect(cleanupWorkingDir('/usr/local/bin')).rejects.toThrow('Refusing to delete non-temp directory');
     });
   });
 

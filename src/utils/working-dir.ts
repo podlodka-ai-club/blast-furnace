@@ -28,6 +28,9 @@ function execCommand(file: string, args: string[], cwd: string): Promise<{ exitC
  * @returns The path to the created directory
  */
 export async function createTempWorkingDir(prefix: string): Promise<string> {
+  if (!prefix || prefix.includes('/') || prefix.includes('\\') || prefix.includes('..')) {
+    throw new Error('Invalid prefix: must not contain path separators or ".."');
+  }
   const uniqueId = randomUUID();
   const dirPath = `/tmp/${prefix}-${uniqueId}`;
 
@@ -56,6 +59,9 @@ export async function cloneRepoInto(workingDir: string, remoteUrl: string): Prom
  * @param workingDir - The directory to remove
  */
 export async function cleanupWorkingDir(workingDir: string): Promise<void> {
+  if (!workingDir.startsWith('/tmp/')) {
+    throw new Error(`Refusing to delete non-temp directory: ${workingDir}`);
+  }
   await rm(workingDir, { recursive: true, force: true });
 }
 
