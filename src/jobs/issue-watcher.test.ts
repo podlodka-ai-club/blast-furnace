@@ -451,7 +451,7 @@ describe('issue watcher', () => {
         get: vi.fn().mockResolvedValue(null),
         set: vi.fn().mockResolvedValue('OK'),
         quit: vi.fn().mockResolvedValue('OK'),
-        status: 'connecting', // Not 'ready', so we will connect
+        status: 'wait', // Not 'ready' and not 'connecting', so we will connect
       };
 
       vi.doMock('../github/issues.js', () => ({
@@ -499,8 +499,7 @@ describe('issue watcher', () => {
       // Make jobQueue.add fail
       mockJobQueueAdd2.mockRejectedValue(new Error('Queue error'));
 
-      // Make sure redis client is not ready so we connect
-      mockRedisClient2.status = 'connecting';
+      // Status is already 'wait' from line 454, which will trigger connect() in startIssueWatcher
 
       await expect(startIssueWatcher()).rejects.toThrow('Queue error');
 

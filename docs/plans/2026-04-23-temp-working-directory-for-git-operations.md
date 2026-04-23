@@ -56,9 +56,9 @@ Modify the codex-provider job to perform all git operations inside a unique temp
 
 ### Task 3: Verify acceptance criteria
 
-- [ ] Run full test suite (`npm test`)
-- [ ] Run linter (`npm run lint`)
-- [ ] Verify test coverage is maintained or improved
+- [x] Run full test suite (`npm test`)
+- [x] Run linter (`npm run lint`)
+- [x] Verify test coverage is maintained or improved
 
 ### Task 4: Update documentation
 
