@@ -395,9 +395,15 @@ describe('processCodex', () => {
       ['commit', '-m', expect.stringContaining('Processed issue')],
       expect.any(Object)
     );
+    // Verify git push was called after commit
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'git',
+      ['push', 'https://test-token@github.com/test-owner/test-repo.git', 'issue-1-test-issue'],
+      expect.any(Object)
+    );
   });
 
-  it('should skip commit when no changes are detected', async () => {
+  it('should skip commit and push when no changes are detected', async () => {
     const mockSpawn = vi.mocked(spawn);
 
     mockSpawn.mockImplementation((cmd: string, args: string[]) => {
@@ -442,6 +448,9 @@ describe('processCodex', () => {
     // Verify git add was NOT called (no changes to commit)
     const addCalls = mockSpawn.mock.calls.filter(([cmd, args]) => cmd === 'git' && args[0] === 'add');
     expect(addCalls).toHaveLength(0);
+    // Verify git push was NOT called (no changes)
+    const pushCalls = mockSpawn.mock.calls.filter(([cmd, args]) => cmd === 'git' && args[0] === 'push');
+    expect(pushCalls).toHaveLength(0);
   });
 
   it('should throw when git commit fails with real error', async () => {

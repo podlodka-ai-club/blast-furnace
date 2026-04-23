@@ -173,8 +173,14 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
           repoCwd
         );
         logger.info(`Changes committed: ${commitResult}`);
+
+        // Step 6: Push changes to remote
+        logger.info('Pushing changes to remote branch...');
+        const pushRemoteUrl = getRepoRemoteUrl();
+        await execGitCommand(['push', pushRemoteUrl, branchName], repoCwd);
+        logger.info(`Changes pushed to ${branchName}`);
       } else {
-        logger.info('No changes detected, skipping commit');
+        logger.info('No changes detected, skipping commit and push');
       }
     } catch (err) {
       // Distinguish "nothing to commit" from actual failures
