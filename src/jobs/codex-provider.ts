@@ -8,21 +8,6 @@ const DEFAULT_CODEX_CLI_PATH = 'npx @openai/codex';
 const DEFAULT_TIMEOUT_MS = 300000; // 5 minutes
 
 /**
- * Configuration for codex provider
- */
-interface CodexProviderConfig {
-  codexCliPath: string;
-  timeoutMs: number;
-}
-
-function getCodexConfig(): CodexProviderConfig {
-  return {
-    codexCliPath: process.env['CODEX_CLI_PATH'] ?? DEFAULT_CODEX_CLI_PATH,
-    timeoutMs: parseInt(process.env['CODEX_TIMEOUT_MS'] ?? String(DEFAULT_TIMEOUT_MS), 10),
-  };
-}
-
-/**
  * Fetch a branch with exponential backoff retry
  */
 async function fetchBranchWithRetry(
@@ -87,7 +72,8 @@ function execGitCommand(args: string[], cwd: string): Promise<string> {
 export async function processCodex(job: Job<CodexProviderJobData>): Promise<void> {
   const logger = createJobLogger(job);
   const { issue, branchName } = job.data;
-  const codexConfig = getCodexConfig();
+  const codexCliPath = process.env['CODEX_CLI_PATH'] ?? DEFAULT_CODEX_CLI_PATH;
+  const timeoutMs = parseInt(process.env['CODEX_TIMEOUT_MS'] ?? String(DEFAULT_TIMEOUT_MS), 10);
 
   logger.info(`Running codex provider for issue #${issue.number} on branch ${branchName}`);
 
@@ -127,7 +113,7 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
     // Step 3: Spawn codex-cli as a child process
     // Note: We avoid shell: true to prevent shell injection from user-controlled prompt
     logger.info(`Spawning codex-cli with issue prompt`);
-    const codexProcess = spawn(codexConfig.codexCliPath, [prompt], {
+    const codexProcess = spawn(codexCliPath, [prompt], {
       cwd: repoCwd,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -152,8 +138,8 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
     const exitCode = await new Promise<number>((resolve, reject) => {
       const timer = setTimeout(() => {
         codexProcess.kill('SIGTERM');
-        reject(new Error(`codex process timed out after ${codexConfig.timeoutMs}ms`));
-      }, codexConfig.timeoutMs);
+        reject(new Error(`codex process timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
 
       codexProcess.on('close', (code) => {
         clearTimeout(timer);

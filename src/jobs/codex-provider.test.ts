@@ -100,30 +100,6 @@ function createGitMockProcess(exitCode: number = 0): ReturnType<typeof spawn> {
   } as unknown as ReturnType<typeof spawn>;
 }
 
-function createGitMockProcessWithExitCode(exitCode: number): ReturnType<typeof spawn> {
-  const listeners: Record<string, ((...args: unknown[]) => void)[]> = {};
-  return {
-    stdout: {
-      on: vi.fn((event: string, cb: (data: Buffer) => void) => {
-        if (event === 'data') cb(Buffer.from(''));
-      }),
-    },
-    stderr: {
-      on: vi.fn((event: string, cb: (data: Buffer) => void) => {
-        if (event === 'data') cb(Buffer.from(''));
-      }),
-    },
-    on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
-      if (!listeners[event]) listeners[event] = [];
-      listeners[event].push(cb);
-      if (event === 'close') {
-        setTimeout(() => cb(exitCode), 0);
-      }
-    }),
-    kill: vi.fn(),
-  } as unknown as ReturnType<typeof spawn>;
-}
-
 function createCodexMockProcess(exitCode: number = 0): ReturnType<typeof spawn> {
   return {
     stdout: {
@@ -170,7 +146,7 @@ describe('processCodex', () => {
       if (cmd === 'git') {
         // rev-parse fails (exit code 1) to indicate branch doesn't exist locally
         if (args[0] === 'rev-parse') {
-          return createGitMockProcessWithExitCode(1);
+          return createGitMockProcess(1);
         }
         return createGitMockProcess();
       }
@@ -246,7 +222,7 @@ describe('processCodex', () => {
         // Make fetch fail - use exit code 1 which is handled as a regular error
         // The retry logic will kick in (1s + 2s + 4s = 7s total) before finally throwing
         if (args[0] === 'fetch') {
-          return createGitMockProcessWithExitCode(128);
+          return createGitMockProcess(128);
         }
         return createGitMockProcess();
       }
@@ -426,7 +402,7 @@ describe('processCodex', () => {
         }
         if (args[0] === 'rev-parse') {
           // Branch doesn't exist locally
-          return createGitMockProcessWithExitCode(1);
+          return createGitMockProcess(1);
         }
         if (args[0] === 'status') {
           // Return empty string to indicate no changes
@@ -475,7 +451,7 @@ describe('processCodex', () => {
         }
         if (args[0] === 'rev-parse') {
           // Branch doesn't exist locally
-          return createGitMockProcessWithExitCode(1);
+          return createGitMockProcess(1);
         }
         if (args[0] === 'status') {
           // Return non-empty to indicate changes exist
@@ -584,23 +560,11 @@ describe('processCodex', () => {
   it('should use existing local branch when it already exists', async () => {
     const mockSpawn = vi.mocked(spawn);
 
-    mockSpawn.mockImplementation((cmd: string) => {
-      if (cmd === 'git') {
-        // rev-parse succeeds (exit code 0) to indicate branch exists locally
-        if (args[0] === 'rev-parse') {
-          return createGitMockProcessWithExitCode(0);
-        }
-        return createGitMockProcess();
-      }
-      return createCodexMockProcess();
-    });
-
-    // Need to capture args for the mock
     mockSpawn.mockImplementation((cmd: string, args: string[]) => {
       if (cmd === 'git') {
         // rev-parse succeeds (exit code 0) to indicate branch exists locally
         if (args[0] === 'rev-parse') {
-          return createGitMockProcessWithExitCode(0);
+          return createGitMockProcess(0);
         }
         return createGitMockProcess();
       }

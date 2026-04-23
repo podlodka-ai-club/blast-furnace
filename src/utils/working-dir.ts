@@ -1,10 +1,26 @@
 import { randomUUID } from 'crypto';
 import { mkdir, rm } from 'fs/promises';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { spawn } from 'child_process';
 import { config } from '../config/index.js';
 
-const execAsync = promisify(exec);
+/**
+ * Execute a command and return its exit code
+ */
+function execCommand(file: string, args: string[], cwd: string): Promise<{ exitCode: number; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(file, args, { cwd });
+    let stderr = '';
+    child.stderr?.on('data', (data) => {
+      stderr += data.toString();
+    });
+    child.on('close', (code) => {
+      resolve({ exitCode: code ?? 1, stderr });
+    });
+    child.on('error', () => {
+      resolve({ exitCode: 1, stderr: '' });
+    });
+  });
+}
 
 /**
  * Creates a unique temporary working directory in /tmp
@@ -26,17 +42,12 @@ export async function createTempWorkingDir(prefix: string): Promise<string> {
  * @param remoteUrl - The HTTPS URL of the repository to clone
  */
 export async function cloneRepoInto(workingDir: string, remoteUrl: string): Promise<void> {
-  // git clone <url> <directory>
-  const { stderr } = await execAsync(`git clone "${remoteUrl}" "${workingDir}"`, {
-    cwd: workingDir,
-  });
+  // Clone directly into the working directory using '.' as the target
+  // This avoids creating a subdirectory with the repo name
+  const { exitCode, stderr } = await execCommand('git', ['clone', remoteUrl, '.'], workingDir);
 
-  if (stderr) {
-    // git clone outputs non-fatal warnings to stderr (e.g., certificate warnings)
-    // We only throw on actual errors
-    if (stderr.includes('fatal') || stderr.includes('error')) {
-      throw new Error(`git clone failed: ${stderr}`);
-    }
+  if (exitCode !== 0) {
+    throw new Error(`git clone failed: ${stderr}`);
   }
 }
 

@@ -26,6 +26,8 @@ src/
   utils/
     logger.ts        - Structured logging with pino
     logger.test.ts
+    working-dir.ts   - Temp working directory utilities for git operations
+    working-dir.test.ts
   server/
     index.ts         - Fastify server factory with graceful shutdown
     index.test.ts    - Server tests
