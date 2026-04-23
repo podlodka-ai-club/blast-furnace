@@ -17,23 +17,15 @@ export function setRedisClient(client) {
 }
 export async function addRepo(owner, repo) {
     const client = getRedisClient();
-    const members = await client.smembers(REPO_LIST_KEY);
-    for (const member of members) {
-        try {
-            const parsed = JSON.parse(member);
-            if (parsed.owner === owner && parsed.repo === repo) {
-                return { added: false };
-            }
-        }
-        catch {
-        }
-    }
     const newRepo = {
         owner,
         repo,
         addedAt: new Date().toISOString(),
     };
-    await client.sadd(REPO_LIST_KEY, JSON.stringify(newRepo));
+    const added = await client.sadd(REPO_LIST_KEY, JSON.stringify(newRepo));
+    if (added === 0) {
+        return { added: false };
+    }
     return { added: true, repo: newRepo };
 }
 export async function listRepos() {

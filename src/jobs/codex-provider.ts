@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import type { Job } from 'bullmq';
 import type { CodexProviderJobData } from '../types/index.js';
 import { createJobLogger } from './logger.js';
+import { config } from '../config/index.js';
 
 const DEFAULT_CODEX_CLI_PATH = 'npx @openai/codex';
 const DEFAULT_TIMEOUT_MS = 300000; // 5 minutes
@@ -19,6 +20,38 @@ function getCodexConfig(): CodexProviderConfig {
     codexCliPath: process.env['CODEX_CLI_PATH'] ?? DEFAULT_CODEX_CLI_PATH,
     timeoutMs: parseInt(process.env['CODEX_TIMEOUT_MS'] ?? String(DEFAULT_TIMEOUT_MS), 10),
   };
+}
+
+/**
+ * Get the GitHub repository URL for fetching/pushing
+ */
+function getGithubRemoteUrl(): string {
+  const { owner, repo, token } = config.github;
+  // Use HTTPS with token for authentication
+  return `https://${token}@github.com/${owner}/${repo}.git`;
+}
+
+/**
+ * Fetch a branch with exponential backoff retry
+ */
+async function fetchBranchWithRetry(
+  branchName: string,
+  cwd: string,
+  logger: ReturnType<typeof createJobLogger>,
+  maxRetries = 3
+): Promise<void> {
+  const remoteUrl = getGithubRemoteUrl();
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await execGitCommand(['fetch', remoteUrl, `heads/${branchName}`], cwd);
+      return; // Success
+    } catch (err) {
+      if (attempt === maxRetries) throw err;
+      const delay = Math.pow(2, attempt) * 1000;
+      logger.warn(`Fetch attempt ${attempt} failed for ${branchName}, retrying in ${delay}ms...`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
 }
 
 /**
@@ -60,7 +93,7 @@ function execGitCommand(args: string[], cwd: string): Promise<string> {
 export async function processCodex(job: Job<CodexProviderJobData>): Promise<void> {
   const logger = createJobLogger(job);
   const { issue, branchName } = job.data;
-  const config = getCodexConfig();
+  const codexConfig = getCodexConfig();
 
   logger.info(`Running codex provider for issue #${issue.number} on branch ${branchName}`);
 
@@ -70,8 +103,19 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
   // Step 1: Fetch the branch and checkout as a local tracking branch
   try {
     logger.info(`Checking out branch: ${branchName}`);
+    const remoteUrl = getGithubRemoteUrl();
+
+    // Ensure origin points to the correct GitHub repo
+    const currentRemoteUrl = await execGitCommand(['remote', 'get-url', 'origin'], repoCwd)
+      .catch(() => '');
+    if (!currentRemoteUrl.includes(config.github.owner) || !currentRemoteUrl.includes(config.github.repo)) {
+      logger.info(`Setting origin remote to ${config.github.owner}/${config.github.repo}`);
+      await execGitCommand(['remote', 'set-url', 'origin', remoteUrl], repoCwd);
+    }
+
     // First fetch the specific branch to ensure we have the remote ref
-    await execGitCommand(['fetch', 'origin', `heads/${branchName}`], repoCwd);
+    // Use retry to handle potential GitHub propagation delay
+    await fetchBranchWithRetry(branchName, repoCwd, logger);
     // Check if branch already exists locally
     const branchExists = await execGitCommand(['rev-parse', '--verify', '--quiet', branchName], repoCwd)
       .then(() => true)
@@ -96,7 +140,7 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
   // Step 3: Spawn codex-cli as a child process
   // Note: We avoid shell: true to prevent shell injection from user-controlled prompt
   logger.info(`Spawning codex-cli with issue prompt`);
-  const codexProcess = spawn(config.codexCliPath, [prompt], {
+  const codexProcess = spawn(codexConfig.codexCliPath, [prompt], {
     cwd: repoCwd,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
@@ -121,8 +165,8 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
   const exitCode = await new Promise<number>((resolve, reject) => {
     const timer = setTimeout(() => {
       codexProcess.kill('SIGTERM');
-      reject(new Error(`codex process timed out after ${config.timeoutMs}ms`));
-    }, config.timeoutMs);
+      reject(new Error(`codex process timed out after ${codexConfig.timeoutMs}ms`));
+    }, codexConfig.timeoutMs);
 
     codexProcess.on('close', (code) => {
       clearTimeout(timer);

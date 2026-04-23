@@ -147,6 +147,10 @@ describe('processCodex', () => {
 
     mockSpawn.mockImplementation((cmd: string, args: string[]) => {
       if (cmd === 'git') {
+        // remote get-url returns wrong repo so it gets set
+        if (args[0] === 'remote' && args[1] === 'get-url') {
+          return createGitMockProcess();
+        }
         // rev-parse fails (exit code 1) to indicate branch doesn't exist locally
         if (args[0] === 'rev-parse') {
           return createGitMockProcessWithExitCode(1);
@@ -166,8 +170,12 @@ describe('processCodex', () => {
 
     await processCodex(job);
 
-    // Verify fetch was called first to get the remote branch
-    expect(mockSpawn).toHaveBeenCalledWith('git', ['fetch', 'origin', 'heads/issue-1-test-issue'], expect.any(Object));
+    // Verify remote get-url was called to check current origin
+    expect(mockSpawn).toHaveBeenCalledWith('git', ['remote', 'get-url', 'origin'], expect.any(Object));
+    // Verify remote set-url was called to set correct repo
+    expect(mockSpawn).toHaveBeenCalledWith('git', ['remote', 'set-url', 'origin', 'https://test-token@github.com/test-owner/test-repo.git'], expect.any(Object));
+    // Verify fetch was called with explicit URL to get the remote branch
+    expect(mockSpawn).toHaveBeenCalledWith('git', ['fetch', 'https://test-token@github.com/test-owner/test-repo.git', 'heads/issue-1-test-issue'], expect.any(Object));
     // Verify branch existence was checked (and found not to exist)
     expect(mockSpawn).toHaveBeenCalledWith('git', ['rev-parse', '--verify', '--quiet', 'issue-1-test-issue'], expect.any(Object));
     // Verify checkout was called to create local tracking branch
@@ -335,6 +343,9 @@ describe('processCodex', () => {
 
     mockSpawn.mockImplementation((cmd: string, args: string[]) => {
       if (cmd === 'git') {
+        if (args[0] === 'remote') {
+          return createGitMockProcess();
+        }
         if (args[0] === 'fetch' || args[0] === 'checkout') {
           return createGitMockProcess();
         }
@@ -368,8 +379,8 @@ describe('processCodex', () => {
 
     await processCodex(job);
 
-    // Verify fetch was called first
-    expect(mockSpawn).toHaveBeenCalledWith('git', ['fetch', 'origin', 'heads/issue-1-test-issue'], expect.any(Object));
+    // Verify fetch was called with explicit URL
+    expect(mockSpawn).toHaveBeenCalledWith('git', ['fetch', 'https://test-token@github.com/test-owner/test-repo.git', 'heads/issue-1-test-issue'], expect.any(Object));
     // Verify checkout was called to create local tracking branch
     expect(mockSpawn).toHaveBeenCalledWith('git', ['checkout', '-b', 'issue-1-test-issue', '--track', 'origin/issue-1-test-issue'], expect.any(Object));
     // Verify git add was NOT called (no changes to commit)

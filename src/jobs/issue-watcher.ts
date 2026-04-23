@@ -21,7 +21,7 @@ export async function startIssueWatcher(): Promise<void> {
   const jobName = 'issue-watcher';
 
   let connectionEstablishedByThisCall = false;
-  if (redisClient.status !== 'ready') {
+  if (redisClient.status !== 'ready' && redisClient.status !== 'connecting') {
     await redisClient.connect();
     connectionEstablishedByThisCall = true;
   }

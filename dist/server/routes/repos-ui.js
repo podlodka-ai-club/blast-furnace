@@ -170,7 +170,7 @@ const HTML_PAGE = `<!DOCTYPE html>
             '<span class="repo-info">' + escapeHtml(repo.owner) + ' / ' + escapeHtml(repo.repo) + '</span>' +
             '<div class="repo-date">Added: ' + date + '</div>' +
           '</div>' +
-          '<button class="danger" onclick="removeRepo(\\'' + escapeHtml(repo.owner) + '\\', \\'' + escapeHtml(repo.repo) + '\\')">Remove</button>' +
+          '<button class="danger" onclick="removeRepo(' + JSON.stringify(repo.owner) + ', ' + JSON.stringify(repo.repo) + ')">Remove</button>' +
         '</li>';
       }).join('');
     }
@@ -235,7 +235,7 @@ const HTML_PAGE = `<!DOCTYPE html>
 </html>`;
 export async function reposUIRoute(server, options) {
     const apiBaseUrl = options.apiBaseUrl ?? '/repos';
-    server.get('/repos', async (_request, reply) => {
+    server.get('/', async (_request, reply) => {
         reply.header('Content-Type', 'text/html');
         return HTML_PAGE.replace('<body>', `<body data-api-base="${apiBaseUrl}">`);
     });

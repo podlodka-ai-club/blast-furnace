@@ -42,6 +42,14 @@ export async function processIssue(job) {
         logger.error(`Failed to push branch ${branchName}: ${err}`);
         throw err;
     }
+    try {
+        const verifySha = await getRef(branchName);
+        logger.info(`Branch ${branchName} created successfully (SHA: ${verifySha})`);
+    }
+    catch (err) {
+        logger.error(`Branch ${branchName} was not found after creation: ${err}`);
+        throw new Error(`Branch ${branchName} verification failed`);
+    }
     logger.info(`Enqueueing codex provider job for issue #${issue.number}`);
     const codexJobData = {
         taskId: job.data.taskId,

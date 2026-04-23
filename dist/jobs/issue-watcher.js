@@ -12,7 +12,7 @@ const redisClient = new Redis({
 export async function startIssueWatcher() {
     const jobName = 'issue-watcher';
     let connectionEstablishedByThisCall = false;
-    if (redisClient.status !== 'ready') {
+    if (redisClient.status !== 'ready' && redisClient.status !== 'connecting') {
         await redisClient.connect();
         connectionEstablishedByThisCall = true;
     }

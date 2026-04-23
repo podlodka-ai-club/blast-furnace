@@ -1,5 +1,6 @@
 import { spawn } from 'child_process';
 import { createJobLogger } from './logger.js';
+import { config } from '../config/index.js';
 const DEFAULT_CODEX_CLI_PATH = 'npx @openai/codex';
 const DEFAULT_TIMEOUT_MS = 300000;
 function getCodexConfig() {
@@ -7,6 +8,26 @@ function getCodexConfig() {
         codexCliPath: process.env['CODEX_CLI_PATH'] ?? DEFAULT_CODEX_CLI_PATH,
         timeoutMs: parseInt(process.env['CODEX_TIMEOUT_MS'] ?? String(DEFAULT_TIMEOUT_MS), 10),
     };
+}
+function getGithubRemoteUrl() {
+    const { owner, repo, token } = config.github;
+    return `https://${token}@github.com/${owner}/${repo}.git`;
+}
+async function fetchBranchWithRetry(branchName, cwd, logger, maxRetries = 3) {
+    const remoteUrl = getGithubRemoteUrl();
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            await execGitCommand(['fetch', remoteUrl, `heads/${branchName}`], cwd);
+            return;
+        }
+        catch (err) {
+            if (attempt === maxRetries)
+                throw err;
+            const delay = Math.pow(2, attempt) * 1000;
+            logger.warn(`Fetch attempt ${attempt} failed for ${branchName}, retrying in ${delay}ms...`);
+            await new Promise((r) => setTimeout(r, delay));
+        }
+    }
 }
 function execGitCommand(args, cwd) {
     return new Promise((resolve, reject) => {
@@ -33,12 +54,19 @@ function execGitCommand(args, cwd) {
 export async function processCodex(job) {
     const logger = createJobLogger(job);
     const { issue, branchName } = job.data;
-    const config = getCodexConfig();
+    const codexConfig = getCodexConfig();
     logger.info(`Running codex provider for issue #${issue.number} on branch ${branchName}`);
     const repoCwd = process.env['GIT_WORKING_DIR'] ?? process.cwd();
     try {
         logger.info(`Checking out branch: ${branchName}`);
-        await execGitCommand(['fetch', 'origin', `heads/${branchName}`], repoCwd);
+        const remoteUrl = getGithubRemoteUrl();
+        const currentRemoteUrl = await execGitCommand(['remote', 'get-url', 'origin'], repoCwd)
+            .catch(() => '');
+        if (!currentRemoteUrl.includes(config.github.owner) || !currentRemoteUrl.includes(config.github.repo)) {
+            logger.info(`Setting origin remote to ${config.github.owner}/${config.github.repo}`);
+            await execGitCommand(['remote', 'set-url', 'origin', remoteUrl], repoCwd);
+        }
+        await fetchBranchWithRetry(branchName, repoCwd, logger);
         const branchExists = await execGitCommand(['rev-parse', '--verify', '--quiet', branchName], repoCwd)
             .then(() => true)
             .catch(() => false);
@@ -56,7 +84,7 @@ export async function processCodex(job) {
     }
     const prompt = `Issue #${issue.number}: ${issue.title}\n\n${issue.body ?? '(No description provided)'}`;
     logger.info(`Spawning codex-cli with issue prompt`);
-    const codexProcess = spawn(config.codexCliPath, [prompt], {
+    const codexProcess = spawn(codexConfig.codexCliPath, [prompt], {
         cwd: repoCwd,
         stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -75,8 +103,8 @@ export async function processCodex(job) {
     const exitCode = await new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
             codexProcess.kill('SIGTERM');
-            reject(new Error(`codex process timed out after ${config.timeoutMs}ms`));
-        }, config.timeoutMs);
+            reject(new Error(`codex process timed out after ${codexConfig.timeoutMs}ms`));
+        }, codexConfig.timeoutMs);
         codexProcess.on('close', (code) => {
             clearTimeout(timer);
             resolve(code ?? 1);
