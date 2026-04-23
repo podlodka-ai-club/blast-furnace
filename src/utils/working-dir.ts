@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { mkdir, rm } from 'fs/promises';
 import { spawn } from 'child_process';
+import path from 'path';
 import { config } from '../config/index.js';
 
 /**
@@ -59,7 +60,8 @@ export async function cloneRepoInto(workingDir: string, remoteUrl: string): Prom
  * @param workingDir - The directory to remove
  */
 export async function cleanupWorkingDir(workingDir: string): Promise<void> {
-  if (!workingDir.startsWith('/tmp/')) {
+  const resolved = path.resolve(workingDir);
+  if (!resolved.startsWith('/tmp/')) {
     throw new Error(`Refusing to delete non-temp directory: ${workingDir}`);
   }
   await rm(workingDir, { recursive: true, force: true });

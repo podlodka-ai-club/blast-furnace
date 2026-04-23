@@ -24,7 +24,7 @@ async function fetchBranchWithRetry(
       return; // Success
     } catch (err) {
       if (attempt === maxRetries) throw err;
-      const delay = Math.pow(2, attempt) * 1000;
+      const delay = Math.pow(2, attempt - 1) * 1000;
       logger.warn(`Fetch attempt ${attempt} failed for ${branchName}: ${err}, retrying in ${delay}ms...`);
       await new Promise((r) => setTimeout(r, delay));
     }
@@ -52,7 +52,7 @@ function execGitCommand(args: string[], cwd: string): Promise<string> {
       if (code === 0) {
         resolve(stdout.trim());
       } else {
-        reject(new Error(`git command failed: ${stderr || stdout}`));
+        reject(new Error(`git command failed: ${stderr}`));
       }
     });
 
@@ -138,19 +138,26 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
 
     // Step 4: Wait for process to complete with timeout
     const exitCode = await new Promise<number>((resolve, reject) => {
+      let settled = false;
+      const settle = (fn: () => void) => {
+        if (!settled) {
+          settled = true;
+          fn();
+        }
+      };
       const timer = setTimeout(() => {
         codexProcess.kill('SIGTERM');
-        reject(new Error(`codex process timed out after ${timeoutMs}ms`));
+        settle(() => reject(new Error(`codex process timed out after ${timeoutMs}ms`)));
       }, timeoutMs);
 
       codexProcess.on('close', (code) => {
         clearTimeout(timer);
-        resolve(code ?? 1);
+        settle(() => resolve(code ?? 1));
       });
 
       codexProcess.on('error', (err) => {
         clearTimeout(timer);
-        reject(err);
+        settle(() => reject(err));
       });
     });
 
@@ -194,16 +201,11 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
         logger.info('No changes detected, skipping commit and push');
       }
     } catch (err) {
-      // Distinguish "nothing to commit" from actual failures
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      if (errorMessage.includes('nothing to commit')) {
-        logger.info('No changes detected, skipping commit');
-      } else {
-        // Actual commit failure - log and throw as the codex execution may have produced changes
-        // that failed to commit for legitimate reasons (e.g., git author not configured, disk full)
-        logger.error(`Git commit failed: ${err}`);
-        throw err;
-      }
+      // Commit, push, or PR creation failed
+      // Note: "nothing to commit" shouldn't occur since we check status before committing,
+      // but git could theoretically return an error even with changes present
+      logger.error(`Git operation failed: ${err}`);
+      throw err;
     }
 
     logger.info(`Codex provider completed for issue #${issue.number}`);

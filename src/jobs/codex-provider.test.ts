@@ -625,4 +625,233 @@ describe('processCodex', () => {
     expect(mockSpawn).toHaveBeenCalledWith('git', ['reset', '--hard', 'origin/issue-1-test-issue'], expect.any(Object));
   });
 
+  it('should throw when git push fails', async () => {
+    const mockSpawn = vi.mocked(spawn);
+
+    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git') {
+        if (args[0] === 'fetch' || args[0] === 'checkout') {
+          return createGitMockProcess();
+        }
+        if (args[0] === 'rev-parse') {
+          return createGitMockProcess(1);
+        }
+        if (args[0] === 'status') {
+          // Return non-empty to indicate changes exist
+          return {
+            stdout: { on: vi.fn((e, cb) => cb(Buffer.from('M modified-file.txt'))) },
+            stderr: { on: vi.fn() },
+            on: vi.fn((event: string, cb: (code: number) => void) => {
+              if (event === 'close') setTimeout(() => cb(0), 0);
+            }),
+            kill: vi.fn(),
+          } as unknown as ReturnType<typeof spawn>;
+        }
+        if (args[0] === 'add') {
+          return createGitMockProcess();
+        }
+        if (args[0] === 'commit') {
+          return createGitMockProcess();
+        }
+        // push fails
+        if (args[0] === 'push') {
+          return {
+            stdout: { on: vi.fn() },
+            stderr: { on: vi.fn((e, cb) => cb(Buffer.from('remote: Permission denied'))) },
+            on: vi.fn((event: string, cb: (code: number) => void) => {
+              if (event === 'close') setTimeout(() => cb(1), 0);
+            }),
+            kill: vi.fn(),
+          } as unknown as ReturnType<typeof spawn>;
+        }
+        return createGitMockProcess();
+      }
+      return createCodexMockProcess();
+    });
+
+    const issue = createMockIssue(1, 'Test Issue', 'Test body');
+    const job = createMockJob({
+      taskId: 'test-task',
+      type: 'codex-provider',
+      issue,
+      branchName: 'issue-1-test-issue',
+    });
+
+    // Should throw because push failed
+    await expect(processCodex(job)).rejects.toThrow('git command failed');
+    // Verify PR was NOT created (push failed first)
+    expect(mockCreatePullRequest).not.toHaveBeenCalled();
+    // Verify cleanup still occurred
+    expect(mockCleanupWorkingDir).toHaveBeenCalledWith(TEMP_DIR);
+  });
+
+  it('should throw when createPullRequest fails', async () => {
+    const mockSpawn = vi.mocked(spawn);
+
+    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git') {
+        if (args[0] === 'fetch' || args[0] === 'checkout') {
+          return createGitMockProcess();
+        }
+        if (args[0] === 'rev-parse') {
+          return createGitMockProcess(1);
+        }
+        if (args[0] === 'status') {
+          return {
+            stdout: { on: vi.fn((e, cb) => cb(Buffer.from('M modified-file.txt'))) },
+            stderr: { on: vi.fn() },
+            on: vi.fn((event: string, cb: (code: number) => void) => {
+              if (event === 'close') setTimeout(() => cb(0), 0);
+            }),
+            kill: vi.fn(),
+          } as unknown as ReturnType<typeof spawn>;
+        }
+        return createGitMockProcess();
+      }
+      return createCodexMockProcess();
+    });
+
+    // Make createPullRequest reject
+    mockCreatePullRequest.mockRejectedValue(new Error('GitHub API error: repo not found'));
+
+    const issue = createMockIssue(1, 'Test Issue', 'Test body');
+    const job = createMockJob({
+      taskId: 'test-task',
+      type: 'codex-provider',
+      issue,
+      branchName: 'issue-1-test-issue',
+    });
+
+    // Should throw because PR creation failed
+    await expect(processCodex(job)).rejects.toThrow('GitHub API error: repo not found');
+    // Verify cleanup still occurred
+    expect(mockCleanupWorkingDir).toHaveBeenCalledWith(TEMP_DIR);
+  });
+
+  it('should throw when git reset --hard fails', async () => {
+    const mockSpawn = vi.mocked(spawn);
+
+    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git') {
+        if (args[0] === 'fetch') {
+          return createGitMockProcess();
+        }
+        if (args[0] === 'rev-parse') {
+          // Branch exists locally
+          return createGitMockProcess(0);
+        }
+        // checkout succeeds but reset fails
+        if (args[0] === 'checkout') {
+          return createGitMockProcess();
+        }
+        if (args[0] === 'reset') {
+          return {
+            stdout: { on: vi.fn() },
+            stderr: { on: vi.fn((e, cb) => cb(Buffer.from('fatal: ambiguous argument'))) },
+            on: vi.fn((event: string, cb: (code: number) => void) => {
+              if (event === 'close') setTimeout(() => cb(128), 0);
+            }),
+            kill: vi.fn(),
+          } as unknown as ReturnType<typeof spawn>;
+        }
+        return createGitMockProcess();
+      }
+      return createCodexMockProcess();
+    });
+
+    const issue = createMockIssue(1, 'Test Issue', 'Test body');
+    const job = createMockJob({
+      taskId: 'test-task',
+      type: 'codex-provider',
+      issue,
+      branchName: 'issue-1-test-issue',
+    });
+
+    await expect(processCodex(job)).rejects.toThrow('git command failed');
+    // Verify cleanup still occurred
+    expect(mockCleanupWorkingDir).toHaveBeenCalledWith(TEMP_DIR);
+  });
+
+  it('should throw when git checkout of existing branch fails', async () => {
+    const mockSpawn = vi.mocked(spawn);
+
+    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git') {
+        if (args[0] === 'fetch') {
+          return createGitMockProcess();
+        }
+        if (args[0] === 'rev-parse') {
+          // Branch exists locally
+          return createGitMockProcess(0);
+        }
+        // checkout fails
+        if (args[0] === 'checkout') {
+          return {
+            stdout: { on: vi.fn() },
+            stderr: { on: vi.fn((e, cb) => cb(Buffer.from('error: pathspec not found'))) },
+            on: vi.fn((event: string, cb: (code: number) => void) => {
+              if (event === 'close') setTimeout(() => cb(1), 0);
+            }),
+            kill: vi.fn(),
+          } as unknown as ReturnType<typeof spawn>;
+        }
+        return createGitMockProcess();
+      }
+      return createCodexMockProcess();
+    });
+
+    const issue = createMockIssue(1, 'Test Issue', 'Test body');
+    const job = createMockJob({
+      taskId: 'test-task',
+      type: 'codex-provider',
+      issue,
+      branchName: 'issue-1-test-issue',
+    });
+
+    await expect(processCodex(job)).rejects.toThrow('git command failed');
+    // Verify cleanup still occurred
+    expect(mockCleanupWorkingDir).toHaveBeenCalledWith(TEMP_DIR);
+  });
+
+  it('should throw when git checkout -b --track fails', async () => {
+    const mockSpawn = vi.mocked(spawn);
+
+    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git') {
+        if (args[0] === 'fetch') {
+          return createGitMockProcess();
+        }
+        if (args[0] === 'rev-parse') {
+          // Branch does not exist locally
+          return createGitMockProcess(1);
+        }
+        // checkout -b --track fails (remote branch doesn't exist)
+        if (args[0] === 'checkout') {
+          return {
+            stdout: { on: vi.fn() },
+            stderr: { on: vi.fn((e, cb) => cb(Buffer.from("fatal: couldn't find remote ref heads/issue-1-test-issue"))) },
+            on: vi.fn((event: string, cb: (code: number) => void) => {
+              if (event === 'close') setTimeout(() => cb(128), 0);
+            }),
+            kill: vi.fn(),
+          } as unknown as ReturnType<typeof spawn>;
+        }
+        return createGitMockProcess();
+      }
+      return createCodexMockProcess();
+    });
+
+    const issue = createMockIssue(1, 'Test Issue', 'Test body');
+    const job = createMockJob({
+      taskId: 'test-task',
+      type: 'codex-provider',
+      issue,
+      branchName: 'issue-1-test-issue',
+    });
+
+    await expect(processCodex(job)).rejects.toThrow('git command failed');
+    // Verify cleanup still occurred
+    expect(mockCleanupWorkingDir).toHaveBeenCalledWith(TEMP_DIR);
+  });
+
 });
