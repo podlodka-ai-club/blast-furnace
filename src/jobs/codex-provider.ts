@@ -32,6 +32,29 @@ async function fetchBranchWithRetry(
 }
 
 /**
+ * Push changes to remote with exponential backoff retry
+ */
+async function pushWithRetry(
+  remoteUrl: string,
+  branchName: string,
+  cwd: string,
+  logger: ReturnType<typeof createJobLogger>,
+  maxRetries = 3
+): Promise<void> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await execGitCommand(['push', remoteUrl, branchName], cwd);
+      return; // Success
+    } catch (err) {
+      if (attempt === maxRetries) throw err;
+      const delay = Math.pow(2, attempt - 1) * 1000;
+      logger.warn(`Push attempt ${attempt} failed for ${branchName}: ${err}, retrying in ${delay}ms...`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+}
+
+/**
  * Sanitize a string for use in git messages and PR titles
  * Removes newlines and limits length
  */
@@ -194,7 +217,7 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
         // Step 6: Push changes to remote
         logger.info('Pushing changes to remote branch...');
         const pushRemoteUrl = getRepoRemoteUrl();
-        await execGitCommand(['push', pushRemoteUrl, branchName], repoCwd);
+        await pushWithRetry(pushRemoteUrl, branchName, repoCwd, logger);
         logger.info(`Changes pushed to ${branchName}`);
 
         // Step 7: Create pull request

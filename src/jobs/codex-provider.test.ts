@@ -854,4 +854,66 @@ describe('processCodex', () => {
     expect(mockCleanupWorkingDir).toHaveBeenCalledWith(TEMP_DIR);
   });
 
+  it('should retry push with exponential backoff on transient failure', async () => {
+    const mockSpawn = vi.mocked(spawn);
+    let pushAttempts = 0;
+
+    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git') {
+        if (args[0] === 'fetch' || args[0] === 'checkout') {
+          return createGitMockProcess();
+        }
+        if (args[0] === 'rev-parse') {
+          return createGitMockProcess(1);
+        }
+        if (args[0] === 'status') {
+          return {
+            stdout: { on: vi.fn((e, cb) => cb(Buffer.from('M modified-file.txt'))) },
+            stderr: { on: vi.fn() },
+            on: vi.fn((event: string, cb: (code: number) => void) => {
+              if (event === 'close') setTimeout(() => cb(0), 0);
+            }),
+            kill: vi.fn(),
+          } as unknown as ReturnType<typeof spawn>;
+        }
+        if (args[0] === 'add' || args[0] === 'commit') {
+          return createGitMockProcess();
+        }
+        // Push fails first 2 attempts, succeeds on 3rd
+        if (args[0] === 'push') {
+          pushAttempts++;
+          return {
+            stdout: { on: vi.fn() },
+            stderr: { on: vi.fn() },
+            on: vi.fn((event: string, cb: (code: number) => void) => {
+              if (event === 'close') {
+                // Fail first 2 attempts, succeed on 3rd
+                setTimeout(() => cb(pushAttempts >= 3 ? 0 : 1), 0);
+              }
+            }),
+            kill: vi.fn(),
+          } as unknown as ReturnType<typeof spawn>;
+        }
+        return createGitMockProcess();
+      }
+      return createCodexMockProcess();
+    });
+
+    const issue = createMockIssue(1, 'Test Issue', 'Test body');
+    const job = createMockJob({
+      taskId: 'test-task',
+      type: 'codex-provider',
+      issue,
+      branchName: 'issue-1-test-issue',
+    });
+
+    await processCodex(job);
+
+    // Verify push was called 3 times (2 failures + 1 success)
+    const pushCalls = mockSpawn.mock.calls.filter(([cmd, args]) => cmd === 'git' && args[0] === 'push');
+    expect(pushCalls).toHaveLength(3);
+    // Verify PR was still created after retry success
+    expect(mockCreatePullRequest).toHaveBeenCalled();
+  });
+
 });
