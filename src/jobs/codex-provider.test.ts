@@ -7,6 +7,13 @@ const { mockCreateJobLogger } = vi.hoisted(() => ({
   mockCreateJobLogger: vi.fn(),
 }));
 
+// Mock working-dir utilities - must be hoisted before vi.mock
+const { mockCreateTempWorkingDir, mockCloneRepoInto, mockCleanupWorkingDir } = vi.hoisted(() => ({
+  mockCreateTempWorkingDir: vi.fn(),
+  mockCloneRepoInto: vi.fn(),
+  mockCleanupWorkingDir: vi.fn(),
+}));
+
 // Mock the config module
 vi.mock('../config/index.js', () => ({
   config: {
@@ -34,8 +41,18 @@ vi.mock('../utils/logger.js', () => ({
   createLogger: mockCreateJobLogger,
 }));
 
+// Mock working-dir utilities
+vi.mock('../utils/working-dir.js', () => ({
+  createTempWorkingDir: mockCreateTempWorkingDir,
+  cloneRepoInto: mockCloneRepoInto,
+  cleanupWorkingDir: mockCleanupWorkingDir,
+  getRepoRemoteUrl: () => 'https://test-token@github.com/test-owner/test-repo.git',
+}));
+
 import { spawn } from 'child_process';
 import { processCodex } from './codex-provider.js';
+
+const TEMP_DIR = '/tmp/codex-abc123';
 
 function createMockJob(data: CodexProviderJobData): Job<CodexProviderJobData> {
   return {
@@ -135,6 +152,10 @@ describe('processCodex', () => {
       warn: vi.fn(),
       debug: vi.fn(),
     });
+    // Setup default working-dir mocks
+    mockCreateTempWorkingDir.mockResolvedValue(TEMP_DIR);
+    mockCloneRepoInto.mockResolvedValue(undefined);
+    mockCleanupWorkingDir.mockResolvedValue(undefined);
   });
 
   it('should export codexProviderHandler', async () => {
@@ -142,15 +163,11 @@ describe('processCodex', () => {
     expect(typeof codexProviderHandler).toBe('function');
   });
 
-  it('should checkout the branch and spawn codex process', async () => {
+  it('should create temp directory, clone repo, checkout branch, and spawn codex process', async () => {
     const mockSpawn = vi.mocked(spawn);
 
     mockSpawn.mockImplementation((cmd: string, args: string[]) => {
       if (cmd === 'git') {
-        // remote get-url returns wrong repo so it gets set
-        if (args[0] === 'remote' && args[1] === 'get-url') {
-          return createGitMockProcess();
-        }
         // rev-parse fails (exit code 1) to indicate branch doesn't exist locally
         if (args[0] === 'rev-parse') {
           return createGitMockProcessWithExitCode(1);
@@ -170,10 +187,15 @@ describe('processCodex', () => {
 
     await processCodex(job);
 
-    // Verify remote get-url was called to check current origin
-    expect(mockSpawn).toHaveBeenCalledWith('git', ['remote', 'get-url', 'origin'], expect.any(Object));
-    // Verify remote set-url was called to set correct repo
-    expect(mockSpawn).toHaveBeenCalledWith('git', ['remote', 'set-url', 'origin', 'https://test-token@github.com/test-owner/test-repo.git'], expect.any(Object));
+    // Verify temp working dir was created
+    expect(mockCreateTempWorkingDir).toHaveBeenCalledWith('codex');
+
+    // Verify repo was cloned into temp dir
+    expect(mockCloneRepoInto).toHaveBeenCalledWith(
+      TEMP_DIR,
+      'https://test-token@github.com/test-owner/test-repo.git'
+    );
+
     // Verify fetch was called with explicit URL to get the remote branch
     expect(mockSpawn).toHaveBeenCalledWith('git', ['fetch', 'https://test-token@github.com/test-owner/test-repo.git', 'heads/issue-1-test-issue'], expect.any(Object));
     // Verify branch existence was checked (and found not to exist)
@@ -181,13 +203,69 @@ describe('processCodex', () => {
     // Verify checkout was called to create local tracking branch
     expect(mockSpawn).toHaveBeenCalledWith('git', ['checkout', '-b', 'issue-1-test-issue', '--track', 'origin/issue-1-test-issue'], expect.any(Object));
 
-    // Verify codex was spawned
+    // Verify codex was spawned in temp directory
     expect(mockSpawn).toHaveBeenCalledWith(
       'npx @openai/codex',
       [expect.stringContaining('Issue #1: Test Issue')],
-      expect.any(Object)
+      expect.objectContaining({ cwd: TEMP_DIR })
     );
+
+    // Verify cleanup was called
+    expect(mockCleanupWorkingDir).toHaveBeenCalledWith(TEMP_DIR);
   });
+
+  it('should cleanup temp directory even when codex process fails', async () => {
+    const mockSpawn = vi.mocked(spawn);
+
+    mockSpawn.mockImplementation((cmd: string) => {
+      if (cmd === 'git') {
+        return createGitMockProcess();
+      }
+      return createCodexMockProcess(1); // Exit code 1 = failure
+    });
+
+    const issue = createMockIssue(1, 'Test Issue', 'Test body');
+    const job = createMockJob({
+      taskId: 'test-task',
+      type: 'codex-provider',
+      issue,
+      branchName: 'issue-1-test-issue',
+    });
+
+    await expect(processCodex(job)).rejects.toThrow('codex process failed with exit code 1');
+
+    // Verify cleanup was still called even though codex failed
+    expect(mockCleanupWorkingDir).toHaveBeenCalledWith(TEMP_DIR);
+  });
+
+  it('should cleanup temp directory even when checkout fails', async () => {
+    const mockSpawn = vi.mocked(spawn);
+
+    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git') {
+        // Make fetch fail - use exit code 1 which is handled as a regular error
+        // The retry logic will kick in (1s + 2s + 4s = 7s total) before finally throwing
+        if (args[0] === 'fetch') {
+          return createGitMockProcessWithExitCode(128);
+        }
+        return createGitMockProcess();
+      }
+      return createCodexMockProcess();
+    });
+
+    const issue = createMockIssue(1, 'Test Issue', 'Test body');
+    const job = createMockJob({
+      taskId: 'test-task',
+      type: 'codex-provider',
+      issue,
+      branchName: 'issue-1-test-issue',
+    });
+
+    await expect(processCodex(job)).rejects.toThrow();
+
+    // Verify cleanup was still called even though checkout failed
+    expect(mockCleanupWorkingDir).toHaveBeenCalledWith(TEMP_DIR);
+  }, 10000); // 10s timeout to account for retry delays
 
   it('should throw error when codex process fails', async () => {
     const mockSpawn = vi.mocked(spawn);
@@ -236,7 +314,7 @@ describe('processCodex', () => {
     expect(mockSpawn).toHaveBeenCalledWith(
       '/custom/path/to/codex',
       expect.any(Array),
-      expect.any(Object)
+      expect.objectContaining({ cwd: TEMP_DIR })
     );
 
     if (originalPath !== undefined) {
@@ -343,9 +421,6 @@ describe('processCodex', () => {
 
     mockSpawn.mockImplementation((cmd: string, args: string[]) => {
       if (cmd === 'git') {
-        if (args[0] === 'remote') {
-          return createGitMockProcess();
-        }
         if (args[0] === 'fetch' || args[0] === 'checkout') {
           return createGitMockProcess();
         }
@@ -453,6 +528,9 @@ describe('processCodex', () => {
 
     // Verify the error was logged
     expect(mockLogger.error).toHaveBeenCalled();
+
+    // Verify cleanup was called
+    expect(mockCleanupWorkingDir).toHaveBeenCalledWith(TEMP_DIR);
   });
 
   it('should stream stderr from codex process to logger', async () => {
@@ -501,6 +579,48 @@ describe('processCodex', () => {
 
     // Verify the error was logged with [codex] prefix
     expect(mockLogger.error).toHaveBeenCalledWith('[codex] error message from codex');
+  });
+
+  it('should use existing local branch when it already exists', async () => {
+    const mockSpawn = vi.mocked(spawn);
+
+    mockSpawn.mockImplementation((cmd: string) => {
+      if (cmd === 'git') {
+        // rev-parse succeeds (exit code 0) to indicate branch exists locally
+        if (args[0] === 'rev-parse') {
+          return createGitMockProcessWithExitCode(0);
+        }
+        return createGitMockProcess();
+      }
+      return createCodexMockProcess();
+    });
+
+    // Need to capture args for the mock
+    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git') {
+        // rev-parse succeeds (exit code 0) to indicate branch exists locally
+        if (args[0] === 'rev-parse') {
+          return createGitMockProcessWithExitCode(0);
+        }
+        return createGitMockProcess();
+      }
+      return createCodexMockProcess();
+    });
+
+    const issue = createMockIssue(1, 'Test Issue', 'Test body');
+    const job = createMockJob({
+      taskId: 'test-task',
+      type: 'codex-provider',
+      issue,
+      branchName: 'issue-1-test-issue',
+    });
+
+    await processCodex(job);
+
+    // Verify checkout was called (simple checkout, not -b)
+    expect(mockSpawn).toHaveBeenCalledWith('git', ['checkout', 'issue-1-test-issue'], expect.any(Object));
+    // Verify reset was called to update to match remote
+    expect(mockSpawn).toHaveBeenCalledWith('git', ['reset', '--hard', 'origin/issue-1-test-issue'], expect.any(Object));
   });
 
 });

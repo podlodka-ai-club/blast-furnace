@@ -39,20 +39,20 @@ Modify the codex-provider job to perform all git operations inside a unique temp
 **Files:**
 - Modify: `src/jobs/codex-provider.ts`
 
-- [ ] Import the new `createTempWorkingDir`, `cloneRepoInto`, `cleanupWorkingDir`, `getRepoRemoteUrl` from working-dir.ts
-- [ ] Remove `getGithubRemoteUrl()` function (moved to working-dir.ts)
-- [ ] Remove `repoCwd = process.env['GIT_WORKING_DIR'] ?? process.cwd()` - replace with temp dir flow
-- [ ] Refactor `processCodex` to:
+- [x] Import the new `createTempWorkingDir`, `cloneRepoInto`, `cleanupWorkingDir`, `getRepoRemoteUrl` from working-dir.ts
+- [x] Remove `getGithubRemoteUrl()` function (moved to working-dir.ts)
+- [x] Remove `repoCwd = process.env['GIT_WORKING_DIR'] ?? process.cwd()` - replace with temp dir flow
+- [x] Refactor `processCodex` to:
   - Create temp working dir at start (unique per job)
   - Clone the repo into it before any git operations
   - Run all git operations (fetch, checkout, commit) inside temp dir
   - Spawn codex process in the temp dir
   - Clean up temp dir in a `finally` block
-- [ ] Write/update tests for codex-provider.ts:
+- [x] Write/update tests for codex-provider.ts:
   - Verify clone is called with correct remote URL
   - Verify git operations use the temp directory (not cwd or GIT_WORKING_DIR)
   - Verify cleanup is called even when errors occur
-- [ ] Run project test suite - must pass before Task 3
+- [x] Run project test suite - must pass before Task 3
 
 ### Task 3: Verify acceptance criteria
 
