@@ -52,6 +52,7 @@ src/
     issues.ts        - GitHub issues API functions
     branches.ts      - GitHub branches/ref API functions
     pullRequests.ts  - GitHub pull requests API functions
+    issue-labels.ts  - Issue label transition helpers
 ```
 
 ## Key Interfaces

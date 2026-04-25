@@ -24,13 +24,16 @@ Blast Furnace is a continuous-running server that watches a GitHub repository fo
    source ./scripts/load-env.sh
    ```
 
-3. Start Redis:
+3. Start Redis and the development server:
    ```bash
-   redis-server
+   ./scripts/start.sh
    ```
 
-4. Run in development mode:
+   The start script loads `.env.local` when present, starts Redis with Docker Compose, waits for Redis to become healthy, then runs `npm run dev`.
+
+   To start Redis manually instead:
    ```bash
+   docker-compose up -d
    npm run dev
    ```
 
@@ -66,6 +69,8 @@ The project includes:
 | `GITHUB_ISSUE_STRATEGY` | polling | How to receive issues: `polling` or `webhook` |
 | `GITHUB_POLL_INTERVAL_MS` | 60000 | Polling interval in milliseconds (minimum 1000) |
 | `GITHUB_WEBHOOK_SECRET` | (none) | HMAC secret for webhook signature validation (optional) |
+| `CODEX_CLI_PATH` | `npx @openai/codex` | Command used to launch Codex CLI |
+| `CODEX_TIMEOUT_MS` | 300000 | Codex CLI timeout in milliseconds |
 
 ## Architecture
 
@@ -82,11 +87,17 @@ Issues are received via one of two strategies:
 ### Background Job Processing
 
 BullMQ v5 with Redis provides the background job infrastructure:
+
 - **Retry Policy**: 3 attempts with exponential backoff (1s initial delay)
 - **Concurrency**: 5 jobs processed simultaneously
 - **Cleanup**: Completed jobs removed after 100 jobs or 24 hours; failed jobs removed after 500 jobs or 7 days
 
-The job flow is linear: Issue Reception -> Job Queue -> Issue Processor (logs issue, creates branch, opens PR).
+The current job flow is:
+
+1. Issue reception
+2. Job queue
+3. Issue processor: logs issue details, creates or reuses `issue-{number}-{slugified-title}`, then enqueues Codex
+4. Codex provider: clones the repo into a temp directory, checks out the issue branch, runs Codex CLI, commits and pushes changes if present, opens a PR, then attempts to update labels
 
 ## Features
 
@@ -106,23 +117,49 @@ Two strategies for receiving GitHub issues:
 
 ### Issue Processing
 
-When an issue is received:
-1. The issue is logged (title, body, number)
-2. A branch is created: `issue-{number}-{slugified-title}`
-3. A pull request is opened with the issue body as the PR body
+When an issue is queued:
+
+1. The issue is logged
+2. A branch is created or reused: `issue-{number}-{slugified-title}`
+3. A `codex-provider` job is enqueued
+4. Codex CLI is run with the issue title and body as the prompt
+5. If Codex changes files, the job commits, pushes, creates a PR with body `Closes #{number}`, and attempts to replace `ready` with `in review`
+6. If Codex makes no changes, commit, push, and PR creation are skipped
 
 ### API Endpoints
 
 **GET /health**
+
 - Returns server health status with timestamp and uptime in seconds
 - Response: `{ "status": "ok", "timestamp": "2026-04-22T00:00:00.000Z", "uptime": 1234 }`
 
 **POST /webhooks/github**
+
+- Registered only when `GITHUB_ISSUE_STRATEGY=webhook`
 - Receives GitHub webhook events
 - Validates HMAC signature if `GITHUB_WEBHOOK_SECRET` is configured
-- Only processes `issues.opened` events
-- Queues the issue for async processing and returns 200 immediately
+- Queues `issues.opened` payloads for async processing and returns 200 immediately
 - Request body must include `action` and `issue` fields
+
+**GET /repos**
+
+- Lists repositories registered for polling
+- Response: `{ "repos": [...], "total": 1 }`
+
+**POST /repos**
+
+- Adds a repository to the Redis-backed polling list
+- Request body: `{ "owner": "octocat", "repo": "hello-world" }`
+- Returns 201 on success, 409 when already registered
+
+**DELETE /repos/:owner/:repo**
+
+- Removes a repository from the polling list
+- Returns 200 on success, 404 when the repository is not registered
+
+**GET /repos/manage**
+
+- Serves a small HTML UI for adding, listing, and removing repositories in the polling list
 
 ## Implementation Details
 
@@ -143,6 +180,7 @@ The project uses strict TypeScript mode with:
 ### Multi-Handler Job Routing
 
 A single worker handles multiple job types via a switch statement in `src/index.ts`:
+
 ```typescript
 export async function multiHandler(job: Job<JobPayload>): Promise<void> {
   switch (job.data.type) {
@@ -150,6 +188,8 @@ export async function multiHandler(job: Job<JobPayload>): Promise<void> {
       return issueProcessorHandler(job as Job<IssueProcessorJobData>);
     case 'issue-watcher':
       return issueWatcherHandler(job as Job<IssueWatcherJobData>);
+    case 'codex-provider':
+      return codexProviderHandler(job as Job<CodexProviderJobData>);
     default:
       throw new Error(`Unknown job type: ${job.data.type}`);
   }
@@ -170,6 +210,7 @@ const lastPollTimestamp = await redisClient.get(LAST_POLL_KEY);
 ### Conditional Webhook Route Registration
 
 The webhook route is only registered when the webhook strategy is configured:
+
 ```typescript
 if (config.github.issueStrategy === 'webhook') {
   await server.register(githubWebhooksRoute);
@@ -315,6 +356,18 @@ src/
     issues.ts              - GitHub issues API functions
     branches.ts            - GitHub branches/ref API functions
     pullRequests.ts        - GitHub pull requests API functions
+
+## Docker Redis
+
+See `docs/docker.md` for Docker Compose details.
+
+Quick reference:
+
+```bash
+./scripts/start.sh      # Start Redis and the dev server
+./scripts/stop.sh       # Stop the dev server and Redis
+docker-compose up -d    # Start Redis only
+docker-compose down     # Stop Redis only
 ```
 
 ## License
