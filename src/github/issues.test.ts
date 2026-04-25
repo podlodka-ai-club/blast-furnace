@@ -140,6 +140,44 @@ describe('issues', () => {
 
       expect(result).toEqual([]);
     });
+
+    it('should filter pull requests out of issue results', async () => {
+      const mockIssues = [
+        {
+          id: 1,
+          number: 42,
+          title: 'Real Issue',
+          body: 'Issue body content',
+          state: 'open',
+          labels: [],
+          assignee: null,
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-02T00:00:00Z',
+        },
+        {
+          id: 2,
+          number: 43,
+          title: 'Actually a Pull Request',
+          body: 'PR body content',
+          state: 'open',
+          labels: [],
+          assignee: null,
+          created_at: '2024-01-03T00:00:00Z',
+          updated_at: '2024-01-04T00:00:00Z',
+          pull_request: {
+            url: 'https://api.github.com/repos/test-owner/test-repo/pulls/43',
+          },
+        },
+      ];
+
+      const mockListForRepo = vi.fn().mockResolvedValue({ data: mockIssues });
+      vi.mocked(githubClient.issues.listForRepo).mockImplementation(mockListForRepo);
+
+      const result = await fetchIssues();
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.number).toBe(42);
+    });
   });
 
   describe('IssueFilters interface', () => {

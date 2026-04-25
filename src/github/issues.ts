@@ -34,6 +34,12 @@ function mapGitHubIssueResponse(
   };
 }
 
+function isPullRequestIssue(
+  issue: Awaited<ReturnType<typeof githubClient.issues.listForRepo>>['data'][number]
+): boolean {
+  return 'pull_request' in issue && issue.pull_request !== undefined;
+}
+
 /**
  * Fetch issues from the repository using the GitHub client
  */
@@ -53,5 +59,7 @@ export async function fetchIssues(filters: IssueFilters = {}): Promise<GitHubIss
     milestone: milestone !== undefined ? String(milestone) : undefined,
   });
 
-  return response.data.map(mapGitHubIssueResponse);
+  return response.data
+    .filter((issue) => !isPullRequestIssue(issue))
+    .map(mapGitHubIssueResponse);
 }

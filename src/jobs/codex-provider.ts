@@ -1,13 +1,34 @@
 import { spawn } from 'child_process';
 import * as pty from 'node-pty';
+import path from 'node:path';
 import type { Job } from 'bullmq';
 import type { CodexProviderJobData } from '../types/index.js';
 import { config } from '../config/index.js';
 import { createJobLogger } from './logger.js';
 import { createTempWorkingDir, cloneRepoInto, cleanupWorkingDir, getRepoRemoteUrl } from '../utils/working-dir.js';
 import { createPullRequest } from '../github/pullRequests.js';
+import { ensureNodePtySpawnHelperExecutable } from '../utils/node-pty.js';
 
 const DEFAULT_TIMEOUT_MS = 300000; // 5 minutes
+const CODEX_SUBCOMMANDS = new Set([
+  'exec',
+  'review',
+  'login',
+  'logout',
+  'mcp',
+  'mcp-server',
+  'app-server',
+  'app',
+  'completion',
+  'sandbox',
+  'debug',
+  'apply',
+  'resume',
+  'fork',
+  'cloud',
+  'features',
+  'help',
+]);
 
 /**
  * Fetch a branch with exponential backoff retry
@@ -61,6 +82,26 @@ async function pushWithRetry(
  */
 function sanitizeForGit(text: string, maxLength = 200): string {
   return text.replace(/[\r\n]/g, ' ').slice(0, maxLength);
+}
+
+function buildCodexCliArgs(cliCmd: string, cliArgs: string[], prompt: string): string[] {
+  const invocationArgs = [...cliArgs];
+  const hasExplicitSubcommand = invocationArgs.some((arg) => CODEX_SUBCOMMANDS.has(arg));
+  const basename = path.basename(cliCmd);
+  const appearsToBeCodexCommand = basename === 'codex' || basename === 'codex-cli' || invocationArgs.some((arg) => arg.includes('codex'));
+
+  // Run jobs through `codex exec` so the CLI stays non-interactive and doesn't block
+  // on directory trust prompts.
+  if (appearsToBeCodexCommand && !hasExplicitSubcommand) {
+    invocationArgs.push('exec');
+  }
+
+  if (!invocationArgs.includes('--dangerously-bypass-approvals-and-sandbox')) {
+    invocationArgs.push('--dangerously-bypass-approvals-and-sandbox');
+  }
+
+  invocationArgs.push(prompt);
+  return invocationArgs;
 }
 
 /**
@@ -158,8 +199,10 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
     }
     const cliCmd = cliParts[0];
     const cliArgs = cliParts.slice(1);
+    const finalCliArgs = buildCodexCliArgs(cliCmd, cliArgs, prompt);
     logger.info(`Spawning codex-cli with issue prompt`);
-    const ptxProcess = pty.spawn(cliCmd, [...cliArgs, prompt], {
+    await ensureNodePtySpawnHelperExecutable(logger);
+    const ptxProcess = pty.spawn(cliCmd, finalCliArgs, {
       cwd: repoCwd,
       name: 'xterm-color',
       env: { ...process.env },

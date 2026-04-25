@@ -19,6 +19,10 @@ const { mockCreatePullRequest } = vi.hoisted(() => ({
   mockCreatePullRequest: vi.fn(),
 }));
 
+const { mockEnsureNodePtySpawnHelperExecutable } = vi.hoisted(() => ({
+  mockEnsureNodePtySpawnHelperExecutable: vi.fn(),
+}));
+
 // Mock the config module
 vi.mock('../config/index.js', () => ({
   config: {
@@ -66,6 +70,10 @@ vi.mock('../utils/working-dir.js', () => ({
 // Mock pullRequests module
 vi.mock('../github/pullRequests.js', () => ({
   createPullRequest: mockCreatePullRequest,
+}));
+
+vi.mock('../utils/node-pty.js', () => ({
+  ensureNodePtySpawnHelperExecutable: mockEnsureNodePtySpawnHelperExecutable,
 }));
 
 import { spawn } from 'child_process';
@@ -153,6 +161,7 @@ describe('processCodex', () => {
       number: 42,
       htmlUrl: 'https://github.com/test-owner/test-repo/pull/42',
     });
+    mockEnsureNodePtySpawnHelperExecutable.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -215,9 +224,10 @@ describe('processCodex', () => {
     expect(mockSpawn).toHaveBeenCalledWith('git', ['checkout', '-b', 'issue-1-test-issue', '--track', 'origin/issue-1-test-issue'], expect.any(Object));
 
     // Verify codex was spawned in temp directory
+    expect(mockEnsureNodePtySpawnHelperExecutable).toHaveBeenCalledTimes(1);
     expect(mockPtySpawn).toHaveBeenCalledWith(
       'npx',
-      ['@openai/codex', expect.stringContaining('Issue #1: Test Issue')],
+      ['@openai/codex', 'exec', '--dangerously-bypass-approvals-and-sandbox', expect.stringContaining('Issue #1: Test Issue')],
       expect.objectContaining({ cwd: TEMP_DIR })
     );
 
@@ -332,7 +342,7 @@ describe('processCodex', () => {
 
     expect(mockPtySpawn).toHaveBeenCalledWith(
       '/custom/path/to/codex',
-      [expect.stringContaining('Issue #1: Test Issue')],
+      ['exec', '--dangerously-bypass-approvals-and-sandbox', expect.stringContaining('Issue #1: Test Issue')],
       expect.objectContaining({ cwd: TEMP_DIR })
     );
   });
@@ -363,7 +373,7 @@ describe('processCodex', () => {
     // Verify codex was spawned with default body text
     expect(mockPtySpawn).toHaveBeenCalledWith(
       'npx',
-      ['@openai/codex', expect.stringContaining('No description provided')],
+      ['@openai/codex', 'exec', '--dangerously-bypass-approvals-and-sandbox', expect.stringContaining('No description provided')],
       expect.any(Object)
     );
   });

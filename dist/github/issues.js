@@ -13,6 +13,9 @@ function mapGitHubIssueResponse(issue) {
         updatedAt: issue.updated_at,
     };
 }
+function isPullRequestIssue(issue) {
+    return 'pull_request' in issue && issue.pull_request !== undefined;
+}
 export async function fetchIssues(filters = {}) {
     const { labels, state, assignee, since, milestone, owner, repo } = filters;
     const response = await githubClient.issues.listForRepo({
@@ -27,5 +30,7 @@ export async function fetchIssues(filters = {}) {
         })() : undefined,
         milestone: milestone !== undefined ? String(milestone) : undefined,
     });
-    return response.data.map(mapGitHubIssueResponse);
+    return response.data
+        .filter((issue) => !isPullRequestIssue(issue))
+        .map(mapGitHubIssueResponse);
 }
