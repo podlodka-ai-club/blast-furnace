@@ -1,0 +1,91 @@
+import { buildServer, startServer } from './server/index.js';
+import { config } from './config/index.js';
+import { closeQueue, closeWorker, createWorker } from './jobs/index.js';
+import { issueProcessorHandler } from './jobs/issue-processor.js';
+import { codexProviderHandler } from './jobs/codex-provider.js';
+import { closeIssueWatcherRedis, issueWatcherHandler, startIssueWatcher } from './jobs/issue-watcher.js';
+let server;
+let worker;
+let isShuttingDown = false;
+export async function multiHandler(job) {
+    switch (job.data.type) {
+        case 'issue-processor':
+            return issueProcessorHandler(job);
+        case 'issue-watcher':
+            return issueWatcherHandler(job);
+        case 'codex-provider':
+            return codexProviderHandler(job);
+        default:
+            throw new Error(`Unknown job type: ${job.data.type}`);
+    }
+}
+async function main() {
+    if (!config.github.token) {
+        throw new Error('GITHUB_TOKEN environment variable is required');
+    }
+    if (!config.github.owner) {
+        throw new Error('GITHUB_OWNER environment variable is required');
+    }
+    if (!config.github.repo) {
+        throw new Error('GITHUB_REPO environment variable is required');
+    }
+    server = await buildServer({ logger: true });
+    await startServer(server, config.port);
+    if (config.github.issueStrategy === 'polling') {
+        await startIssueWatcher();
+    }
+    worker = createWorker(multiHandler);
+}
+async function shutdown(signal) {
+    if (isShuttingDown) {
+        return;
+    }
+    isShuttingDown = true;
+    console.log(`Received ${signal}, shutting down gracefully...`);
+    const timeout = setTimeout(() => {
+        console.error('Shutdown timeout exceeded, forcing exit');
+        process.exit(1);
+    }, 10000);
+    timeout.unref();
+    let shutdownError;
+    try {
+        if (server) {
+            await server.close();
+        }
+    }
+    catch (err) {
+        shutdownError = err instanceof Error ? err : new Error(String(err));
+        console.error('Error closing server:', shutdownError);
+    }
+    try {
+        if (worker) {
+            await closeWorker(worker);
+        }
+    }
+    catch (err) {
+        shutdownError = err instanceof Error ? err : new Error(String(err));
+        console.error('Error closing worker:', shutdownError);
+    }
+    try {
+        await closeQueue();
+    }
+    catch (err) {
+        shutdownError = err instanceof Error ? err : new Error(String(err));
+        console.error('Error closing queue:', shutdownError);
+    }
+    try {
+        await closeIssueWatcherRedis();
+    }
+    catch (err) {
+        shutdownError = err instanceof Error ? err : new Error(String(err));
+        console.error('Error closing issue watcher Redis:', shutdownError);
+    }
+    clearTimeout(timeout);
+    process.exit(shutdownError ? 1 : 0);
+}
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+main().catch((err) => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+});
