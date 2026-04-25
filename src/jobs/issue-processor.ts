@@ -1,5 +1,5 @@
 import type { Job } from 'bullmq';
-import type { CodexProviderJobData, IssueProcessorJobData } from '../types/index.js';
+import type { IssueProcessorJobData, PlanJobData } from '../types/index.js';
 import { createJobLogger } from './logger.js';
 import { getRef, pushBranch, deleteBranch } from '../github/branches.js';
 import { jobQueue } from './queue.js';
@@ -84,17 +84,17 @@ export async function processIssue(job: Job<IssueProcessorJobData>): Promise<voi
     const verifySha = await getRef(branchName);
     logger.info(`Branch ${branchName} created successfully (SHA: ${verifySha})`);
 
-    await job.updateProgress({ step: 'enqueueing-codex', issue: issue.number });
-    logger.info(`Enqueueing codex provider job for issue #${issue.number}`);
-    const codexJobData: CodexProviderJobData = {
+    await job.updateProgress({ step: 'enqueueing-plan', issue: issue.number });
+    logger.info(`Enqueueing plan job for issue #${issue.number}`);
+    const planJobData: PlanJobData = {
       taskId: job.data.taskId,
-      type: 'codex-provider',
+      type: 'plan',
       issue,
       branchName,
     };
 
-    await jobQueue.add('codex-provider', codexJobData);
-    logger.info(`Codex provider job enqueued for branch: ${branchName}`);
+    await jobQueue.add('plan', planJobData);
+    logger.info(`Plan job enqueued for branch: ${branchName}`);
   } catch (err) {
     // Attempt to clean up the orphaned branch before re-throwing
     try {

@@ -165,3 +165,23 @@ export interface CodexProviderJobData extends JobPayload {
   issue: GitHubIssue;
   branchName: string;
 }
+
+export interface PlanJobData extends JobPayload {
+  type: 'plan';
+  issue: GitHubIssue;
+  branchName: string;
+}
+
+export interface ReviewJobData extends JobPayload {
+  type: 'review';
+  issue: GitHubIssue;
+  branchName: string;
+  repoPath: string;
+}
+
+export interface MakePrJobData extends JobPayload {
+  type: 'make-pr';
+  issue: GitHubIssue;
+  branchName: string;
+  repoPath: string;
+}

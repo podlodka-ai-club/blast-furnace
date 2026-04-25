@@ -1,8 +1,5 @@
-# Issue Processing Specification
+## MODIFIED Requirements
 
-## Purpose
-Defines the current issue processing pipeline from queued issue to issue branch, Codex execution, commit, push, pull request creation, and label transition.
-## Requirements
 ### Requirement: Issue Processor Job
 The system SHALL turn queued GitHub issues into branch-specific Plan jobs.
 
@@ -42,35 +39,6 @@ The system SHALL turn queued GitHub issues into branch-specific Plan jobs.
 - **THEN** the processor SHALL attempt to delete the issue branch
 - **AND** rethrow the original error
 
-### Requirement: Temporary Working Directory
-The system SHALL run Codex work in a unique temporary clone and keep successful development work available until Make PR finalization.
-
-#### Scenario: Temporary directory is created
-- **WHEN** a Codex provider job starts
-- **THEN** the system SHALL create a unique directory under `/tmp` using the configured prefix and a UUID
-- **AND** reject prefixes containing path separators or `..`
-
-#### Scenario: Repository is cloned
-- **WHEN** the temporary directory is ready
-- **THEN** the system SHALL clone the configured GitHub repository into that directory
-- **AND** use an HTTPS remote URL containing the configured GitHub token
-
-#### Scenario: Codex handoff succeeds
-- **WHEN** Codex provider execution succeeds and the `review` job is enqueued
-- **THEN** the Codex provider SHALL leave the temporary working directory in place for downstream finalization
-
-#### Scenario: Codex handoff does not succeed
-- **WHEN** Codex provider execution fails after directory creation or cannot enqueue `review`
-- **THEN** the Codex provider SHALL remove the temporary working directory
-- **AND** refuse to delete paths outside `/tmp`
-- **AND** refuse to delete symbolic links
-
-#### Scenario: Make PR finalization completes or fails
-- **WHEN** Make PR processing completes or fails after receiving the temporary working directory
-- **THEN** Make PR SHALL remove the temporary working directory
-- **AND** refuse to delete paths outside `/tmp`
-- **AND** refuse to delete symbolic links
-
 ### Requirement: Codex Provider Execution
 The system SHALL run Codex CLI against the issue prompt on the issue branch and schedule review after successful development processing without owning repository finalization.
 
@@ -109,6 +77,35 @@ The system SHALL run Codex CLI against the issue prompt on the issue branch and 
 - **WHEN** Codex exceeds the configured timeout
 - **THEN** the provider SHALL terminate the process and fail the job
 
+### Requirement: Temporary Working Directory
+The system SHALL run Codex work in a unique temporary clone and keep successful development work available until Make PR finalization.
+
+#### Scenario: Temporary directory is created
+- **WHEN** a Codex provider job starts
+- **THEN** the system SHALL create a unique directory under `/tmp` using the configured prefix and a UUID
+- **AND** reject prefixes containing path separators or `..`
+
+#### Scenario: Repository is cloned
+- **WHEN** the temporary directory is ready
+- **THEN** the system SHALL clone the configured GitHub repository into that directory
+- **AND** use an HTTPS remote URL containing the configured GitHub token
+
+#### Scenario: Codex handoff succeeds
+- **WHEN** Codex provider execution succeeds and the `review` job is enqueued
+- **THEN** the Codex provider SHALL leave the temporary working directory in place for downstream finalization
+
+#### Scenario: Codex handoff does not succeed
+- **WHEN** Codex provider execution fails after directory creation or cannot enqueue `review`
+- **THEN** the Codex provider SHALL remove the temporary working directory
+- **AND** refuse to delete paths outside `/tmp`
+- **AND** refuse to delete symbolic links
+
+#### Scenario: Make PR finalization completes or fails
+- **WHEN** Make PR processing completes or fails after receiving the temporary working directory
+- **THEN** Make PR SHALL remove the temporary working directory
+- **AND** refuse to delete paths outside `/tmp`
+- **AND** refuse to delete symbolic links
+
 ### Requirement: Commit Push and Pull Request
 The system SHALL commit, push, open a pull request, and transition labels from the Make PR job when development produces changes.
 
@@ -144,4 +141,3 @@ The system SHALL commit, push, open a pull request, and transition labels from t
 - **WHEN** commit, push, or pull request creation fails
 - **THEN** Make PR SHALL fail the job
 - **AND** still clean up any temporary working directory it owns
-

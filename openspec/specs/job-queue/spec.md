@@ -2,9 +2,7 @@
 
 ## Purpose
 Defines the current BullMQ queue, worker routing, retry, retention, concurrency, and job logging behavior.
-
 ## Requirements
-
 ### Requirement: Queue Configuration
 The system SHALL use a BullMQ queue named `agent-orchestrator` backed by Redis.
 
@@ -34,8 +32,14 @@ The system SHALL process jobs through a BullMQ worker using a type-dispatched jo
 - **THEN** the worker SHALL route it to the issue watcher handler
 - **WHEN** a job has type `issue-processor`
 - **THEN** the worker SHALL route it to the issue processor handler
+- **WHEN** a job has type `plan`
+- **THEN** the worker SHALL route it to the Plan handler
 - **WHEN** a job has type `codex-provider`
 - **THEN** the worker SHALL route it to the Codex provider handler
+- **WHEN** a job has type `review`
+- **THEN** the worker SHALL route it to the Review handler
+- **WHEN** a job has type `make-pr`
+- **THEN** the worker SHALL route it to the Make PR handler
 
 #### Scenario: Unknown job type is received
 - **WHEN** a job has an unrecognized type
@@ -58,3 +62,4 @@ The system SHALL log worker lifecycle events with job context.
 - **WHEN** job progress logging cannot serialize the progress payload
 - **THEN** the system SHALL log a warning
 - **AND** SHALL NOT crash the worker
+

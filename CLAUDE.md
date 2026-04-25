@@ -126,8 +126,14 @@ The project uses Docker Compose to run Redis locally. See `docs/docker.md` for d
 
 - Use ESNext modules (import/export with .js extensions)
 - Strict TypeScript mode enabled
-- Tests must pass before committing
-- All new code requires tests
+- Follow test-driven development for every feature or behavior change:
+  1. Write a focused failing test that captures the requested behavior before changing implementation code.
+  2. Run the relevant test command and confirm the new test fails for the expected reason.
+  3. Implement the smallest change that makes the test pass.
+  4. Run the relevant tests again and confirm they pass before broadening the change.
+- Bug fixes must start with a regression test that fails before the fix.
+- All new code requires tests.
+- Tests must pass before committing.
 - Structured logging via pino
 - Job retry: 3 attempts with exponential backoff
 - Job concurrency: 5 (configurable)

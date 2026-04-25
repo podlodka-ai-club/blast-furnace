@@ -60,16 +60,16 @@ export async function processIssue(job) {
         await job.updateProgress({ step: 'verifying-branch', branch: branchName });
         const verifySha = await getRef(branchName);
         logger.info(`Branch ${branchName} created successfully (SHA: ${verifySha})`);
-        await job.updateProgress({ step: 'enqueueing-codex', issue: issue.number });
-        logger.info(`Enqueueing codex provider job for issue #${issue.number}`);
-        const codexJobData = {
+        await job.updateProgress({ step: 'enqueueing-plan', issue: issue.number });
+        logger.info(`Enqueueing plan job for issue #${issue.number}`);
+        const planJobData = {
             taskId: job.data.taskId,
-            type: 'codex-provider',
+            type: 'plan',
             issue,
             branchName,
         };
-        await jobQueue.add('codex-provider', codexJobData);
-        logger.info(`Codex provider job enqueued for branch: ${branchName}`);
+        await jobQueue.add('plan', planJobData);
+        logger.info(`Plan job enqueued for branch: ${branchName}`);
     }
     catch (err) {
         try {

@@ -3,9 +3,20 @@ import { config } from './config/index.js';
 import { closeQueue, closeWorker, createWorker } from './jobs/index.js';
 import { issueProcessorHandler } from './jobs/issue-processor.js';
 import { codexProviderHandler } from './jobs/codex-provider.js';
+import { makePrHandler } from './jobs/make-pr.js';
+import { planHandler } from './jobs/plan.js';
+import { reviewHandler } from './jobs/review.js';
 import { closeIssueWatcherRedis, issueWatcherHandler, startIssueWatcher } from './jobs/issue-watcher.js';
 import type { Job, Worker } from 'bullmq';
-import type { CodexProviderJobData, IssueProcessorJobData, IssueWatcherJobData, JobPayload } from './types/index.js';
+import type {
+  CodexProviderJobData,
+  IssueProcessorJobData,
+  IssueWatcherJobData,
+  JobPayload,
+  MakePrJobData,
+  PlanJobData,
+  ReviewJobData,
+} from './types/index.js';
 
 let server: Awaited<ReturnType<typeof buildServer>> | undefined;
 let worker: Worker<JobPayload> | undefined;
@@ -20,8 +31,14 @@ export async function multiHandler(job: Job<JobPayload>): Promise<void> {
       return issueProcessorHandler(job as Job<IssueProcessorJobData>);
     case 'issue-watcher':
       return issueWatcherHandler(job as Job<IssueWatcherJobData>);
+    case 'plan':
+      return planHandler(job as Job<PlanJobData>);
     case 'codex-provider':
       return codexProviderHandler(job as Job<CodexProviderJobData>);
+    case 'review':
+      return reviewHandler(job as Job<ReviewJobData>);
+    case 'make-pr':
+      return makePrHandler(job as Job<MakePrJobData>);
     default:
       throw new Error(`Unknown job type: ${job.data.type}`);
   }

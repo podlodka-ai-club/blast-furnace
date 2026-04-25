@@ -23,6 +23,9 @@ import type {
   IssueWatcherJobData,
   RepoWatcherJobData,
   CodexProviderJobData,
+  PlanJobData,
+  ReviewJobData,
+  MakePrJobData,
 } from './index.js';
 
 describe('types', () => {
@@ -530,6 +533,88 @@ describe('types', () => {
         branchName: 'feature/codex-42',
       };
       expect(jobData.payload).toBeUndefined();
+    });
+  });
+
+  describe('PlanJobData', () => {
+    it('should accept valid plan job data', () => {
+      const jobData: PlanJobData = {
+        taskId: 'task-plan',
+        type: 'plan',
+        issue: {
+          id: 1,
+          number: 42,
+          title: 'Test issue',
+          body: 'Issue body',
+          state: 'open',
+          labels: ['enhancement'],
+          assignee: 'user',
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+        },
+        branchName: 'issue-42-test-issue',
+      };
+
+      expect(jobData.taskId).toBe('task-plan');
+      expect(jobData.type).toBe('plan');
+      expect(jobData.issue.number).toBe(42);
+      expect(jobData.branchName).toBe('issue-42-test-issue');
+    });
+  });
+
+  describe('ReviewJobData', () => {
+    it('should accept valid review job data', () => {
+      const jobData: ReviewJobData = {
+        taskId: 'task-review',
+        type: 'review',
+        issue: {
+          id: 1,
+          number: 42,
+          title: 'Test issue',
+          body: 'Issue body',
+          state: 'open',
+          labels: ['enhancement'],
+          assignee: 'user',
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+        },
+        branchName: 'issue-42-test-issue',
+        repoPath: '/tmp/codex-abc123',
+      };
+
+      expect(jobData.taskId).toBe('task-review');
+      expect(jobData.type).toBe('review');
+      expect(jobData.issue.number).toBe(42);
+      expect(jobData.branchName).toBe('issue-42-test-issue');
+      expect(jobData.repoPath).toBe('/tmp/codex-abc123');
+    });
+  });
+
+  describe('MakePrJobData', () => {
+    it('should accept valid make-pr job data', () => {
+      const jobData: MakePrJobData = {
+        taskId: 'task-make-pr',
+        type: 'make-pr',
+        issue: {
+          id: 1,
+          number: 42,
+          title: 'Test issue',
+          body: 'Issue body',
+          state: 'open',
+          labels: ['enhancement'],
+          assignee: 'user',
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+        },
+        branchName: 'issue-42-test-issue',
+        repoPath: '/tmp/codex-abc123',
+      };
+
+      expect(jobData.taskId).toBe('task-make-pr');
+      expect(jobData.type).toBe('make-pr');
+      expect(jobData.issue.number).toBe(42);
+      expect(jobData.branchName).toBe('issue-42-test-issue');
+      expect(jobData.repoPath).toBe('/tmp/codex-abc123');
     });
   });
 });

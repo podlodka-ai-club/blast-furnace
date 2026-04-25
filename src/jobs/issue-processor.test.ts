@@ -120,12 +120,12 @@ describe('issue processor', () => {
 
       expect(mockGetRef).toHaveBeenCalledWith('main');
       expect(mockPushBranch).toHaveBeenCalledWith('issue-42-test-issue-title', 'abc123');
-      expect(mockJobQueueAdd).toHaveBeenCalledWith('codex-provider', expect.objectContaining({
+      expect(mockJobQueueAdd).toHaveBeenCalledWith('plan', expect.objectContaining({
         branchName: 'issue-42-test-issue-title',
       }));
     });
 
-    it('should enqueue codex provider job with issue data', async () => {
+    it('should enqueue plan job with issue data', async () => {
       const { processIssue } = await import('./issue-processor.js');
 
       const mockInfo = vi.fn();
@@ -146,9 +146,9 @@ describe('issue processor', () => {
       });
       await processIssue(mockJob);
 
-      expect(mockJobQueueAdd).toHaveBeenCalledWith('codex-provider', {
+      expect(mockJobQueueAdd).toHaveBeenCalledWith('plan', {
         taskId: 'task-456',
-        type: 'codex-provider',
+        type: 'plan',
         issue: {
           id: 1,
           number: 42,
@@ -162,7 +162,7 @@ describe('issue processor', () => {
         },
         branchName: 'issue-42-test-issue',
       });
-      expect(mockInfo).toHaveBeenCalledWith('Codex provider job enqueued for branch: issue-42-test-issue');
+      expect(mockInfo).toHaveBeenCalledWith('Plan job enqueued for branch: issue-42-test-issue');
     });
 
     it('should handle issue with null body', async () => {
@@ -183,7 +183,7 @@ describe('issue processor', () => {
       await processIssue(mockJob);
 
       expect(mockInfo).toHaveBeenCalledWith('Issue body: (no body)');
-      expect(mockJobQueueAdd).toHaveBeenCalledWith('codex-provider', expect.objectContaining({
+      expect(mockJobQueueAdd).toHaveBeenCalledWith('plan', expect.objectContaining({
         branchName: 'issue-42-test-issue',
       }));
     });
@@ -210,7 +210,7 @@ describe('issue processor', () => {
 
       // Special chars like # and & are removed by slugify, leaving only alphanumeric and hyphens
       expect(mockPushBranch).toHaveBeenCalledWith('issue-42-fix-awesome-bug-1-other-stuff', 'abc123');
-      expect(mockJobQueueAdd).toHaveBeenCalledWith('codex-provider', expect.objectContaining({
+      expect(mockJobQueueAdd).toHaveBeenCalledWith('plan', expect.objectContaining({
         branchName: 'issue-42-fix-awesome-bug-1-other-stuff',
       }));
     });
@@ -236,7 +236,7 @@ describe('issue processor', () => {
       await processIssue(mockJob);
 
       expect(mockPushBranch).toHaveBeenCalledWith('issue-42-my-multiple-spaces', 'abc123');
-      expect(mockJobQueueAdd).toHaveBeenCalledWith('codex-provider', expect.objectContaining({
+      expect(mockJobQueueAdd).toHaveBeenCalledWith('plan', expect.objectContaining({
         branchName: 'issue-42-my-multiple-spaces',
       }));
     });

@@ -43,6 +43,18 @@ vi.mock('./jobs/codex-provider.js', () => ({
   codexProviderHandler: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('./jobs/plan.js', () => ({
+  planHandler: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('./jobs/review.js', () => ({
+  reviewHandler: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('./jobs/make-pr.js', () => ({
+  makePrHandler: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('./server/index.js', () => ({
   buildServer: vi.fn().mockResolvedValue({
     close: vi.fn().mockResolvedValue(undefined),
@@ -129,6 +141,92 @@ describe('index', () => {
       await multiHandler(mockJob);
 
       expect(codexProviderHandler).toHaveBeenCalledWith(mockJob);
+    });
+
+    it('should route plan jobs to planHandler', async () => {
+      const { planHandler } = await import('./jobs/plan.js');
+      const { multiHandler } = await import('./index.js');
+
+      const mockJob = {
+        data: {
+          taskId: 'task-plan',
+          type: 'plan',
+          issue: {
+            id: 1,
+            number: 42,
+            title: 'Test Issue',
+            body: 'Test body',
+            state: 'open' as const,
+            labels: [],
+            assignee: null,
+            createdAt: '2024-01-01T00:00:00Z',
+            updatedAt: '2024-01-01T00:00:00Z',
+          },
+          branchName: 'issue-42-test-issue',
+        },
+      } as unknown as Job;
+
+      await multiHandler(mockJob);
+
+      expect(planHandler).toHaveBeenCalledWith(mockJob);
+    });
+
+    it('should route review jobs to reviewHandler', async () => {
+      const { reviewHandler } = await import('./jobs/review.js');
+      const { multiHandler } = await import('./index.js');
+
+      const mockJob = {
+        data: {
+          taskId: 'task-review',
+          type: 'review',
+          issue: {
+            id: 1,
+            number: 42,
+            title: 'Test Issue',
+            body: 'Test body',
+            state: 'open' as const,
+            labels: [],
+            assignee: null,
+            createdAt: '2024-01-01T00:00:00Z',
+            updatedAt: '2024-01-01T00:00:00Z',
+          },
+          branchName: 'issue-42-test-issue',
+          repoPath: '/tmp/codex-abc123',
+        },
+      } as unknown as Job;
+
+      await multiHandler(mockJob);
+
+      expect(reviewHandler).toHaveBeenCalledWith(mockJob);
+    });
+
+    it('should route make-pr jobs to makePrHandler', async () => {
+      const { makePrHandler } = await import('./jobs/make-pr.js');
+      const { multiHandler } = await import('./index.js');
+
+      const mockJob = {
+        data: {
+          taskId: 'task-make-pr',
+          type: 'make-pr',
+          issue: {
+            id: 1,
+            number: 42,
+            title: 'Test Issue',
+            body: 'Test body',
+            state: 'open' as const,
+            labels: [],
+            assignee: null,
+            createdAt: '2024-01-01T00:00:00Z',
+            updatedAt: '2024-01-01T00:00:00Z',
+          },
+          branchName: 'issue-42-test-issue',
+          repoPath: '/tmp/codex-abc123',
+        },
+      } as unknown as Job;
+
+      await multiHandler(mockJob);
+
+      expect(makePrHandler).toHaveBeenCalledWith(mockJob);
     });
 
     it('should throw error for unknown job type', async () => {

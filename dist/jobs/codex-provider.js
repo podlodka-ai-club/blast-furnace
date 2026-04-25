@@ -4,9 +4,8 @@ import path from 'node:path';
 import { config } from '../config/index.js';
 import { createJobLogger } from './logger.js';
 import { createTempWorkingDir, cloneRepoInto, cleanupWorkingDir, getRepoRemoteUrl } from '../utils/working-dir.js';
-import { createPullRequest } from '../github/pullRequests.js';
-import { moveIssueToInReview } from '../github/issue-labels.js';
 import { ensureNodePtySpawnHelperExecutable } from '../utils/node-pty.js';
+import { jobQueue } from './queue.js';
 const DEFAULT_TIMEOUT_MS = 300000;
 const CODEX_SUBCOMMANDS = new Set([
     'exec',
@@ -42,24 +41,6 @@ async function fetchBranchWithRetry(branchName, cwd, logger, maxRetries = 3) {
             await new Promise((r) => setTimeout(r, delay));
         }
     }
-}
-async function pushWithRetry(remoteUrl, branchName, cwd, logger, maxRetries = 3) {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-            await execGitCommand(['push', remoteUrl, branchName], cwd);
-            return;
-        }
-        catch (err) {
-            if (attempt === maxRetries)
-                throw err;
-            const delay = Math.pow(2, attempt - 1) * 1000;
-            logger.warn(`Push attempt ${attempt} failed for ${branchName}: ${err}, retrying in ${delay}ms...`);
-            await new Promise((r) => setTimeout(r, delay));
-        }
-    }
-}
-function sanitizeForGit(text, maxLength = 200) {
-    return text.replace(/[\r\n]/g, ' ').slice(0, maxLength);
 }
 function buildCodexCliArgs(cliCmd, cliArgs, prompt) {
     const invocationArgs = [...cliArgs];
@@ -104,6 +85,7 @@ export async function processCodex(job) {
     const timeoutMs = parseInt(process.env['CODEX_TIMEOUT_MS'] ?? String(config.codex?.timeoutMs ?? DEFAULT_TIMEOUT_MS), 10);
     logger.info(`Running codex provider for issue #${issue.number} on branch ${branchName}`);
     let repoCwd = null;
+    let handoffCompleted = false;
     try {
         repoCwd = await createTempWorkingDir('codex');
         const remoteUrl = getRepoRemoteUrl();
@@ -164,46 +146,20 @@ export async function processCodex(job) {
             throw new Error(`codex process failed with exit code ${exitCode}`);
         }
         logger.info('codex process completed successfully');
-        try {
-            const status = await execGitCommand(['status', '--porcelain'], repoCwd);
-            if (status) {
-                logger.info('Changes detected, committing...');
-                await execGitCommand(['add', '-A'], repoCwd);
-                const sanitizedTitle = sanitizeForGit(issue.title);
-                const commitResult = await execGitCommand(['commit', '-m', `Processed issue #${issue.number} via codex: ${sanitizedTitle}`], repoCwd);
-                logger.info(`Changes committed: ${commitResult}`);
-                logger.info('Pushing changes to remote branch...');
-                const pushRemoteUrl = getRepoRemoteUrl();
-                await pushWithRetry(pushRemoteUrl, branchName, repoCwd, logger);
-                logger.info(`Changes pushed to ${branchName}`);
-                logger.info('Creating pull request...');
-                const prResult = await createPullRequest({
-                    title: `Process issue #${issue.number}: ${sanitizedTitle}`,
-                    head: branchName,
-                    base: 'main',
-                    body: `Closes #${issue.number}`,
-                });
-                logger.info(`Pull request created: ${prResult.htmlUrl}`);
-                try {
-                    const updatedLabels = await moveIssueToInReview(issue.number);
-                    logger.info(`Issue #${issue.number} labels updated: ${updatedLabels.join(', ')}`);
-                }
-                catch (err) {
-                    logger.warn(`Failed to update labels for issue #${issue.number}: ${err}`);
-                }
-            }
-            else {
-                logger.info('No changes detected, skipping commit and push');
-            }
-        }
-        catch (err) {
-            logger.error(`Git operation failed: ${err}`);
-            throw err;
-        }
+        const reviewJobData = {
+            taskId: job.data.taskId,
+            type: 'review',
+            issue,
+            branchName,
+            repoPath: repoCwd,
+        };
+        await jobQueue.add('review', reviewJobData);
+        handoffCompleted = true;
+        logger.info(`Review job enqueued for branch: ${branchName}`);
         logger.info(`Codex provider completed for issue #${issue.number}`);
     }
     finally {
-        if (repoCwd) {
+        if (repoCwd && !handoffCompleted) {
             logger.info(`Cleaning up temp working directory: ${repoCwd}`);
             await cleanupWorkingDir(repoCwd);
         }

@@ -3,8 +3,9 @@ import type { Job } from 'bullmq';
 import type { CodexProviderJobData, GitHubIssue } from '../types/index.js';
 
 // Use vi.hoisted to avoid hoisting issues with vi.mock
-const { mockCreateJobLogger } = vi.hoisted(() => ({
+const { mockCreateJobLogger, mockJobQueueAdd } = vi.hoisted(() => ({
   mockCreateJobLogger: vi.fn(),
+  mockJobQueueAdd: vi.fn(),
 }));
 
 // Mock working-dir utilities - must be hoisted before vi.mock
@@ -82,6 +83,12 @@ vi.mock('../utils/node-pty.js', () => ({
 
 vi.mock('../github/issue-labels.js', () => ({
   moveIssueToInReview: mockMoveIssueToInReview,
+}));
+
+vi.mock('./queue.js', () => ({
+  jobQueue: {
+    add: mockJobQueueAdd,
+  },
 }));
 
 import { spawn } from 'child_process';
@@ -171,6 +178,7 @@ describe('processCodex', () => {
     });
     mockEnsureNodePtySpawnHelperExecutable.mockResolvedValue(undefined);
     mockMoveIssueToInReview.mockResolvedValue(['in review']);
+    mockJobQueueAdd.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -240,8 +248,14 @@ describe('processCodex', () => {
       expect.objectContaining({ cwd: TEMP_DIR })
     );
 
-    // Verify cleanup was called
-    expect(mockCleanupWorkingDir).toHaveBeenCalledWith(TEMP_DIR);
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('review', {
+      taskId: 'test-task',
+      type: 'review',
+      issue,
+      branchName: 'issue-1-test-issue',
+      repoPath: TEMP_DIR,
+    });
+    expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
   });
 
   it('should cleanup temp directory even when codex process fails', async () => {
@@ -274,7 +288,7 @@ describe('processCodex', () => {
   it('should cleanup temp directory even when checkout fails', async () => {
     const mockSpawn = vi.mocked(spawn);
 
-    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
+    mockSpawn.mockImplementation((cmd: string, _args: string[]) => {
       if (cmd === 'git') {
         // Make fetch fail - use exit code 1 which is handled as a regular error
         // The retry logic will kick in (1s + 2s + 4s = 7s total) before finally throwing
@@ -387,46 +401,12 @@ describe('processCodex', () => {
     );
   });
 
-  it('should commit changes when codex makes modifications', async () => {
+  it('should enqueue review after codex succeeds without committing, pushing, creating a pull request, or moving labels', async () => {
     const mockSpawn = vi.mocked(spawn);
     const mockPtySpawn = vi.mocked(nodePty.spawn);
 
-    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
+    mockSpawn.mockImplementation((cmd: string, _args: string[]) => {
       if (cmd === 'git') {
-        if (args[0] === 'checkout') {
-          return createGitMockProcess();
-        }
-        if (args[0] === 'status') {
-          let dataCallback: ((data: Buffer) => void) | null = null;
-          return {
-            stdout: {
-              on: vi.fn((event: string, cb: (data: Buffer) => void) => {
-                if (event === 'data') dataCallback = cb;
-              }),
-            },
-            stderr: { on: vi.fn() },
-            on: vi.fn((event: string, cb: (code: number) => void) => {
-              if (event === 'close') {
-                setTimeout(() => {
-                  // Emit data before close to simulate real git status output
-                  if (dataCallback) dataCallback(Buffer.from('M modified-file.txt'));
-                  cb(0);
-                }, 0);
-              }
-            }),
-            kill: vi.fn(),
-          } as unknown as ReturnType<typeof spawn>;
-        }
-        if (args[0] === 'add' || args[0] === 'commit') {
-          return {
-            stdout: { on: vi.fn() },
-            stderr: { on: vi.fn() },
-            on: vi.fn((event: string, cb: (code: number) => void) => {
-              if (event === 'close') setTimeout(() => cb(0), 0);
-            }),
-            kill: vi.fn(),
-          } as unknown as ReturnType<typeof spawn>;
-        }
         return createGitMockProcess();
       }
       return createCodexMockProcess();
@@ -444,156 +424,24 @@ describe('processCodex', () => {
 
     await processCodex(job);
 
-    // Verify git add was called
-    expect(mockSpawn).toHaveBeenCalledWith('git', ['add', '-A'], expect.any(Object));
-    // Verify git commit was called
-    expect(mockSpawn).toHaveBeenCalledWith(
-      'git',
-      ['commit', '-m', expect.stringContaining('Processed issue')],
-      expect.any(Object)
-    );
-    // Verify git push was called after commit
-    expect(mockSpawn).toHaveBeenCalledWith(
-      'git',
-      ['push', 'https://test-token@github.com/test-owner/test-repo.git', 'issue-1-test-issue'],
-      expect.any(Object)
-    );
-    // Verify PR was created after push
-    expect(mockCreatePullRequest).toHaveBeenCalledWith({
-      title: 'Process issue #1: Test Issue',
-      head: 'issue-1-test-issue',
-      base: 'main',
-      body: 'Closes #1',
-    });
-    expect(mockMoveIssueToInReview).toHaveBeenCalledWith(1);
-  });
-
-  it('should skip commit and push when no changes are detected', async () => {
-    const mockSpawn = vi.mocked(spawn);
-    const mockPtySpawn = vi.mocked(nodePty.spawn);
-
-    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
-      if (cmd === 'git') {
-        if (args[0] === 'fetch' || args[0] === 'checkout') {
-          return createGitMockProcess();
-        }
-        if (args[0] === 'rev-parse') {
-          // Branch doesn't exist locally
-          return createGitMockProcess(1);
-        }
-        if (args[0] === 'status') {
-          // Return empty string to indicate no changes
-          return {
-            stdout: { on: vi.fn((e, cb) => cb(Buffer.from(''))) },
-            stderr: { on: vi.fn() },
-            on: vi.fn((event: string, cb: (code: number) => void) => {
-              if (event === 'close') setTimeout(() => cb(0), 0);
-            }),
-            kill: vi.fn(),
-          } as unknown as ReturnType<typeof spawn>;
-        }
-        return createGitMockProcess();
-      }
-      return createCodexMockProcess();
-    });
-
-    mockPtySpawn.mockImplementation(() => createCodexMockProcess());
-
-    const issue = createMockIssue(1, 'Test Issue', 'Test body');
-    const job = createMockJob({
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('review', {
       taskId: 'test-task',
-      type: 'codex-provider',
+      type: 'review',
       issue,
       branchName: 'issue-1-test-issue',
+      repoPath: TEMP_DIR,
     });
-
-    await processCodex(job);
-
-    // Verify fetch was called with explicit URL
-    expect(mockSpawn).toHaveBeenCalledWith('git', ['fetch', 'https://test-token@github.com/test-owner/test-repo.git', 'heads/issue-1-test-issue'], expect.any(Object));
-    // Verify checkout was called to create local tracking branch
-    expect(mockSpawn).toHaveBeenCalledWith('git', ['checkout', '-b', 'issue-1-test-issue', '--track', 'origin/issue-1-test-issue'], expect.any(Object));
-    // Verify git add was NOT called (no changes to commit)
+    const statusCalls = mockSpawn.mock.calls.filter(([cmd, args]) => cmd === 'git' && args[0] === 'status');
+    expect(statusCalls).toHaveLength(0);
     const addCalls = mockSpawn.mock.calls.filter(([cmd, args]) => cmd === 'git' && args[0] === 'add');
     expect(addCalls).toHaveLength(0);
-    // Verify git push was NOT called (no changes)
+    const commitCalls = mockSpawn.mock.calls.filter(([cmd, args]) => cmd === 'git' && args[0] === 'commit');
+    expect(commitCalls).toHaveLength(0);
     const pushCalls = mockSpawn.mock.calls.filter(([cmd, args]) => cmd === 'git' && args[0] === 'push');
     expect(pushCalls).toHaveLength(0);
-    // Verify PR was NOT created (no changes)
     expect(mockCreatePullRequest).not.toHaveBeenCalled();
-  });
-
-  it('should throw when git commit fails with real error', async () => {
-    const mockSpawn = vi.mocked(spawn);
-    const mockPtySpawn = vi.mocked(nodePty.spawn);
-    const mockLogger = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() };
-    mockCreateJobLogger.mockReturnValue(mockLogger);
-
-    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
-      if (cmd === 'git') {
-        if (args[0] === 'fetch' || args[0] === 'checkout') {
-          return createGitMockProcess();
-        }
-        if (args[0] === 'rev-parse') {
-          // Branch doesn't exist locally
-          return createGitMockProcess(1);
-        }
-        if (args[0] === 'status') {
-          // Return non-empty to indicate changes exist
-          return {
-            stdout: { on: vi.fn((e, cb) => cb(Buffer.from('M modified-file.txt'))) },
-            stderr: { on: vi.fn() },
-            on: vi.fn((event: string, cb: (code: number) => void) => {
-              if (event === 'close') setTimeout(() => cb(0), 0);
-            }),
-            kill: vi.fn(),
-          } as unknown as ReturnType<typeof spawn>;
-        }
-        // git add succeeds but git commit fails with non-"nothing to commit" error
-        if (args[0] === 'add') {
-          return {
-            stdout: { on: vi.fn((e, cb) => cb(Buffer.from(''))) },
-            stderr: { on: vi.fn() },
-            on: vi.fn((event: string, cb: (code: number) => void) => {
-              if (event === 'close') setTimeout(() => cb(0), 0);
-            }),
-            kill: vi.fn(),
-          } as unknown as ReturnType<typeof spawn>;
-        }
-        if (args[0] === 'commit') {
-          // Commit fails with non-zero exit code and error message that is NOT "nothing to commit"
-          return {
-            stdout: { on: vi.fn() },
-            stderr: { on: vi.fn((e, cb) => cb(Buffer.from('Author identity unknown'))) },
-            on: vi.fn((event: string, cb: (code: number) => void) => {
-              if (event === 'close') setTimeout(() => cb(1), 0);
-            }),
-            kill: vi.fn(),
-          } as unknown as ReturnType<typeof spawn>;
-        }
-        return createGitMockProcess();
-      }
-      return createCodexMockProcess();
-    });
-
-    mockPtySpawn.mockImplementation(() => createCodexMockProcess());
-
-    const issue = createMockIssue(1, 'Test Issue', 'Test body');
-    const job = createMockJob({
-      taskId: 'test-task',
-      type: 'codex-provider',
-      issue,
-      branchName: 'issue-1-test-issue',
-    });
-
-    // Should throw because commit failed with a real error (not "nothing to commit")
-    await expect(processCodex(job)).rejects.toThrow('git command failed');
-
-    // Verify the error was logged
-    expect(mockLogger.error).toHaveBeenCalled();
-
-    // Verify cleanup was called
-    expect(mockCleanupWorkingDir).toHaveBeenCalledWith(TEMP_DIR);
+    expect(mockMoveIssueToInReview).not.toHaveBeenCalled();
+    expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
   });
 
   it('should stream stderr from codex process to logger', async () => {
@@ -676,115 +524,6 @@ describe('processCodex', () => {
     expect(mockSpawn).toHaveBeenCalledWith('git', ['checkout', 'issue-1-test-issue'], expect.any(Object));
     // Verify reset was called to update to match remote
     expect(mockSpawn).toHaveBeenCalledWith('git', ['reset', '--hard', 'origin/issue-1-test-issue'], expect.any(Object));
-  });
-
-  it('should throw when git push fails', async () => {
-    const mockSpawn = vi.mocked(spawn);
-    const mockPtySpawn = vi.mocked(nodePty.spawn);
-
-    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
-      if (cmd === 'git') {
-        if (args[0] === 'fetch' || args[0] === 'checkout') {
-          return createGitMockProcess();
-        }
-        if (args[0] === 'rev-parse') {
-          return createGitMockProcess(1);
-        }
-        if (args[0] === 'status') {
-          // Return non-empty to indicate changes exist
-          return {
-            stdout: { on: vi.fn((e, cb) => cb(Buffer.from('M modified-file.txt'))) },
-            stderr: { on: vi.fn() },
-            on: vi.fn((event: string, cb: (code: number) => void) => {
-              if (event === 'close') setTimeout(() => cb(0), 0);
-            }),
-            kill: vi.fn(),
-          } as unknown as ReturnType<typeof spawn>;
-        }
-        if (args[0] === 'add') {
-          return createGitMockProcess();
-        }
-        if (args[0] === 'commit') {
-          return createGitMockProcess();
-        }
-        // push fails
-        if (args[0] === 'push') {
-          return {
-            stdout: { on: vi.fn() },
-            stderr: { on: vi.fn((e, cb) => cb(Buffer.from('remote: Permission denied'))) },
-            on: vi.fn((event: string, cb: (code: number) => void) => {
-              if (event === 'close') setTimeout(() => cb(1), 0);
-            }),
-            kill: vi.fn(),
-          } as unknown as ReturnType<typeof spawn>;
-        }
-        return createGitMockProcess();
-      }
-      return createCodexMockProcess();
-    });
-
-    mockPtySpawn.mockImplementation(() => createCodexMockProcess());
-
-    const issue = createMockIssue(1, 'Test Issue', 'Test body');
-    const job = createMockJob({
-      taskId: 'test-task',
-      type: 'codex-provider',
-      issue,
-      branchName: 'issue-1-test-issue',
-    });
-
-    // Should throw because push failed
-    await expect(processCodex(job)).rejects.toThrow('git command failed');
-    // Verify PR was NOT created (push failed first)
-    expect(mockCreatePullRequest).not.toHaveBeenCalled();
-    // Verify cleanup still occurred
-    expect(mockCleanupWorkingDir).toHaveBeenCalledWith(TEMP_DIR);
-  });
-
-  it('should throw when createPullRequest fails', async () => {
-    const mockSpawn = vi.mocked(spawn);
-    const mockPtySpawn = vi.mocked(nodePty.spawn);
-
-    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
-      if (cmd === 'git') {
-        if (args[0] === 'fetch' || args[0] === 'checkout') {
-          return createGitMockProcess();
-        }
-        if (args[0] === 'rev-parse') {
-          return createGitMockProcess(1);
-        }
-        if (args[0] === 'status') {
-          return {
-            stdout: { on: vi.fn((e, cb) => cb(Buffer.from('M modified-file.txt'))) },
-            stderr: { on: vi.fn() },
-            on: vi.fn((event: string, cb: (code: number) => void) => {
-              if (event === 'close') setTimeout(() => cb(0), 0);
-            }),
-            kill: vi.fn(),
-          } as unknown as ReturnType<typeof spawn>;
-        }
-        return createGitMockProcess();
-      }
-      return createCodexMockProcess();
-    });
-
-    mockPtySpawn.mockImplementation(() => createCodexMockProcess());
-
-    // Make createPullRequest reject
-    mockCreatePullRequest.mockRejectedValue(new Error('GitHub API error: repo not found'));
-
-    const issue = createMockIssue(1, 'Test Issue', 'Test body');
-    const job = createMockJob({
-      taskId: 'test-task',
-      type: 'codex-provider',
-      issue,
-      branchName: 'issue-1-test-issue',
-    });
-
-    // Should throw because PR creation failed
-    await expect(processCodex(job)).rejects.toThrow('GitHub API error: repo not found');
-    // Verify cleanup still occurred
-    expect(mockCleanupWorkingDir).toHaveBeenCalledWith(TEMP_DIR);
   });
 
   it('should throw when git reset --hard fails', async () => {
@@ -922,10 +661,9 @@ describe('processCodex', () => {
     expect(mockCleanupWorkingDir).toHaveBeenCalledWith(TEMP_DIR);
   });
 
-  it('should retry push with exponential backoff on transient failure', async () => {
+  it('should cleanup temp directory when review enqueue fails', async () => {
     const mockSpawn = vi.mocked(spawn);
     const mockPtySpawn = vi.mocked(nodePty.spawn);
-    let pushAttempts = 0;
 
     mockSpawn.mockImplementation((cmd: string, args: string[]) => {
       if (cmd === 'git') {
@@ -935,40 +673,13 @@ describe('processCodex', () => {
         if (args[0] === 'rev-parse') {
           return createGitMockProcess(1);
         }
-        if (args[0] === 'status') {
-          return {
-            stdout: { on: vi.fn((e, cb) => cb(Buffer.from('M modified-file.txt'))) },
-            stderr: { on: vi.fn() },
-            on: vi.fn((event: string, cb: (code: number) => void) => {
-              if (event === 'close') setTimeout(() => cb(0), 0);
-            }),
-            kill: vi.fn(),
-          } as unknown as ReturnType<typeof spawn>;
-        }
-        if (args[0] === 'add' || args[0] === 'commit') {
-          return createGitMockProcess();
-        }
-        // Push fails first 2 attempts, succeeds on 3rd
-        if (args[0] === 'push') {
-          pushAttempts++;
-          return {
-            stdout: { on: vi.fn() },
-            stderr: { on: vi.fn() },
-            on: vi.fn((event: string, cb: (code: number) => void) => {
-              if (event === 'close') {
-                // Fail first 2 attempts, succeed on 3rd
-                setTimeout(() => cb(pushAttempts >= 3 ? 0 : 1), 0);
-              }
-            }),
-            kill: vi.fn(),
-          } as unknown as ReturnType<typeof spawn>;
-        }
         return createGitMockProcess();
       }
       return createCodexMockProcess();
     });
 
     mockPtySpawn.mockImplementation(() => createCodexMockProcess());
+    mockJobQueueAdd.mockRejectedValue(new Error('Queue add failed'));
 
     const issue = createMockIssue(1, 'Test Issue', 'Test body');
     const job = createMockJob({
@@ -978,13 +689,9 @@ describe('processCodex', () => {
       branchName: 'issue-1-test-issue',
     });
 
-    await processCodex(job);
+    await expect(processCodex(job)).rejects.toThrow('Queue add failed');
 
-    // Verify push was called 3 times (2 failures + 1 success)
-    const pushCalls = mockSpawn.mock.calls.filter(([cmd, args]) => cmd === 'git' && args[0] === 'push');
-    expect(pushCalls).toHaveLength(3);
-    // Verify PR was still created after retry success
-    expect(mockCreatePullRequest).toHaveBeenCalled();
+    expect(mockCleanupWorkingDir).toHaveBeenCalledWith(TEMP_DIR);
   });
 
 });
