@@ -1,17 +1,23 @@
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
-export async function processReview(job) {
-    const logger = createJobLogger(job);
+import { scheduleNextJob } from './orchestration.js';
+export async function runReviewWork(job) {
     const { issue, branchName, repoPath } = job.data;
-    logger.info(`Reviewing issue #${issue.number} on branch ${branchName}`);
-    const makePrJobData = {
+    return {
         taskId: job.data.taskId,
         type: 'make-pr',
         issue,
         branchName,
         repoPath,
     };
-    await jobQueue.add('make-pr', makePrJobData);
+}
+export async function runReviewFlow(job) {
+    const logger = createJobLogger(job);
+    const { issue, branchName } = job.data;
+    logger.info(`Reviewing issue #${issue.number} on branch ${branchName}`);
+    const makePrJobData = await runReviewWork(job);
+    await scheduleNextJob(jobQueue, 'make-pr', makePrJobData);
     logger.info(`Make PR job enqueued for branch: ${branchName}`);
 }
+export const processReview = runReviewFlow;
 export const reviewHandler = processReview;

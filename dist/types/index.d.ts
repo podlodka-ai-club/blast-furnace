@@ -20,6 +20,39 @@ export interface StageResult {
     error?: string;
     durationMs?: number;
 }
+export type RunId = string;
+export type StageName = 'issue-processor' | 'plan' | 'codex-provider' | 'review' | 'make-pr' | 'check-pr' | string;
+export type AttemptNumber = number;
+export interface StageAttemptLocation {
+    runId: RunId;
+    stageName: StageName;
+    attempt: AttemptNumber;
+}
+export interface ArtifactLocation extends StageAttemptLocation {
+    artifactName: string;
+}
+export interface ArtifactMetadata extends ArtifactLocation {
+    path: string;
+    createdAt: string;
+}
+export interface EventMetadata {
+    runId: RunId;
+    eventName: string;
+    path: string;
+    createdAt: string;
+}
+export interface RunStageSummary {
+    attempts: number;
+    status: string;
+    updatedAt?: string;
+}
+export interface RunSummaryData {
+    runId: RunId;
+    status: string;
+    stages: Record<string, RunStageSummary>;
+    createdAt?: string;
+    updatedAt?: string;
+}
 export interface AgentConfig {
     name: string;
     enabled: boolean;

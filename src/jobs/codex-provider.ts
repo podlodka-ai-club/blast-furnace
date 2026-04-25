@@ -8,6 +8,7 @@ import { createJobLogger } from './logger.js';
 import { createTempWorkingDir, cloneRepoInto, cleanupWorkingDir, getRepoRemoteUrl } from '../utils/working-dir.js';
 import { ensureNodePtySpawnHelperExecutable } from '../utils/node-pty.js';
 import { jobQueue } from './queue.js';
+import { scheduleNextJob } from './orchestration.js';
 
 const DEFAULT_TIMEOUT_MS = 300000; // 5 minutes
 const CODEX_SUBCOMMANDS = new Set([
@@ -102,18 +103,15 @@ function execGitCommand(args: string[], cwd: string): Promise<string> {
   });
 }
 
-/**
- * Process a GitHub issue using OpenAI's codex-cli
- * This job:
- * 1. Creates a unique temp directory in /tmp
- * 2. Clones the GitHub repo into it
- * 3. Checks out the specified branch
- * 4. Spawns codex-cli with the issue as a prompt
- * 5. Enqueues review with the working directory for deterministic finalization
- * 6. Cleans up the temp directory only when development fails before handoff
- */
-export async function processCodex(job: Job<CodexProviderJobData>): Promise<void> {
-  const logger = createJobLogger(job);
+interface CodexWorkState {
+  repoCwd: string | null;
+}
+
+export async function runCodexWork(
+  job: Job<CodexProviderJobData>,
+  logger = createJobLogger(job),
+  state: CodexWorkState = { repoCwd: null }
+): Promise<ReviewJobData> {
   const { issue, branchName } = job.data;
   const codexCliPath = process.env['CODEX_CLI_PATH'] ?? config.codex?.cliPath ?? 'npx @openai/codex';
   const timeoutMs = parseInt(
@@ -124,112 +122,129 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
   logger.info(`Running codex provider for issue #${issue.number} on branch ${branchName}`);
 
   // Create a unique temporary working directory for this job
-  let repoCwd: string | null = null;
+  const repoCwd = await createTempWorkingDir('codex');
+  state.repoCwd = repoCwd;
+
+  // Clone the repository into the temp directory
+  // This automatically sets origin to the correct URL since we pass it to clone
+  const remoteUrl = getRepoRemoteUrl();
+  logger.info(`Cloning repository into temp directory: ${repoCwd}`);
+  await cloneRepoInto(repoCwd, remoteUrl);
+
+  // Step 1: Fetch the branch and checkout as a local tracking branch
+  logger.info(`Checking out branch: ${branchName}`);
+
+  // First fetch the specific branch to ensure we have the remote ref
+  // Use retry to handle potential GitHub propagation delay
+  await fetchBranchWithRetry(branchName, repoCwd, logger);
+  // Check if branch already exists locally
+  const branchExists = await execGitCommand(['rev-parse', '--verify', '--quiet', branchName], repoCwd)
+    .then(() => true)
+    .catch(() => false);
+
+  if (branchExists) {
+    // Branch exists locally - checkout and update to match remote
+    await execGitCommand(['checkout', branchName], repoCwd);
+    await execGitCommand(['reset', '--hard', `origin/${branchName}`], repoCwd);
+  } else {
+    // Create a new local branch tracking the remote branch
+    await execGitCommand(['checkout', '-b', branchName, '--track', `origin/${branchName}`], repoCwd);
+  }
+
+  // Step 2: Build the prompt from issue title and body
+  const prompt = `Issue #${issue.number}: ${issue.title}\n\n${issue.body ?? '(No description provided)'}`;
+
+  // Step 3: Spawn codex-cli as a PTY (pseudo-terminal) process
+  // We use node-pty because codex-cli is an interactive TTY application
+  // that queries terminal capabilities and hangs without a PTY.
+  // Parse the configured command so values like "npx @openai/codex"
+  // become executable + args, while a direct binary path stays unchanged.
+  const cliParts = codexCliPath.split(/\s+/).filter(Boolean);
+  if (cliParts.length === 0) {
+    throw new Error('CODEX_CLI_PATH must not be empty');
+  }
+  const cliCmd = cliParts[0];
+  const cliArgs = cliParts.slice(1);
+  const finalCliArgs = buildCodexCliArgs(cliCmd, cliArgs, prompt);
+  logger.info(`Spawning codex-cli with issue prompt`);
+  await ensureNodePtySpawnHelperExecutable(logger);
+  const ptxProcess = pty.spawn(cliCmd, finalCliArgs, {
+    cwd: repoCwd,
+    name: 'xterm-color',
+    env: { ...process.env },
+  });
+
+  logger.info(`codex command: ${cliCmd} ${cliArgs}`);
+
+  // Stream PTY output to logger
+  ptxProcess.onData((data: string) => {
+    const line = data.toString().trim();
+    if (line) {
+      logger.info(`[codex] ${line}`);
+    }
+  });
+
+  // Step 4: Wait for PTY process to complete with timeout
+  const exitCode = await new Promise<number>((resolve, reject) => {
+    let settled = false;
+    const settle = (fn: () => void) => {
+      if (!settled) {
+        settled = true;
+        fn();
+      }
+    };
+    const timer = setTimeout(() => {
+      ptxProcess.kill('SIGTERM');
+      settle(() => reject(new Error(`codex process timed out after ${timeoutMs}ms`)));
+    }, timeoutMs);
+
+    ptxProcess.onExit(({ exitCode }: { exitCode: number }) => {
+      clearTimeout(timer);
+      settle(() => resolve(exitCode));
+    });
+  });
+
+  if (exitCode !== 0) {
+    logger.error(`codex process exited with code ${exitCode}`);
+    throw new Error(`codex process failed with exit code ${exitCode}`);
+  }
+
+  logger.info('codex process completed successfully');
+
+  return {
+    taskId: job.data.taskId,
+    type: 'review',
+    issue,
+    branchName,
+    repoPath: repoCwd,
+  };
+}
+
+/**
+ * Process a GitHub issue using OpenAI's codex-cli
+ * This job:
+ * 1. Creates a unique temp directory in /tmp
+ * 2. Clones the GitHub repo into it
+ * 3. Checks out the specified branch
+ * 4. Spawns codex-cli with the issue as a prompt
+ * 5. Enqueues review with the working directory for deterministic finalization
+ * 6. Cleans up the temp directory only when development fails before handoff
+ */
+export async function runCodexFlow(job: Job<CodexProviderJobData>): Promise<void> {
+  const logger = createJobLogger(job);
+  const state: CodexWorkState = { repoCwd: null };
   let handoffCompleted = false;
 
   try {
-    repoCwd = await createTempWorkingDir('codex');
-    // Clone the repository into the temp directory
-    // This automatically sets origin to the correct URL since we pass it to clone
-    const remoteUrl = getRepoRemoteUrl();
-    logger.info(`Cloning repository into temp directory: ${repoCwd}`);
-    await cloneRepoInto(repoCwd, remoteUrl);
-
-    // Step 1: Fetch the branch and checkout as a local tracking branch
-    logger.info(`Checking out branch: ${branchName}`);
-
-    // First fetch the specific branch to ensure we have the remote ref
-    // Use retry to handle potential GitHub propagation delay
-    await fetchBranchWithRetry(branchName, repoCwd, logger);
-    // Check if branch already exists locally
-    const branchExists = await execGitCommand(['rev-parse', '--verify', '--quiet', branchName], repoCwd)
-      .then(() => true)
-      .catch(() => false);
-
-    if (branchExists) {
-      // Branch exists locally - checkout and update to match remote
-      await execGitCommand(['checkout', branchName], repoCwd);
-      await execGitCommand(['reset', '--hard', `origin/${branchName}`], repoCwd);
-    } else {
-      // Create a new local branch tracking the remote branch
-      await execGitCommand(['checkout', '-b', branchName, '--track', `origin/${branchName}`], repoCwd);
-    }
-
-    // Step 2: Build the prompt from issue title and body
-    const prompt = `Issue #${issue.number}: ${issue.title}\n\n${issue.body ?? '(No description provided)'}`;
-
-    // Step 3: Spawn codex-cli as a PTY (pseudo-terminal) process
-    // We use node-pty because codex-cli is an interactive TTY application
-    // that queries terminal capabilities and hangs without a PTY.
-    // Parse the configured command so values like "npx @openai/codex"
-    // become executable + args, while a direct binary path stays unchanged.
-    const cliParts = codexCliPath.split(/\s+/).filter(Boolean);
-    if (cliParts.length === 0) {
-      throw new Error('CODEX_CLI_PATH must not be empty');
-    }
-    const cliCmd = cliParts[0];
-    const cliArgs = cliParts.slice(1);
-    const finalCliArgs = buildCodexCliArgs(cliCmd, cliArgs, prompt);
-    logger.info(`Spawning codex-cli with issue prompt`);
-    await ensureNodePtySpawnHelperExecutable(logger);
-    const ptxProcess = pty.spawn(cliCmd, finalCliArgs, {
-      cwd: repoCwd,
-      name: 'xterm-color',
-      env: { ...process.env },
-    });
-
-    logger.info(`codex command: ${cliCmd} ${cliArgs}`);
-
-    // Stream PTY output to logger
-    ptxProcess.onData((data: string) => {
-      const line = data.toString().trim();
-      if (line) {
-        logger.info(`[codex] ${line}`);
-      }
-    });
-
-    // Step 4: Wait for PTY process to complete with timeout
-    const exitCode = await new Promise<number>((resolve, reject) => {
-      let settled = false;
-      const settle = (fn: () => void) => {
-        if (!settled) {
-          settled = true;
-          fn();
-        }
-      };
-      const timer = setTimeout(() => {
-        ptxProcess.kill('SIGTERM');
-        settle(() => reject(new Error(`codex process timed out after ${timeoutMs}ms`)));
-      }, timeoutMs);
-
-      ptxProcess.onExit(({ exitCode }: { exitCode: number }) => {
-        clearTimeout(timer);
-        settle(() => resolve(exitCode));
-      });
-    });
-
-    if (exitCode !== 0) {
-      logger.error(`codex process exited with code ${exitCode}`);
-      throw new Error(`codex process failed with exit code ${exitCode}`);
-    }
-
-    logger.info('codex process completed successfully');
-
-    const reviewJobData: ReviewJobData = {
-      taskId: job.data.taskId,
-      type: 'review',
-      issue,
-      branchName,
-      repoPath: repoCwd,
-    };
-    await jobQueue.add('review', reviewJobData);
+    const reviewJobData = await runCodexWork(job, logger, state);
+    await scheduleNextJob(jobQueue, 'review', reviewJobData);
     handoffCompleted = true;
-    logger.info(`Review job enqueued for branch: ${branchName}`);
-    logger.info(`Codex provider completed for issue #${issue.number}`);
+    logger.info(`Review job enqueued for branch: ${reviewJobData.branchName}`);
+    logger.info(`Codex provider completed for issue #${reviewJobData.issue.number}`);
   } finally {
-    if (repoCwd && !handoffCompleted) {
-      logger.info(`Cleaning up temp working directory: ${repoCwd}`);
-      await cleanupWorkingDir(repoCwd);
+    if (state.repoCwd && !handoffCompleted) {
+      logger.info(`Cleaning up temp working directory: ${state.repoCwd}`);
+      await cleanupWorkingDir(state.repoCwd);
     }
   }
 }
@@ -237,4 +252,5 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
 /**
  * Handler for codex provider jobs - exported for use in worker
  */
+export const processCodex = runCodexFlow;
 export const codexProviderHandler = processCodex;

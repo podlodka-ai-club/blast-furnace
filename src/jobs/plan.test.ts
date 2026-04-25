@@ -69,6 +69,35 @@ describe('plan job', () => {
     });
   });
 
+  it('should expose work that returns codex-provider data without enqueueing', async () => {
+    const { runPlanWork } = await import('./plan.js');
+    const job = createJob();
+
+    const result = await runPlanWork(job);
+
+    expect(result).toEqual({
+      taskId: 'task-plan',
+      type: 'codex-provider',
+      issue: job.data.issue,
+      branchName: 'issue-42-test-issue',
+    });
+    expect(mockJobQueueAdd).not.toHaveBeenCalled();
+  });
+
+  it('should expose flow that schedules the codex-provider transition', async () => {
+    const { runPlanFlow } = await import('./plan.js');
+    const job = createJob();
+
+    await runPlanFlow(job);
+
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('codex-provider', {
+      taskId: 'task-plan',
+      type: 'codex-provider',
+      issue: job.data.issue,
+      branchName: 'issue-42-test-issue',
+    });
+  });
+
   it('should export planHandler', async () => {
     const { planHandler } = await import('./plan.js');
     expect(typeof planHandler).toBe('function');

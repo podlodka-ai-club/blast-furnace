@@ -93,7 +93,7 @@ vi.mock('./queue.js', () => ({
 
 import { spawn } from 'child_process';
 import * as nodePty from 'node-pty';
-import { processCodex } from './codex-provider.js';
+import { processCodex, runCodexFlow, runCodexWork } from './codex-provider.js';
 
 const TEMP_DIR = '/tmp/codex-abc123';
 
@@ -441,6 +441,79 @@ describe('processCodex', () => {
     expect(pushCalls).toHaveLength(0);
     expect(mockCreatePullRequest).not.toHaveBeenCalled();
     expect(mockMoveIssueToInReview).not.toHaveBeenCalled();
+    expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
+  });
+
+  it('should expose work that returns review data without enqueueing or cleaning up on success', async () => {
+    const mockSpawn = vi.mocked(spawn);
+    const mockPtySpawn = vi.mocked(nodePty.spawn);
+
+    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git') {
+        if (args[0] === 'rev-parse') {
+          return createGitMockProcess(1);
+        }
+        return createGitMockProcess();
+      }
+      return createCodexMockProcess();
+    });
+
+    mockPtySpawn.mockImplementation(() => createCodexMockProcess());
+
+    const issue = createMockIssue(1, 'Test Issue', 'Test body');
+    const job = createMockJob({
+      taskId: 'test-task',
+      type: 'codex-provider',
+      issue,
+      branchName: 'issue-1-test-issue',
+    });
+
+    const result = await runCodexWork(job);
+
+    expect(result).toEqual({
+      taskId: 'test-task',
+      type: 'review',
+      issue,
+      branchName: 'issue-1-test-issue',
+      repoPath: TEMP_DIR,
+    });
+    expect(mockJobQueueAdd).not.toHaveBeenCalled();
+    expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
+  });
+
+  it('should expose flow that schedules review with unchanged data and preserves handoff cleanup semantics', async () => {
+    const mockSpawn = vi.mocked(spawn);
+    const mockPtySpawn = vi.mocked(nodePty.spawn);
+
+    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git') {
+        if (args[0] === 'rev-parse') {
+          return createGitMockProcess(1);
+        }
+        return createGitMockProcess();
+      }
+      return createCodexMockProcess();
+    });
+
+    mockPtySpawn.mockImplementation(() => createCodexMockProcess());
+
+    const issue = createMockIssue(1, 'Test Issue', 'Test body');
+    const job = createMockJob({
+      taskId: 'test-task',
+      type: 'codex-provider',
+      issue,
+      branchName: 'issue-1-test-issue',
+    });
+
+    await runCodexFlow(job);
+
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('review', {
+      taskId: 'test-task',
+      type: 'review',
+      issue,
+      branchName: 'issue-1-test-issue',
+      repoPath: TEMP_DIR,
+    });
     expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
   });
 

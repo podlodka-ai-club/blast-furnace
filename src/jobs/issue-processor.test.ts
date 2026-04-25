@@ -3,9 +3,10 @@ import type { Job } from 'bullmq';
 import type { IssueProcessorJobData } from '../types/index.js';
 
 // Use vi.hoisted to avoid hoisting issues with vi.mock
-const { mockGetRef, mockPushBranch, mockCreateJobLogger, mockJobQueueAdd } = vi.hoisted(() => ({
+const { mockGetRef, mockPushBranch, mockDeleteBranch, mockCreateJobLogger, mockJobQueueAdd } = vi.hoisted(() => ({
   mockGetRef: vi.fn(),
   mockPushBranch: vi.fn(),
+  mockDeleteBranch: vi.fn(),
   mockCreateJobLogger: vi.fn(),
   mockJobQueueAdd: vi.fn(),
 }));
@@ -14,6 +15,7 @@ const { mockGetRef, mockPushBranch, mockCreateJobLogger, mockJobQueueAdd } = vi.
 vi.mock('../github/branches.js', () => ({
   getRef: mockGetRef,
   pushBranch: mockPushBranch,
+  deleteBranch: mockDeleteBranch,
 }));
 
 vi.mock('./queue.js', () => ({
@@ -89,6 +91,7 @@ describe('issue processor', () => {
       });
       mockGetRef.mockResolvedValue('abc123');
       mockPushBranch.mockResolvedValue();
+      mockDeleteBranch.mockResolvedValue();
       mockJobQueueAdd.mockResolvedValue();
 
       const mockJob = createMockJob();
@@ -137,6 +140,7 @@ describe('issue processor', () => {
       });
       mockGetRef.mockResolvedValue('abc123');
       mockPushBranch.mockResolvedValue();
+      mockDeleteBranch.mockResolvedValue();
       mockJobQueueAdd.mockResolvedValue();
 
       const mockJob = createMockJob({
@@ -290,6 +294,64 @@ describe('issue processor', () => {
 
       const mockJob = createMockJob();
       await expect(processIssue(mockJob)).rejects.toThrow('Queue add failed');
+    });
+
+    it('should expose work that returns plan data without enqueueing', async () => {
+      const { runIssueProcessorWork } = await import('./issue-processor.js');
+
+      const mockInfo = vi.fn();
+      mockCreateJobLogger.mockReturnValue({
+        info: mockInfo,
+        error: vi.fn(),
+        warn: vi.fn(),
+        debug: vi.fn(),
+      });
+      mockGetRef
+        .mockResolvedValueOnce('abc123')
+        .mockRejectedValueOnce(new Error('Branch not found'))
+        .mockResolvedValueOnce('def456');
+      mockPushBranch.mockResolvedValue();
+      mockDeleteBranch.mockResolvedValue();
+      mockJobQueueAdd.mockResolvedValue();
+
+      const mockJob = createMockJob({ title: 'Flow Work Split' });
+      const result = await runIssueProcessorWork(mockJob);
+
+      expect(result).toEqual({
+        taskId: 'task-456',
+        type: 'plan',
+        issue: mockJob.data.issue,
+        branchName: 'issue-42-flow-work-split',
+      });
+      expect(mockJobQueueAdd).not.toHaveBeenCalled();
+    });
+
+    it('should expose flow that schedules the plan transition', async () => {
+      const { runIssueProcessorFlow } = await import('./issue-processor.js');
+
+      mockCreateJobLogger.mockReturnValue({
+        info: vi.fn(),
+        error: vi.fn(),
+        warn: vi.fn(),
+        debug: vi.fn(),
+      });
+      mockGetRef
+        .mockResolvedValueOnce('abc123')
+        .mockRejectedValueOnce(new Error('Branch not found'))
+        .mockResolvedValueOnce('def456');
+      mockPushBranch.mockResolvedValue();
+      mockDeleteBranch.mockResolvedValue();
+      mockJobQueueAdd.mockResolvedValue();
+
+      const mockJob = createMockJob({ title: 'Flow Schedules Plan' });
+      await runIssueProcessorFlow(mockJob);
+
+      expect(mockJobQueueAdd).toHaveBeenCalledWith('plan', {
+        taskId: 'task-456',
+        type: 'plan',
+        issue: mockJob.data.issue,
+        branchName: 'issue-42-flow-schedules-plan',
+      });
     });
   });
 

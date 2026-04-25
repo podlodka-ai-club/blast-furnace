@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Job } from 'bullmq';
 import type { GitHubIssue, MakePrJobData } from '../types/index.js';
 import { spawn } from 'child_process';
-import { processMakePr } from './make-pr.js';
+import { processMakePr, runMakePrFlow, runMakePrWork } from './make-pr.js';
 
 const { mockCreateJobLogger } = vi.hoisted(() => ({
   mockCreateJobLogger: vi.fn(),
@@ -174,6 +174,54 @@ describe('make-pr job', () => {
     expect(mockMoveIssueToInReview).not.toHaveBeenCalled();
     expect(mockJobQueueAdd).not.toHaveBeenCalled();
     expect(mockCleanupWorkingDir).toHaveBeenCalledWith('/tmp/codex-abc123');
+  });
+
+  it('should expose work that creates pull request data without enqueueing check-pr', async () => {
+    const mockSpawn = vi.mocked(spawn);
+    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git' && args[0] === 'status') {
+        return createGitMockProcess(0, 'M modified-file.txt');
+      }
+      return createGitMockProcess();
+    });
+    const job = createJob();
+
+    const result = await runMakePrWork(job);
+
+    expect(result).toEqual({
+      status: 'pull-request-created',
+      pullRequest: {
+        number: 7,
+        htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+      },
+    });
+    expect(mockJobQueueAdd).not.toHaveBeenCalled();
+    expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
+  });
+
+  it('should expose flow that schedules check-pr with unchanged data after pull request creation', async () => {
+    const mockSpawn = vi.mocked(spawn);
+    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git' && args[0] === 'status') {
+        return createGitMockProcess(0, 'M modified-file.txt');
+      }
+      return createGitMockProcess();
+    });
+    const job = createJob();
+
+    await runMakePrFlow(job);
+
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('check-pr', {
+      taskId: 'task-make-pr',
+      type: 'check-pr',
+      issue: job.data.issue,
+      branchName: 'issue-42-test-issue',
+      repoPath: '/tmp/codex-abc123',
+      pullRequest: {
+        number: 7,
+        htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+      },
+    });
   });
 
   it('should fail without enqueueing check-pr when push fails', async () => {

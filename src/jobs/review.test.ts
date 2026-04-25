@@ -71,6 +71,37 @@ describe('review job', () => {
     });
   });
 
+  it('should expose work that returns make-pr data without enqueueing', async () => {
+    const { runReviewWork } = await import('./review.js');
+    const job = createJob();
+
+    const result = await runReviewWork(job);
+
+    expect(result).toEqual({
+      taskId: 'task-review',
+      type: 'make-pr',
+      issue: job.data.issue,
+      branchName: 'issue-42-test-issue',
+      repoPath: '/tmp/codex-abc123',
+    });
+    expect(mockJobQueueAdd).not.toHaveBeenCalled();
+  });
+
+  it('should expose flow that schedules the make-pr transition', async () => {
+    const { runReviewFlow } = await import('./review.js');
+    const job = createJob();
+
+    await runReviewFlow(job);
+
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('make-pr', {
+      taskId: 'task-review',
+      type: 'make-pr',
+      issue: job.data.issue,
+      branchName: 'issue-42-test-issue',
+      repoPath: '/tmp/codex-abc123',
+    });
+  });
+
   it('should export reviewHandler', async () => {
     const { reviewHandler } = await import('./review.js');
     expect(typeof reviewHandler).toBe('function');

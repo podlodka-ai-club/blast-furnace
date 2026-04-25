@@ -3,6 +3,7 @@ import type { IssueProcessorJobData, PlanJobData } from '../types/index.js';
 import { createJobLogger } from './logger.js';
 import { getRef, pushBranch, deleteBranch } from '../github/branches.js';
 import { jobQueue } from './queue.js';
+import { scheduleNextJob } from './orchestration.js';
 
 /**
  * Slugify a string for use in branch names
@@ -32,11 +33,10 @@ function slugify(text: string): string {
   return slug || 'issue';
 }
 
-/**
- * Process an issue by logging it and creating a PR from it
- */
-export async function processIssue(job: Job<IssueProcessorJobData>): Promise<void> {
-  const logger = createJobLogger(job);
+export async function runIssueProcessorWork(
+  job: Job<IssueProcessorJobData>,
+  logger = createJobLogger(job)
+): Promise<PlanJobData> {
   const { issue } = job.data;
 
   logger.info(`Processing issue #${issue.number}: ${issue.title}`);
@@ -84,17 +84,12 @@ export async function processIssue(job: Job<IssueProcessorJobData>): Promise<voi
     const verifySha = await getRef(branchName);
     logger.info(`Branch ${branchName} created successfully (SHA: ${verifySha})`);
 
-    await job.updateProgress({ step: 'enqueueing-plan', issue: issue.number });
-    logger.info(`Enqueueing plan job for issue #${issue.number}`);
-    const planJobData: PlanJobData = {
+    return {
       taskId: job.data.taskId,
       type: 'plan',
       issue,
       branchName,
     };
-
-    await jobQueue.add('plan', planJobData);
-    logger.info(`Plan job enqueued for branch: ${branchName}`);
   } catch (err) {
     // Attempt to clean up the orphaned branch before re-throwing
     try {
@@ -108,6 +103,30 @@ export async function processIssue(job: Job<IssueProcessorJobData>): Promise<voi
 }
 
 /**
+ * Process an issue by logging it, preparing its branch, and enqueueing planning.
+ */
+export async function runIssueProcessorFlow(job: Job<IssueProcessorJobData>): Promise<void> {
+  const logger = createJobLogger(job);
+  const planJobData = await runIssueProcessorWork(job, logger);
+
+  try {
+    await job.updateProgress({ step: 'enqueueing-plan', issue: planJobData.issue.number });
+    logger.info(`Enqueueing plan job for issue #${planJobData.issue.number}`);
+    await scheduleNextJob(jobQueue, 'plan', planJobData);
+    logger.info(`Plan job enqueued for branch: ${planJobData.branchName}`);
+  } catch (err) {
+    try {
+      await deleteBranch(planJobData.branchName);
+      logger.info(`Cleaned up orphaned branch ${planJobData.branchName}`);
+    } catch (cleanupErr) {
+      logger.error(`Failed to clean up orphaned branch ${planJobData.branchName}: ${cleanupErr}`);
+    }
+    throw err;
+  }
+}
+
+/**
  * Handler for issue processor jobs - exported for use in worker
  */
+export const processIssue = runIssueProcessorFlow;
 export const issueProcessorHandler = processIssue;

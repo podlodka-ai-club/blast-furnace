@@ -6,6 +6,7 @@ import { createJobLogger } from './logger.js';
 import { createTempWorkingDir, cloneRepoInto, cleanupWorkingDir, getRepoRemoteUrl } from '../utils/working-dir.js';
 import { ensureNodePtySpawnHelperExecutable } from '../utils/node-pty.js';
 import { jobQueue } from './queue.js';
+import { scheduleNextJob } from './orchestration.js';
 const DEFAULT_TIMEOUT_MS = 300000;
 const CODEX_SUBCOMMANDS = new Set([
     'exec',
@@ -78,92 +79,97 @@ function execGitCommand(args, cwd) {
         child.on('error', reject);
     });
 }
-export async function processCodex(job) {
-    const logger = createJobLogger(job);
+export async function runCodexWork(job, logger = createJobLogger(job), state = { repoCwd: null }) {
     const { issue, branchName } = job.data;
     const codexCliPath = process.env['CODEX_CLI_PATH'] ?? config.codex?.cliPath ?? 'npx @openai/codex';
     const timeoutMs = parseInt(process.env['CODEX_TIMEOUT_MS'] ?? String(config.codex?.timeoutMs ?? DEFAULT_TIMEOUT_MS), 10);
     logger.info(`Running codex provider for issue #${issue.number} on branch ${branchName}`);
-    let repoCwd = null;
+    const repoCwd = await createTempWorkingDir('codex');
+    state.repoCwd = repoCwd;
+    const remoteUrl = getRepoRemoteUrl();
+    logger.info(`Cloning repository into temp directory: ${repoCwd}`);
+    await cloneRepoInto(repoCwd, remoteUrl);
+    logger.info(`Checking out branch: ${branchName}`);
+    await fetchBranchWithRetry(branchName, repoCwd, logger);
+    const branchExists = await execGitCommand(['rev-parse', '--verify', '--quiet', branchName], repoCwd)
+        .then(() => true)
+        .catch(() => false);
+    if (branchExists) {
+        await execGitCommand(['checkout', branchName], repoCwd);
+        await execGitCommand(['reset', '--hard', `origin/${branchName}`], repoCwd);
+    }
+    else {
+        await execGitCommand(['checkout', '-b', branchName, '--track', `origin/${branchName}`], repoCwd);
+    }
+    const prompt = `Issue #${issue.number}: ${issue.title}\n\n${issue.body ?? '(No description provided)'}`;
+    const cliParts = codexCliPath.split(/\s+/).filter(Boolean);
+    if (cliParts.length === 0) {
+        throw new Error('CODEX_CLI_PATH must not be empty');
+    }
+    const cliCmd = cliParts[0];
+    const cliArgs = cliParts.slice(1);
+    const finalCliArgs = buildCodexCliArgs(cliCmd, cliArgs, prompt);
+    logger.info(`Spawning codex-cli with issue prompt`);
+    await ensureNodePtySpawnHelperExecutable(logger);
+    const ptxProcess = pty.spawn(cliCmd, finalCliArgs, {
+        cwd: repoCwd,
+        name: 'xterm-color',
+        env: { ...process.env },
+    });
+    logger.info(`codex command: ${cliCmd} ${cliArgs}`);
+    ptxProcess.onData((data) => {
+        const line = data.toString().trim();
+        if (line) {
+            logger.info(`[codex] ${line}`);
+        }
+    });
+    const exitCode = await new Promise((resolve, reject) => {
+        let settled = false;
+        const settle = (fn) => {
+            if (!settled) {
+                settled = true;
+                fn();
+            }
+        };
+        const timer = setTimeout(() => {
+            ptxProcess.kill('SIGTERM');
+            settle(() => reject(new Error(`codex process timed out after ${timeoutMs}ms`)));
+        }, timeoutMs);
+        ptxProcess.onExit(({ exitCode }) => {
+            clearTimeout(timer);
+            settle(() => resolve(exitCode));
+        });
+    });
+    if (exitCode !== 0) {
+        logger.error(`codex process exited with code ${exitCode}`);
+        throw new Error(`codex process failed with exit code ${exitCode}`);
+    }
+    logger.info('codex process completed successfully');
+    return {
+        taskId: job.data.taskId,
+        type: 'review',
+        issue,
+        branchName,
+        repoPath: repoCwd,
+    };
+}
+export async function runCodexFlow(job) {
+    const logger = createJobLogger(job);
+    const state = { repoCwd: null };
     let handoffCompleted = false;
     try {
-        repoCwd = await createTempWorkingDir('codex');
-        const remoteUrl = getRepoRemoteUrl();
-        logger.info(`Cloning repository into temp directory: ${repoCwd}`);
-        await cloneRepoInto(repoCwd, remoteUrl);
-        logger.info(`Checking out branch: ${branchName}`);
-        await fetchBranchWithRetry(branchName, repoCwd, logger);
-        const branchExists = await execGitCommand(['rev-parse', '--verify', '--quiet', branchName], repoCwd)
-            .then(() => true)
-            .catch(() => false);
-        if (branchExists) {
-            await execGitCommand(['checkout', branchName], repoCwd);
-            await execGitCommand(['reset', '--hard', `origin/${branchName}`], repoCwd);
-        }
-        else {
-            await execGitCommand(['checkout', '-b', branchName, '--track', `origin/${branchName}`], repoCwd);
-        }
-        const prompt = `Issue #${issue.number}: ${issue.title}\n\n${issue.body ?? '(No description provided)'}`;
-        const cliParts = codexCliPath.split(/\s+/).filter(Boolean);
-        if (cliParts.length === 0) {
-            throw new Error('CODEX_CLI_PATH must not be empty');
-        }
-        const cliCmd = cliParts[0];
-        const cliArgs = cliParts.slice(1);
-        const finalCliArgs = buildCodexCliArgs(cliCmd, cliArgs, prompt);
-        logger.info(`Spawning codex-cli with issue prompt`);
-        await ensureNodePtySpawnHelperExecutable(logger);
-        const ptxProcess = pty.spawn(cliCmd, finalCliArgs, {
-            cwd: repoCwd,
-            name: 'xterm-color',
-            env: { ...process.env },
-        });
-        logger.info(`codex command: ${cliCmd} ${cliArgs}`);
-        ptxProcess.onData((data) => {
-            const line = data.toString().trim();
-            if (line) {
-                logger.info(`[codex] ${line}`);
-            }
-        });
-        const exitCode = await new Promise((resolve, reject) => {
-            let settled = false;
-            const settle = (fn) => {
-                if (!settled) {
-                    settled = true;
-                    fn();
-                }
-            };
-            const timer = setTimeout(() => {
-                ptxProcess.kill('SIGTERM');
-                settle(() => reject(new Error(`codex process timed out after ${timeoutMs}ms`)));
-            }, timeoutMs);
-            ptxProcess.onExit(({ exitCode }) => {
-                clearTimeout(timer);
-                settle(() => resolve(exitCode));
-            });
-        });
-        if (exitCode !== 0) {
-            logger.error(`codex process exited with code ${exitCode}`);
-            throw new Error(`codex process failed with exit code ${exitCode}`);
-        }
-        logger.info('codex process completed successfully');
-        const reviewJobData = {
-            taskId: job.data.taskId,
-            type: 'review',
-            issue,
-            branchName,
-            repoPath: repoCwd,
-        };
-        await jobQueue.add('review', reviewJobData);
+        const reviewJobData = await runCodexWork(job, logger, state);
+        await scheduleNextJob(jobQueue, 'review', reviewJobData);
         handoffCompleted = true;
-        logger.info(`Review job enqueued for branch: ${branchName}`);
-        logger.info(`Codex provider completed for issue #${issue.number}`);
+        logger.info(`Review job enqueued for branch: ${reviewJobData.branchName}`);
+        logger.info(`Codex provider completed for issue #${reviewJobData.issue.number}`);
     }
     finally {
-        if (repoCwd && !handoffCompleted) {
-            logger.info(`Cleaning up temp working directory: ${repoCwd}`);
-            await cleanupWorkingDir(repoCwd);
+        if (state.repoCwd && !handoffCompleted) {
+            logger.info(`Cleaning up temp working directory: ${state.repoCwd}`);
+            await cleanupWorkingDir(state.repoCwd);
         }
     }
 }
+export const processCodex = runCodexFlow;
 export const codexProviderHandler = processCodex;

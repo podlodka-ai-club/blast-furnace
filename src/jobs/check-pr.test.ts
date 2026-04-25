@@ -71,6 +71,24 @@ describe('check-pr job', () => {
     expect(mockCleanupWorkingDir).toHaveBeenCalledWith('/tmp/codex-abc123');
   });
 
+  it('should expose work that logs check-pr metadata without cleanup', async () => {
+    const { runCheckPrWork } = await import('./check-pr.js');
+    const job = createJob();
+
+    await runCheckPrWork(job);
+
+    expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
+  });
+
+  it('should expose flow that preserves cleanup behavior', async () => {
+    const { runCheckPrFlow } = await import('./check-pr.js');
+    const job = createJob();
+
+    await runCheckPrFlow(job);
+
+    expect(mockCleanupWorkingDir).toHaveBeenCalledWith('/tmp/codex-abc123');
+  });
+
   it('should export checkPrHandler', async () => {
     const { checkPrHandler } = await import('./check-pr.js');
     expect(typeof checkPrHandler).toBe('function');
