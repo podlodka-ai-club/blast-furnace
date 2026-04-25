@@ -5,6 +5,7 @@ import { config } from '../config/index.js';
 import { createJobLogger } from './logger.js';
 import { createTempWorkingDir, cloneRepoInto, cleanupWorkingDir, getRepoRemoteUrl } from '../utils/working-dir.js';
 import { createPullRequest } from '../github/pullRequests.js';
+import { moveIssueToInReview } from '../github/issue-labels.js';
 import { ensureNodePtySpawnHelperExecutable } from '../utils/node-pty.js';
 const DEFAULT_TIMEOUT_MS = 300000;
 const CODEX_SUBCOMMANDS = new Set([
@@ -183,6 +184,13 @@ export async function processCodex(job) {
                     body: `Closes #${issue.number}`,
                 });
                 logger.info(`Pull request created: ${prResult.htmlUrl}`);
+                try {
+                    const updatedLabels = await moveIssueToInReview(issue.number);
+                    logger.info(`Issue #${issue.number} labels updated: ${updatedLabels.join(', ')}`);
+                }
+                catch (err) {
+                    logger.warn(`Failed to update labels for issue #${issue.number}: ${err}`);
+                }
             }
             else {
                 logger.info('No changes detected, skipping commit and push');

@@ -23,6 +23,10 @@ const { mockEnsureNodePtySpawnHelperExecutable } = vi.hoisted(() => ({
   mockEnsureNodePtySpawnHelperExecutable: vi.fn(),
 }));
 
+const { mockMoveIssueToInReview } = vi.hoisted(() => ({
+  mockMoveIssueToInReview: vi.fn(),
+}));
+
 // Mock the config module
 vi.mock('../config/index.js', () => ({
   config: {
@@ -74,6 +78,10 @@ vi.mock('../github/pullRequests.js', () => ({
 
 vi.mock('../utils/node-pty.js', () => ({
   ensureNodePtySpawnHelperExecutable: mockEnsureNodePtySpawnHelperExecutable,
+}));
+
+vi.mock('../github/issue-labels.js', () => ({
+  moveIssueToInReview: mockMoveIssueToInReview,
 }));
 
 import { spawn } from 'child_process';
@@ -162,6 +170,7 @@ describe('processCodex', () => {
       htmlUrl: 'https://github.com/test-owner/test-repo/pull/42',
     });
     mockEnsureNodePtySpawnHelperExecutable.mockResolvedValue(undefined);
+    mockMoveIssueToInReview.mockResolvedValue(['in review']);
   });
 
   afterEach(() => {
@@ -456,6 +465,7 @@ describe('processCodex', () => {
       base: 'main',
       body: 'Closes #1',
     });
+    expect(mockMoveIssueToInReview).toHaveBeenCalledWith(1);
   });
 
   it('should skip commit and push when no changes are detected', async () => {

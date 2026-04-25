@@ -119,6 +119,7 @@ describe('issue watcher', () => {
       expect(mockFetchIssues).toHaveBeenCalledWith({
         owner: 'test-owner',
         repo: 'test-repo',
+        labels: 'ready',
         state: 'open',
         since: undefined,
       });
@@ -136,6 +137,7 @@ describe('issue watcher', () => {
       expect(mockFetchIssues).toHaveBeenCalledWith({
         owner: 'test-owner',
         repo: 'test-repo',
+        labels: 'ready',
         state: 'open',
         since: '2024-01-01T00:00:00.000Z',
       });
@@ -277,6 +279,7 @@ describe('issue watcher', () => {
       expect(mockFetchIssues).toHaveBeenCalledWith({
         owner: 'test-owner',
         repo: 'test-repo',
+        labels: 'ready',
         state: 'open',
         since: undefined,
       });
@@ -301,12 +304,14 @@ describe('issue watcher', () => {
       expect(mockFetchIssues).toHaveBeenNthCalledWith(1, {
         owner: 'owner1',
         repo: 'repo1',
+        labels: 'ready',
         state: 'open',
         since: undefined,
       });
       expect(mockFetchIssues).toHaveBeenNthCalledWith(2, {
         owner: 'owner2',
         repo: 'repo2',
+        labels: 'ready',
         state: 'open',
         since: undefined,
       });
@@ -398,6 +403,7 @@ describe('issue watcher', () => {
       expect(mockFetchIssues).toHaveBeenCalledWith({
         owner: 'valid-owner',
         repo: 'valid-repo',
+        labels: 'ready',
         state: 'open',
         since: undefined,
       });

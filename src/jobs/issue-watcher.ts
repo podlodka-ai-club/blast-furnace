@@ -3,6 +3,7 @@ import type { IssueProcessorJobData, IssueWatcherJobData } from '../types/index.
 import { jobQueue } from './queue.js';
 import { config } from '../config/index.js';
 import { fetchIssues } from '../github/issues.js';
+import { READY_LABEL } from '../github/issue-labels.js';
 import Redis from 'ioredis';
 
 const LAST_POLL_KEY = 'github:issue-watcher:last-poll';
@@ -89,6 +90,7 @@ export async function issueWatcherHandler(_job: Job<IssueWatcherJobData>): Promi
     const issues = await fetchIssues({
       owner,
       repo,
+      labels: READY_LABEL,
       state: 'open',
       since: sinceTimestamp,
     });

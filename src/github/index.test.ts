@@ -6,6 +6,8 @@ vi.mock('./client.js', () => ({
   githubClient: {
     issues: {
       listForRepo: vi.fn(),
+      listLabelsOnIssue: vi.fn(),
+      setLabels: vi.fn(),
     },
     git: {
       createRef: vi.fn(),
@@ -51,6 +53,10 @@ describe('GitHub module exports', () => {
       expect(typeof github.fetchIssues).toBe('function');
     });
 
+    it('should export moveIssueToInReview', () => {
+      expect(typeof github.moveIssueToInReview).toBe('function');
+    });
+
     it('should export IssueFilters interface', () => {
       // Interface exists as a type
       const filters: github.IssueFilters = {
@@ -58,6 +64,11 @@ describe('GitHub module exports', () => {
         state: 'open',
       };
       expect(filters.labels).toBe('bug');
+    });
+
+    it('should export review label constants', () => {
+      expect(github.READY_LABEL).toBe('ready');
+      expect(github.IN_REVIEW_LABEL).toBe('in review');
     });
   });
 
