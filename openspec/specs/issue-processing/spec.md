@@ -43,7 +43,7 @@ The system SHALL turn queued GitHub issues into branch-specific Plan jobs.
 - **AND** rethrow the original error
 
 ### Requirement: Temporary Working Directory
-The system SHALL run Codex work in a unique temporary clone and keep successful development work available until Make PR finalization.
+The system SHALL run Codex work in a unique temporary clone and keep successful development work available until terminal finalization for the resulting path.
 
 #### Scenario: Temporary directory is created
 - **WHEN** a Codex provider job starts
@@ -65,9 +65,15 @@ The system SHALL run Codex work in a unique temporary clone and keep successful 
 - **AND** refuse to delete paths outside `/tmp`
 - **AND** refuse to delete symbolic links
 
-#### Scenario: Make PR finalization completes or fails
-- **WHEN** Make PR processing completes or fails after receiving the temporary working directory
+#### Scenario: Make PR finalizes a no-change outcome
+- **WHEN** Make PR determines that no repository changes were produced after development and review
 - **THEN** Make PR SHALL remove the temporary working directory
+- **AND** refuse to delete paths outside `/tmp`
+- **AND** refuse to delete symbolic links
+
+#### Scenario: Check PR terminalization completes or fails
+- **WHEN** Check PR processing completes or fails after receiving the temporary working directory from a pull-request-created path
+- **THEN** Check PR SHALL remove the temporary working directory
 - **AND** refuse to delete paths outside `/tmp`
 - **AND** refuse to delete symbolic links
 
@@ -110,11 +116,13 @@ The system SHALL run Codex CLI against the issue prompt on the issue branch and 
 - **THEN** the provider SHALL terminate the process and fail the job
 
 ### Requirement: Commit Push and Pull Request
-The system SHALL commit, push, open a pull request, and transition labels from the Make PR job when development produces changes.
+The system SHALL commit, push, open a pull request, and hand post-PR terminal processing to Check PR from the Make PR job when development produces changes.
 
 #### Scenario: No changes are produced
 - **WHEN** Make PR determines that no repository changes were produced after development and review
 - **THEN** Make PR SHALL skip commit, push, pull request creation, and label transition
+- **AND** clean up the existing temporary repository path itself
+- **AND** SHALL NOT enqueue Check PR
 
 #### Scenario: Changes are produced
 - **WHEN** Make PR determines that repository changes were produced after development and review
@@ -134,6 +142,7 @@ The system SHALL commit, push, open a pull request, and transition labels from t
 - **AND** use the issue branch as head
 - **AND** use `main` as base
 - **AND** use body `Closes #{number}`
+- **AND** enqueue Check PR with the existing issue, branch, temporary repository path, and created pull request result
 
 #### Scenario: Label transition after pull request
 - **WHEN** pull request creation succeeds
@@ -143,5 +152,4 @@ The system SHALL commit, push, open a pull request, and transition labels from t
 #### Scenario: Git or pull request operation fails
 - **WHEN** commit, push, or pull request creation fails
 - **THEN** Make PR SHALL fail the job
-- **AND** still clean up any temporary working directory it owns
 

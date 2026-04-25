@@ -84,15 +84,22 @@ The system SHALL attempt to implement each accepted issue using the configured l
 - **WHEN** Review work completes
 - **THEN** the system SHALL schedule Make PR work with the same received data
 
-#### Scenario: Make PR finalizes changes
+#### Scenario: Make PR creates a pull request
 - **WHEN** Make PR receives reviewed development data with repository changes
 - **THEN** the system SHALL commit those changes to the issue branch
 - **AND** push the branch to GitHub
 - **AND** open a pull request targeting `main`
+- **AND** schedule Check PR work with the received temporary repository path
 
 #### Scenario: Make PR finds no changes
 - **WHEN** Make PR receives reviewed development data without repository changes
 - **THEN** the system SHALL skip commit, push, pull request creation, and label transition
+- **AND** clean up the received temporary repository path inside Make PR
+- **AND** complete the pipeline without scheduling Check PR
+
+#### Scenario: Check PR completes
+- **WHEN** Check PR finishes post-PR terminal processing
+- **THEN** the system SHALL treat the pipeline as complete for that issue
 
 ### Requirement: Pull Request Outcome
 The system SHALL create a GitHub pull request that connects the automated work back to the source issue.
@@ -119,7 +126,7 @@ The system SHALL keep repository control operations in deterministic orchestrato
 #### Scenario: Agent executor runs
 - **WHEN** Codex is executing the task prompt
 - **THEN** Codex SHALL operate inside the temporary working directory
-- **AND** the orchestrator SHALL remain responsible for branch preparation, commit, push, pull request creation, and label transition
+- **AND** the orchestrator SHALL remain responsible for branch preparation, commit, push, pull request creation, label transition, and terminal cleanup
 
 #### Scenario: Processing completes or fails
 - **WHEN** a temporary working directory was created

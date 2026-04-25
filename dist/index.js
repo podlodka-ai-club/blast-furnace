@@ -4,6 +4,7 @@ import { closeQueue, closeWorker, createWorker } from './jobs/index.js';
 import { issueProcessorHandler } from './jobs/issue-processor.js';
 import { codexProviderHandler } from './jobs/codex-provider.js';
 import { makePrHandler } from './jobs/make-pr.js';
+import { checkPrHandler } from './jobs/check-pr.js';
 import { planHandler } from './jobs/plan.js';
 import { reviewHandler } from './jobs/review.js';
 import { closeIssueWatcherRedis, issueWatcherHandler, startIssueWatcher } from './jobs/issue-watcher.js';
@@ -24,6 +25,8 @@ export async function multiHandler(job) {
             return reviewHandler(job);
         case 'make-pr':
             return makePrHandler(job);
+        case 'check-pr':
+            return checkPrHandler(job);
         default:
             throw new Error(`Unknown job type: ${job.data.type}`);
     }

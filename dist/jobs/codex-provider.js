@@ -118,6 +118,7 @@ export async function processCodex(job) {
             name: 'xterm-color',
             env: { ...process.env },
         });
+        logger.info(`codex command: ${cliCmd} ${cliArgs}`);
         ptxProcess.onData((data) => {
             const line = data.toString().trim();
             if (line) {

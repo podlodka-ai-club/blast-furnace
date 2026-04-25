@@ -4,6 +4,7 @@ import { closeQueue, closeWorker, createWorker } from './jobs/index.js';
 import { issueProcessorHandler } from './jobs/issue-processor.js';
 import { codexProviderHandler } from './jobs/codex-provider.js';
 import { makePrHandler } from './jobs/make-pr.js';
+import { checkPrHandler } from './jobs/check-pr.js';
 import { planHandler } from './jobs/plan.js';
 import { reviewHandler } from './jobs/review.js';
 import { closeIssueWatcherRedis, issueWatcherHandler, startIssueWatcher } from './jobs/issue-watcher.js';
@@ -13,6 +14,7 @@ import type {
   IssueProcessorJobData,
   IssueWatcherJobData,
   JobPayload,
+  CheckPrJobData,
   MakePrJobData,
   PlanJobData,
   ReviewJobData,
@@ -39,6 +41,8 @@ export async function multiHandler(job: Job<JobPayload>): Promise<void> {
       return reviewHandler(job as Job<ReviewJobData>);
     case 'make-pr':
       return makePrHandler(job as Job<MakePrJobData>);
+    case 'check-pr':
+      return checkPrHandler(job as Job<CheckPrJobData>);
     default:
       throw new Error(`Unknown job type: ${job.data.type}`);
   }

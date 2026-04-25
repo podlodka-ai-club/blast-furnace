@@ -1,8 +1,4 @@
-# make-pr-job Specification
-
-## Purpose
-TBD - created by archiving change add-pipeline-step-jobs. Update Purpose after archive.
-## Requirements
+## MODIFIED Requirements
 ### Requirement: Make PR Job Module
 The system SHALL provide a `make-pr` job handled by an isolated Make PR module that owns deterministic repository finalization and hands post-PR terminal processing to Check PR only when a pull request exists.
 
@@ -51,4 +47,3 @@ The system SHALL provide a `make-pr` job handled by an isolated Make PR module t
 - **WHEN** Make PR behavior is implemented
 - **THEN** Make PR-specific code SHALL live in its own job module
 - **AND** worker routing SHALL call that module for `make-pr` jobs
-

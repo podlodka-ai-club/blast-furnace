@@ -1,22 +1,16 @@
-# make-pr-job Specification
-
-## Purpose
-TBD - created by archiving change add-pipeline-step-jobs. Update Purpose after archive.
-## Requirements
+## MODIFIED Requirements
 ### Requirement: Make PR Job Module
-The system SHALL provide a `make-pr` job handled by an isolated Make PR module that owns deterministic repository finalization and hands post-PR terminal processing to Check PR only when a pull request exists.
+The system SHALL provide a `make-pr` job handled by an isolated Make PR module that owns deterministic repository finalization and hands terminal processing to Check PR.
 
 #### Scenario: Make PR job receives reviewed data
 - **WHEN** a `make-pr` job runs with data from `review`
 - **THEN** the Make PR module SHALL preserve the received issue and branch data as is
-- **AND** use the received temporary repository path to finalize the issue branch
+- **AND** use the received temporary repository path to finalize the issue branch before handing off terminal processing to `check-pr`
 
 #### Scenario: No changes are produced
 - **WHEN** Make PR determines that development produced no repository changes
 - **THEN** it SHALL skip commit, push, pull request creation, and label transition
-- **AND** treat that no-change outcome as terminal within `make-pr`
-- **AND** attempt to clean up the received temporary repository path
-- **AND** SHALL NOT enqueue `check-pr`
+- **AND** enqueue `check-pr` with the received issue, branch, and temporary repository path
 
 #### Scenario: Changes are produced
 - **WHEN** Make PR determines that development produced repository changes
@@ -51,4 +45,3 @@ The system SHALL provide a `make-pr` job handled by an isolated Make PR module t
 - **WHEN** Make PR behavior is implemented
 - **THEN** Make PR-specific code SHALL live in its own job module
 - **AND** worker routing SHALL call that module for `make-pr` jobs
-

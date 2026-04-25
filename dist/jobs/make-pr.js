@@ -3,6 +3,7 @@ import { createPullRequest } from '../github/pullRequests.js';
 import { moveIssueToInReview } from '../github/issue-labels.js';
 import { cleanupWorkingDir, getRepoRemoteUrl } from '../utils/working-dir.js';
 import { createJobLogger } from './logger.js';
+import { jobQueue } from './queue.js';
 function execGitCommand(args, cwd) {
     return new Promise((resolve, reject) => {
         const child = spawn('git', args, { cwd });
@@ -51,6 +52,8 @@ export async function processMakePr(job) {
         const status = await execGitCommand(['status', '--porcelain'], repoPath);
         if (!status) {
             logger.info('No changes detected, skipping commit, push, pull request, and label transition');
+            logger.info(`Cleaning up temp working directory: ${repoPath}`);
+            await cleanupWorkingDir(repoPath);
             return;
         }
         logger.info('Changes detected, committing...');
@@ -76,14 +79,19 @@ export async function processMakePr(job) {
         catch (err) {
             logger.warn(`Failed to update labels for issue #${issue.number}: ${err}`);
         }
+        const checkPrJobData = {
+            taskId: job.data.taskId,
+            type: 'check-pr',
+            issue,
+            branchName,
+            repoPath,
+            pullRequest: prResult,
+        };
+        await jobQueue.add('check-pr', checkPrJobData);
     }
     catch (err) {
         logger.error(`Make PR operation failed: ${err}`);
         throw err;
-    }
-    finally {
-        logger.info(`Cleaning up temp working directory: ${repoPath}`);
-        await cleanupWorkingDir(repoPath);
     }
 }
 export const makePrHandler = processMakePr;

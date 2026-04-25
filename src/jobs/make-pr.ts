@@ -1,10 +1,11 @@
 import { spawn } from 'child_process';
 import type { Job } from 'bullmq';
-import type { MakePrJobData } from '../types/index.js';
+import type { CheckPrJobData, MakePrJobData } from '../types/index.js';
 import { createPullRequest } from '../github/pullRequests.js';
 import { moveIssueToInReview } from '../github/issue-labels.js';
 import { cleanupWorkingDir, getRepoRemoteUrl } from '../utils/working-dir.js';
 import { createJobLogger } from './logger.js';
+import { jobQueue } from './queue.js';
 
 function execGitCommand(args: string[], cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -67,6 +68,8 @@ export async function processMakePr(job: Job<MakePrJobData>): Promise<void> {
 
     if (!status) {
       logger.info('No changes detected, skipping commit, push, pull request, and label transition');
+      logger.info(`Cleaning up temp working directory: ${repoPath}`);
+      await cleanupWorkingDir(repoPath);
       return;
     }
 
@@ -99,12 +102,19 @@ export async function processMakePr(job: Job<MakePrJobData>): Promise<void> {
     } catch (err) {
       logger.warn(`Failed to update labels for issue #${issue.number}: ${err}`);
     }
+
+    const checkPrJobData: CheckPrJobData = {
+      taskId: job.data.taskId,
+      type: 'check-pr',
+      issue,
+      branchName,
+      repoPath,
+      pullRequest: prResult,
+    };
+    await jobQueue.add('check-pr', checkPrJobData);
   } catch (err) {
     logger.error(`Make PR operation failed: ${err}`);
     throw err;
-  } finally {
-    logger.info(`Cleaning up temp working directory: ${repoPath}`);
-    await cleanupWorkingDir(repoPath);
   }
 }
 

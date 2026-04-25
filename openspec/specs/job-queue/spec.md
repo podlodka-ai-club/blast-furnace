@@ -40,6 +40,8 @@ The system SHALL process jobs through a BullMQ worker using a type-dispatched jo
 - **THEN** the worker SHALL route it to the Review handler
 - **WHEN** a job has type `make-pr`
 - **THEN** the worker SHALL route it to the Make PR handler
+- **WHEN** a job has type `check-pr`
+- **THEN** the worker SHALL route it to the Check PR handler
 
 #### Scenario: Unknown job type is received
 - **WHEN** a job has an unrecognized type

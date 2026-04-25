@@ -1,0 +1,23 @@
+## ADDED Requirements
+### Requirement: Check PR Job Module
+The system SHALL provide a `check-pr` job handled by an isolated Check PR module that owns terminal post-Make-PR handling.
+
+#### Scenario: Check PR receives Make PR output with a pull request
+- **WHEN** a `check-pr` job runs with data from `make-pr` after pull request creation
+- **THEN** the Check PR module SHALL preserve the received issue and branch data as is
+- **AND** use the received temporary repository path as the terminal repository workspace for that issue
+- **AND** keep the received pull request result available to the job logic
+
+#### Scenario: Check PR receives Make PR output without a pull request
+- **WHEN** a `check-pr` job runs with data from `make-pr` after Make PR determines no repository changes were produced
+- **THEN** the Check PR module SHALL accept the handoff without requiring pull request metadata
+- **AND** treat that no-pull-request outcome as a valid terminal state for the pipeline
+
+#### Scenario: Temporary repository is cleaned up
+- **WHEN** Check PR completes or fails after receiving a temporary repository path
+- **THEN** it SHALL attempt to clean up that temporary repository path
+
+#### Scenario: Check PR module remains isolated
+- **WHEN** Check PR behavior is implemented
+- **THEN** Check PR-specific code SHALL live in its own job module
+- **AND** worker routing SHALL call that module for `check-pr` jobs

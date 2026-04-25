@@ -20,6 +20,10 @@ const { mockCleanupWorkingDir } = vi.hoisted(() => ({
   mockCleanupWorkingDir: vi.fn(),
 }));
 
+const { mockJobQueueAdd } = vi.hoisted(() => ({
+  mockJobQueueAdd: vi.fn(),
+}));
+
 vi.mock('child_process', () => ({
   spawn: vi.fn(),
 }));
@@ -39,6 +43,12 @@ vi.mock('../github/issue-labels.js', () => ({
 vi.mock('../utils/working-dir.js', () => ({
   cleanupWorkingDir: mockCleanupWorkingDir,
   getRepoRemoteUrl: () => 'https://test-token@github.com/test-owner/test-repo.git',
+}));
+
+vi.mock('./queue.js', () => ({
+  jobQueue: {
+    add: mockJobQueueAdd,
+  },
 }));
 
 function createIssue(title = 'Test Issue'): GitHubIssue {
@@ -102,9 +112,10 @@ describe('make-pr job', () => {
     });
     mockMoveIssueToInReview.mockResolvedValue(['in review']);
     mockCleanupWorkingDir.mockResolvedValue(undefined);
+    mockJobQueueAdd.mockResolvedValue(undefined);
   });
 
-  it('should commit, push, create a pull request, transition labels, and clean up when changes exist', async () => {
+  it('should commit, push, create a pull request, transition labels, and enqueue check-pr when changes exist', async () => {
     const mockSpawn = vi.mocked(spawn);
     mockSpawn.mockImplementation((cmd: string, args: string[]) => {
       if (cmd === 'git' && args[0] === 'status') {
@@ -135,10 +146,21 @@ describe('make-pr job', () => {
       body: 'Closes #42',
     });
     expect(mockMoveIssueToInReview).toHaveBeenCalledWith(42);
-    expect(mockCleanupWorkingDir).toHaveBeenCalledWith('/tmp/codex-abc123');
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('check-pr', {
+      taskId: 'task-make-pr',
+      type: 'check-pr',
+      issue: job.data.issue,
+      branchName: 'issue-42-test-issue',
+      repoPath: '/tmp/codex-abc123',
+      pullRequest: {
+        number: 7,
+        htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+      },
+    });
+    expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
   });
 
-  it('should skip finalization and clean up when no changes exist', async () => {
+  it('should skip finalization, clean up directly, and not enqueue check-pr when no changes exist', async () => {
     const mockSpawn = vi.mocked(spawn);
     mockSpawn.mockReturnValue(createGitMockProcess(0, ''));
     const job = createJob();
@@ -150,10 +172,11 @@ describe('make-pr job', () => {
     expect(mockSpawn.mock.calls.filter(([, args]) => args[0] === 'push')).toHaveLength(0);
     expect(mockCreatePullRequest).not.toHaveBeenCalled();
     expect(mockMoveIssueToInReview).not.toHaveBeenCalled();
+    expect(mockJobQueueAdd).not.toHaveBeenCalled();
     expect(mockCleanupWorkingDir).toHaveBeenCalledWith('/tmp/codex-abc123');
   });
 
-  it('should fail after cleanup when push fails', async () => {
+  it('should fail without enqueueing check-pr when push fails', async () => {
     const mockSpawn = vi.mocked(spawn);
     mockSpawn.mockImplementation((cmd: string, args: string[]) => {
       if (cmd === 'git' && args[0] === 'status') {
@@ -169,7 +192,8 @@ describe('make-pr job', () => {
     await expect(processMakePr(job)).rejects.toThrow('git command failed');
 
     expect(mockCreatePullRequest).not.toHaveBeenCalled();
-    expect(mockCleanupWorkingDir).toHaveBeenCalledWith('/tmp/codex-abc123');
+    expect(mockJobQueueAdd).not.toHaveBeenCalled();
+    expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
   });
 
   it('should warn without failing when label transition fails', async () => {
@@ -188,7 +212,18 @@ describe('make-pr job', () => {
     await processMakePr(job);
 
     expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('Failed to update labels'));
-    expect(mockCleanupWorkingDir).toHaveBeenCalledWith('/tmp/codex-abc123');
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('check-pr', {
+      taskId: 'task-make-pr',
+      type: 'check-pr',
+      issue: job.data.issue,
+      branchName: 'issue-42-test-issue',
+      repoPath: '/tmp/codex-abc123',
+      pullRequest: {
+        number: 7,
+        htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+      },
+    });
+    expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
   });
 
   it('should export makePrHandler', async () => {

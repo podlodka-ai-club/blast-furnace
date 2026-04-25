@@ -55,6 +55,10 @@ vi.mock('./jobs/make-pr.js', () => ({
   makePrHandler: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('./jobs/check-pr.js', () => ({
+  checkPrHandler: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('./server/index.js', () => ({
   buildServer: vi.fn().mockResolvedValue({
     close: vi.fn().mockResolvedValue(undefined),
@@ -227,6 +231,39 @@ describe('index', () => {
       await multiHandler(mockJob);
 
       expect(makePrHandler).toHaveBeenCalledWith(mockJob);
+    });
+
+    it('should route check-pr jobs to checkPrHandler', async () => {
+      const { checkPrHandler } = await import('./jobs/check-pr.js');
+      const { multiHandler } = await import('./index.js');
+
+      const mockJob = {
+        data: {
+          taskId: 'task-check-pr',
+          type: 'check-pr',
+          issue: {
+            id: 1,
+            number: 42,
+            title: 'Test Issue',
+            body: 'Test body',
+            state: 'open' as const,
+            labels: [],
+            assignee: null,
+            createdAt: '2024-01-01T00:00:00Z',
+            updatedAt: '2024-01-01T00:00:00Z',
+          },
+          branchName: 'issue-42-test-issue',
+          repoPath: '/tmp/codex-abc123',
+          pullRequest: {
+            number: 7,
+            htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+          },
+        },
+      } as unknown as Job;
+
+      await multiHandler(mockJob);
+
+      expect(checkPrHandler).toHaveBeenCalledWith(mockJob);
     });
 
     it('should throw error for unknown job type', async () => {

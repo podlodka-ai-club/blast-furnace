@@ -1,3 +1,4 @@
+import type { PullRequestResponse } from '../github/pullRequests.js';
 export interface TaskData {
     taskId: string;
     type: string;
@@ -145,4 +146,11 @@ export interface MakePrJobData extends JobPayload {
     issue: GitHubIssue;
     branchName: string;
     repoPath: string;
+}
+export interface CheckPrJobData extends JobPayload {
+    type: 'check-pr';
+    issue: GitHubIssue;
+    branchName: string;
+    repoPath: string;
+    pullRequest: PullRequestResponse;
 }

@@ -2,6 +2,8 @@
 /* istanbul ignore file */
 // This file contains only TypeScript type definitions with no runtime code
 
+import type { PullRequestResponse } from '../github/pullRequests.js';
+
 // Task types
 export interface TaskData {
   taskId: string;
@@ -184,4 +186,12 @@ export interface MakePrJobData extends JobPayload {
   issue: GitHubIssue;
   branchName: string;
   repoPath: string;
+}
+
+export interface CheckPrJobData extends JobPayload {
+  type: 'check-pr';
+  issue: GitHubIssue;
+  branchName: string;
+  repoPath: string;
+  pullRequest: PullRequestResponse;
 }

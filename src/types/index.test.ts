@@ -26,6 +26,7 @@ import type {
   PlanJobData,
   ReviewJobData,
   MakePrJobData,
+  CheckPrJobData,
 } from './index.js';
 
 describe('types', () => {
@@ -615,6 +616,39 @@ describe('types', () => {
       expect(jobData.issue.number).toBe(42);
       expect(jobData.branchName).toBe('issue-42-test-issue');
       expect(jobData.repoPath).toBe('/tmp/codex-abc123');
+    });
+  });
+
+  describe('CheckPrJobData', () => {
+    it('should accept valid check-pr job data with pull request metadata', () => {
+      const jobData: CheckPrJobData = {
+        taskId: 'task-check-pr',
+        type: 'check-pr',
+        issue: {
+          id: 1,
+          number: 42,
+          title: 'Test issue',
+          body: 'Issue body',
+          state: 'open',
+          labels: ['enhancement'],
+          assignee: 'user',
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+        },
+        branchName: 'issue-42-test-issue',
+        repoPath: '/tmp/codex-abc123',
+        pullRequest: {
+          number: 7,
+          htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+        },
+      };
+
+      expect(jobData.taskId).toBe('task-check-pr');
+      expect(jobData.type).toBe('check-pr');
+      expect(jobData.issue.number).toBe(42);
+      expect(jobData.branchName).toBe('issue-42-test-issue');
+      expect(jobData.repoPath).toBe('/tmp/codex-abc123');
+      expect(jobData.pullRequest?.number).toBe(7);
     });
   });
 });
