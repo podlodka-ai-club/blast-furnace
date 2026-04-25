@@ -33,6 +33,10 @@ vi.mock('../config/index.js', () => ({
       issueStrategy: 'polling',
       pollIntervalMs: 60000,
     },
+    codex: {
+      cliPath: 'npx @openai/codex',
+      timeoutMs: 300000,
+    },
   },
 }));
 
@@ -180,7 +184,7 @@ describe('processCodex', () => {
       return createCodexMockProcess();
     });
 
-    mockPtySpawn.mockImplementation((cmd: string, _args: string[]) => {
+    mockPtySpawn.mockImplementation((_cmd: string, _args: string[]) => {
       return createCodexMockProcess();
     });
 
@@ -328,7 +332,7 @@ describe('processCodex', () => {
 
     expect(mockPtySpawn).toHaveBeenCalledWith(
       '/custom/path/to/codex',
-      ['@openai/codex', expect.stringContaining('Issue #1: Test Issue')],
+      [expect.stringContaining('Issue #1: Test Issue')],
       expect.objectContaining({ cwd: TEMP_DIR })
     );
   });

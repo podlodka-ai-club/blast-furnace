@@ -20,9 +20,8 @@ Blast Furnace is a continuous-running server that watches a GitHub repository fo
 
 2. Configure environment variables:
    ```bash
-   export GITHUB_TOKEN=your_github_token
-   export GITHUB_OWNER=owner
-   export GITHUB_REPO=repo
+   cp .env.local.example .env.local
+   source ./scripts/load-env.sh
    ```
 
 3. Start Redis:
@@ -38,6 +37,13 @@ Blast Furnace is a continuous-running server that watches a GitHub repository fo
 ## Configuration
 
 All configuration is loaded from environment variables.
+
+For local development, you can keep them in `.env.local` using shell `export` syntax.
+The project includes:
+
+- `.env.local.example` - template with the expected variables
+- `source ./scripts/load-env.sh` - loads `.env.local` into your current shell
+- `./scripts/start.sh` - automatically loads `.env.local` if it exists
 
 ### Required Variables
 

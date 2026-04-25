@@ -1,15 +1,27 @@
 #!/bin/bash
 set -eu
 
+# Resolve project root so scripts work regardless of the current shell directory.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 # Check if Docker is running
 if ! docker info > /dev/null 2>&1; then
   echo "Error: Docker is not running. Please start Docker and try again."
   exit 1
 fi
 
-# Change to the script's directory to find docker-compose.yml
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+# Change to the project root to find docker-compose.yml and package.json
+cd "$PROJECT_ROOT"
+
+# Load local environment variables when present.
+if [ -f "$PROJECT_ROOT/.env.local" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$PROJECT_ROOT/.env.local"
+  set +a
+  echo "Loaded environment from .env.local"
+fi
 
 # Start Redis via docker-compose up -d
 echo "Starting Redis..."

@@ -1,10 +1,9 @@
 import { spawn } from 'child_process';
 import * as pty from 'node-pty';
+import { config } from '../config/index.js';
 import { createJobLogger } from './logger.js';
 import { createTempWorkingDir, cloneRepoInto, cleanupWorkingDir, getRepoRemoteUrl } from '../utils/working-dir.js';
 import { createPullRequest } from '../github/pullRequests.js';
-const DEFAULT_CODEX_CLI_PATH = 'npx';
-const DEFAULT_CODEX_ARGS = ['@openai/codex'];
 const DEFAULT_TIMEOUT_MS = 300000;
 async function fetchBranchWithRetry(branchName, cwd, logger, maxRetries = 3) {
     const remoteUrl = getRepoRemoteUrl();
@@ -65,8 +64,8 @@ function execGitCommand(args, cwd) {
 export async function processCodex(job) {
     const logger = createJobLogger(job);
     const { issue, branchName } = job.data;
-    const codexCliPath = process.env['CODEX_CLI_PATH'] ?? DEFAULT_CODEX_CLI_PATH;
-    const timeoutMs = parseInt(process.env['CODEX_TIMEOUT_MS'] ?? String(DEFAULT_TIMEOUT_MS), 10);
+    const codexCliPath = process.env['CODEX_CLI_PATH'] ?? config.codex?.cliPath ?? 'npx @openai/codex';
+    const timeoutMs = parseInt(process.env['CODEX_TIMEOUT_MS'] ?? String(config.codex?.timeoutMs ?? DEFAULT_TIMEOUT_MS), 10);
     logger.info(`Running codex provider for issue #${issue.number} on branch ${branchName}`);
     let repoCwd = null;
     try {
@@ -87,9 +86,12 @@ export async function processCodex(job) {
             await execGitCommand(['checkout', '-b', branchName, '--track', `origin/${branchName}`], repoCwd);
         }
         const prompt = `Issue #${issue.number}: ${issue.title}\n\n${issue.body ?? '(No description provided)'}`;
-        const cliParts = codexCliPath.split(/\s+/);
+        const cliParts = codexCliPath.split(/\s+/).filter(Boolean);
+        if (cliParts.length === 0) {
+            throw new Error('CODEX_CLI_PATH must not be empty');
+        }
         const cliCmd = cliParts[0];
-        const cliArgs = [...cliParts.slice(1), ...DEFAULT_CODEX_ARGS];
+        const cliArgs = cliParts.slice(1);
         logger.info(`Spawning codex-cli with issue prompt`);
         const ptxProcess = pty.spawn(cliCmd, [...cliArgs, prompt], {
             cwd: repoCwd,

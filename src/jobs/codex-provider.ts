@@ -2,12 +2,11 @@ import { spawn } from 'child_process';
 import * as pty from 'node-pty';
 import type { Job } from 'bullmq';
 import type { CodexProviderJobData } from '../types/index.js';
+import { config } from '../config/index.js';
 import { createJobLogger } from './logger.js';
 import { createTempWorkingDir, cloneRepoInto, cleanupWorkingDir, getRepoRemoteUrl } from '../utils/working-dir.js';
 import { createPullRequest } from '../github/pullRequests.js';
 
-const DEFAULT_CODEX_CLI_PATH = 'npx';
-const DEFAULT_CODEX_ARGS = ['@openai/codex'];
 const DEFAULT_TIMEOUT_MS = 300000; // 5 minutes
 
 /**
@@ -106,8 +105,11 @@ function execGitCommand(args: string[], cwd: string): Promise<string> {
 export async function processCodex(job: Job<CodexProviderJobData>): Promise<void> {
   const logger = createJobLogger(job);
   const { issue, branchName } = job.data;
-  const codexCliPath = process.env['CODEX_CLI_PATH'] ?? DEFAULT_CODEX_CLI_PATH;
-  const timeoutMs = parseInt(process.env['CODEX_TIMEOUT_MS'] ?? String(DEFAULT_TIMEOUT_MS), 10);
+  const codexCliPath = process.env['CODEX_CLI_PATH'] ?? config.codex?.cliPath ?? 'npx @openai/codex';
+  const timeoutMs = parseInt(
+    process.env['CODEX_TIMEOUT_MS'] ?? String(config.codex?.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+    10
+  );
 
   logger.info(`Running codex provider for issue #${issue.number} on branch ${branchName}`);
 
@@ -148,11 +150,14 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
     // Step 3: Spawn codex-cli as a PTY (pseudo-terminal) process
     // We use node-pty because codex-cli is an interactive TTY application
     // that queries terminal capabilities and hangs without a PTY.
-    // Parse CODEX_CLI_PATH to handle commands like "npx @openai/codex" where
-    // the executable (npx) and its arguments (@openai/codex) need to be split.
-    const cliParts = codexCliPath.split(/\s+/);
+    // Parse the configured command so values like "npx @openai/codex"
+    // become executable + args, while a direct binary path stays unchanged.
+    const cliParts = codexCliPath.split(/\s+/).filter(Boolean);
+    if (cliParts.length === 0) {
+      throw new Error('CODEX_CLI_PATH must not be empty');
+    }
     const cliCmd = cliParts[0];
-    const cliArgs = [...cliParts.slice(1), ...DEFAULT_CODEX_ARGS];
+    const cliArgs = cliParts.slice(1);
     logger.info(`Spawning codex-cli with issue prompt`);
     const ptxProcess = pty.spawn(cliCmd, [...cliArgs, prompt], {
       cwd: repoCwd,
@@ -182,7 +187,7 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
         settle(() => reject(new Error(`codex process timed out after ${timeoutMs}ms`)));
       }, timeoutMs);
 
-      ptxProcess.onExit(({ exitCode }) => {
+      ptxProcess.onExit(({ exitCode }: { exitCode: number }) => {
         clearTimeout(timer);
         settle(() => resolve(exitCode));
       });

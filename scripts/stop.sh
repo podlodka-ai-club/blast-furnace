@@ -1,9 +1,10 @@
 #!/bin/bash
 set -e
 
-# Change to the script's directory to find docker-compose.yml
+# Change to the project root to find docker-compose.yml
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
 
 # Stop the Node.js server (kill the tsx/node process running the dev server)
 echo "Stopping Node.js server..."
