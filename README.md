@@ -74,6 +74,27 @@ The project includes:
 
 ## Architecture
 
+### Operating Model
+
+The orchestrator is built as a queue-driven pipeline. Each major stage runs as a BullMQ job, persists its input as JSON-compatible `job.data`, and schedules the next stage by adding another job to the queue. Stages do not call each other directly.
+
+Redis is the shared persistence layer behind this model:
+- BullMQ stores queued jobs, retry state, and stage payloads in Redis
+- The application stores supporting state in Redis, such as the last poll timestamp and registered repositories
+
+Current high-level flow:
+
+```text
+GitHub polling/webhook
+  -> BullMQ queue
+      -> issue-processor job
+          -> BullMQ queue
+              -> codex-provider job
+                  -> commit/push/PR steps
+```
+
+For example, `issue-processor` receives a `GitHubIssue`, creates or verifies `issue-{number}-{slugified-title}`, then enqueues `codex-provider` with the same issue plus `branchName`. If a worker is available, BullMQ may run the next job almost immediately; otherwise it remains queued until worker capacity is available.
+
 ### HTTP Framework
 
 Fastify v5 is used as the HTTP framework due to its performance and TypeScript compatibility.
