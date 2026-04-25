@@ -72,6 +72,7 @@ describe('issue processor', () => {
           ...issueData,
         },
       },
+      updateProgress: vi.fn().mockResolvedValue(undefined),
     } as unknown as Job<IssueProcessorJobData>;
   };
 
@@ -107,7 +108,10 @@ describe('issue processor', () => {
         warn: vi.fn(),
         debug: vi.fn(),
       });
-      mockGetRef.mockResolvedValue('abc123');
+      // First call returns SHA for 'main', second call throws for branch existence check (branch doesn't exist)
+      mockGetRef
+        .mockResolvedValueOnce('abc123')
+        .mockRejectedValueOnce(new Error('Branch not found'));
       mockPushBranch.mockResolvedValue();
       mockJobQueueAdd.mockResolvedValue();
 
@@ -194,7 +198,10 @@ describe('issue processor', () => {
         warn: vi.fn(),
         debug: vi.fn(),
       });
-      mockGetRef.mockResolvedValue('abc123');
+      // First call returns SHA for 'main', second call throws for branch existence check (branch doesn't exist)
+      mockGetRef
+        .mockResolvedValueOnce('abc123')
+        .mockRejectedValueOnce(new Error('Branch not found'));
       mockPushBranch.mockResolvedValue();
       mockJobQueueAdd.mockResolvedValue();
 
@@ -218,7 +225,10 @@ describe('issue processor', () => {
         warn: vi.fn(),
         debug: vi.fn(),
       });
-      mockGetRef.mockResolvedValue('abc123');
+      // First call returns SHA for 'main', second call throws for branch existence check (branch doesn't exist)
+      mockGetRef
+        .mockResolvedValueOnce('abc123')
+        .mockRejectedValueOnce(new Error('Branch not found'));
       mockPushBranch.mockResolvedValue();
       mockJobQueueAdd.mockResolvedValue();
 
@@ -255,7 +265,10 @@ describe('issue processor', () => {
         warn: vi.fn(),
         debug: vi.fn(),
       });
-      mockGetRef.mockResolvedValue('abc123');
+      // First call returns SHA for 'main', second call throws for branch existence check (branch doesn't exist)
+      mockGetRef
+        .mockResolvedValueOnce('abc123')
+        .mockRejectedValueOnce(new Error('Branch not found'));
       mockPushBranch.mockRejectedValue(new Error('Push failed'));
 
       const mockJob = createMockJob();

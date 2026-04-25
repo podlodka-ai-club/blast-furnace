@@ -46,29 +46,45 @@ export async function processIssue(job: Job<IssueProcessorJobData>): Promise<voi
   const branchName = `issue-${issue.number}-${slugify(issue.title)}`;
 
   // Get the current main branch SHA
-  logger.info(`Creating branch: ${branchName}`);
   let sha: string;
   try {
+    await job.updateProgress({ step: 'fetching-main-ref' });
     sha = await getRef('main');
   } catch (err) {
     logger.error(`Failed to get ref for main: ${err}`);
     throw err;
   }
 
-  // Push the new branch
+  // Check if branch already exists before creating it
+  let branchExists = false;
   try {
-    await pushBranch(branchName, sha);
-  } catch (err) {
-    logger.error(`Failed to push branch ${branchName}: ${err}`);
-    throw err;
+    await getRef(branchName);
+    branchExists = true;
+  } catch {
+    // Branch doesn't exist, which is what we want
+  }
+
+  if (branchExists) {
+    logger.info(`Branch ${branchName} already exists, skipping creation`);
+  } else {
+    logger.info(`Creating branch: ${branchName}`);
+    try {
+      await job.updateProgress({ step: 'creating-branch', branch: branchName });
+      await pushBranch(branchName, sha);
+    } catch (err) {
+      logger.error(`Failed to push branch ${branchName}: ${err}`);
+      throw err;
+    }
   }
 
   // Verify branch was created and enqueue codex job
   // If either fails, attempt to clean up the orphaned branch
   try {
+    await job.updateProgress({ step: 'verifying-branch', branch: branchName });
     const verifySha = await getRef(branchName);
     logger.info(`Branch ${branchName} created successfully (SHA: ${verifySha})`);
 
+    await job.updateProgress({ step: 'enqueueing-codex', issue: issue.number });
     logger.info(`Enqueueing codex provider job for issue #${issue.number}`);
     const codexJobData: CodexProviderJobData = {
       taskId: job.data.taskId,

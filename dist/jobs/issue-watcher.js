@@ -36,8 +36,13 @@ export async function startIssueWatcher() {
 }
 export async function issueWatcherHandler(_job) {
     const storedTimestamp = await redisClient.get(LAST_POLL_KEY);
-    const lastPollTimestamp = storedTimestamp ? new Date(storedTimestamp) : undefined;
-    const sinceTimestamp = lastPollTimestamp?.toISOString();
+    let sinceTimestamp;
+    if (storedTimestamp) {
+        const date = new Date(storedTimestamp);
+        if (!Number.isNaN(date.getTime())) {
+            sinceTimestamp = date.toISOString();
+        }
+    }
     const repoMembers = await redisClient.smembers(REPO_LIST_KEY);
     const repos = [];
     for (const member of repoMembers) {

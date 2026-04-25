@@ -41,6 +41,11 @@ vi.mock('child_process', () => ({
   spawn: vi.fn(),
 }));
 
+// Mock node-pty
+vi.mock('node-pty', () => ({
+  spawn: vi.fn(),
+}));
+
 // Mock the logger
 vi.mock('../utils/logger.js', () => ({
   createLogger: mockCreateJobLogger,
@@ -60,6 +65,7 @@ vi.mock('../github/pullRequests.js', () => ({
 }));
 
 import { spawn } from 'child_process';
+import * as nodePty from 'node-pty';
 import { processCodex } from './codex-provider.js';
 
 const TEMP_DIR = '/tmp/codex-abc123';
@@ -110,21 +116,14 @@ function createGitMockProcess(exitCode: number = 0): ReturnType<typeof spawn> {
   } as unknown as ReturnType<typeof spawn>;
 }
 
-function createCodexMockProcess(exitCode: number = 0): ReturnType<typeof spawn> {
+function createCodexMockProcess(exitCode: number = 0): ReturnType<typeof nodePty.spawn> {
   return {
-    stdout: {
-      on: vi.fn(),
-    },
-    stderr: {
-      on: vi.fn(),
-    },
-    on: vi.fn((event: string, cb: (code: number) => void) => {
-      if (event === 'close') {
-        setTimeout(() => cb(exitCode), 10);
-      }
+    onData: vi.fn(),
+    onExit: vi.fn((callback: (exit: { exitCode: number; reason?: string }) => void) => {
+      setTimeout(() => callback({ exitCode, reason: '' }), 10);
     }),
     kill: vi.fn(),
-  } as unknown as ReturnType<typeof spawn>;
+  } as unknown as ReturnType<typeof nodePty.spawn>;
 }
 
 describe('processCodex', () => {
@@ -168,6 +167,7 @@ describe('processCodex', () => {
 
   it('should create temp directory, clone repo, checkout branch, and spawn codex process', async () => {
     const mockSpawn = vi.mocked(spawn);
+    const mockPtySpawn = vi.mocked(nodePty.spawn);
 
     mockSpawn.mockImplementation((cmd: string, args: string[]) => {
       if (cmd === 'git') {
@@ -177,6 +177,10 @@ describe('processCodex', () => {
         }
         return createGitMockProcess();
       }
+      return createCodexMockProcess();
+    });
+
+    mockPtySpawn.mockImplementation((cmd: string, _args: string[]) => {
       return createCodexMockProcess();
     });
 
@@ -207,9 +211,9 @@ describe('processCodex', () => {
     expect(mockSpawn).toHaveBeenCalledWith('git', ['checkout', '-b', 'issue-1-test-issue', '--track', 'origin/issue-1-test-issue'], expect.any(Object));
 
     // Verify codex was spawned in temp directory
-    expect(mockSpawn).toHaveBeenCalledWith(
-      'npx @openai/codex',
-      [expect.stringContaining('Issue #1: Test Issue')],
+    expect(mockPtySpawn).toHaveBeenCalledWith(
+      'npx',
+      ['@openai/codex', expect.stringContaining('Issue #1: Test Issue')],
       expect.objectContaining({ cwd: TEMP_DIR })
     );
 
@@ -219,13 +223,16 @@ describe('processCodex', () => {
 
   it('should cleanup temp directory even when codex process fails', async () => {
     const mockSpawn = vi.mocked(spawn);
+    const mockPtySpawn = vi.mocked(nodePty.spawn);
 
     mockSpawn.mockImplementation((cmd: string) => {
       if (cmd === 'git') {
         return createGitMockProcess();
       }
-      return createCodexMockProcess(1); // Exit code 1 = failure
+      return createCodexMockProcess();
     });
+
+    mockPtySpawn.mockImplementation(() => createCodexMockProcess(1)); // Exit code 1 = failure
 
     const issue = createMockIssue(1, 'Test Issue', 'Test body');
     const job = createMockJob({
@@ -272,13 +279,16 @@ describe('processCodex', () => {
 
   it('should throw error when codex process fails', async () => {
     const mockSpawn = vi.mocked(spawn);
+    const mockPtySpawn = vi.mocked(nodePty.spawn);
 
     mockSpawn.mockImplementation((cmd: string) => {
       if (cmd === 'git') {
         return createGitMockProcess();
       }
-      return createCodexMockProcess(1); // Exit code 1 = failure
+      return createCodexMockProcess();
     });
+
+    mockPtySpawn.mockImplementation(() => createCodexMockProcess(1)); // Exit code 1 = failure
 
     const issue = createMockIssue(1, 'Test Issue', 'Test body');
     const job = createMockJob({
@@ -295,6 +305,7 @@ describe('processCodex', () => {
     process.env['CODEX_CLI_PATH'] = '/custom/path/to/codex';
 
     const mockSpawn = vi.mocked(spawn);
+    const mockPtySpawn = vi.mocked(nodePty.spawn);
 
     mockSpawn.mockImplementation((cmd: string) => {
       if (cmd === 'git') {
@@ -302,6 +313,8 @@ describe('processCodex', () => {
       }
       return createCodexMockProcess();
     });
+
+    mockPtySpawn.mockImplementation(() => createCodexMockProcess());
 
     const issue = createMockIssue(1, 'Test Issue', 'Test body');
     const job = createMockJob({
@@ -313,15 +326,16 @@ describe('processCodex', () => {
 
     await processCodex(job);
 
-    expect(mockSpawn).toHaveBeenCalledWith(
+    expect(mockPtySpawn).toHaveBeenCalledWith(
       '/custom/path/to/codex',
-      expect.any(Array),
+      ['@openai/codex', expect.stringContaining('Issue #1: Test Issue')],
       expect.objectContaining({ cwd: TEMP_DIR })
     );
   });
 
   it('should handle issue with null body', async () => {
     const mockSpawn = vi.mocked(spawn);
+    const mockPtySpawn = vi.mocked(nodePty.spawn);
 
     mockSpawn.mockImplementation((cmd: string) => {
       if (cmd === 'git') {
@@ -329,6 +343,8 @@ describe('processCodex', () => {
       }
       return createCodexMockProcess();
     });
+
+    mockPtySpawn.mockImplementation(() => createCodexMockProcess());
 
     const issue = createMockIssue(1, 'Test Issue', null);
     const job = createMockJob({
@@ -341,15 +357,16 @@ describe('processCodex', () => {
     await processCodex(job);
 
     // Verify codex was spawned with default body text
-    expect(mockSpawn).toHaveBeenCalledWith(
-      'npx @openai/codex',
-      [expect.stringContaining('No description provided')],
+    expect(mockPtySpawn).toHaveBeenCalledWith(
+      'npx',
+      ['@openai/codex', expect.stringContaining('No description provided')],
       expect.any(Object)
     );
   });
 
   it('should commit changes when codex makes modifications', async () => {
     const mockSpawn = vi.mocked(spawn);
+    const mockPtySpawn = vi.mocked(nodePty.spawn);
 
     mockSpawn.mockImplementation((cmd: string, args: string[]) => {
       if (cmd === 'git') {
@@ -392,6 +409,8 @@ describe('processCodex', () => {
       return createCodexMockProcess();
     });
 
+    mockPtySpawn.mockImplementation(() => createCodexMockProcess());
+
     const issue = createMockIssue(1, 'Test Issue', 'Test body');
     const job = createMockJob({
       taskId: 'test-task',
@@ -427,6 +446,7 @@ describe('processCodex', () => {
 
   it('should skip commit and push when no changes are detected', async () => {
     const mockSpawn = vi.mocked(spawn);
+    const mockPtySpawn = vi.mocked(nodePty.spawn);
 
     mockSpawn.mockImplementation((cmd: string, args: string[]) => {
       if (cmd === 'git') {
@@ -452,6 +472,8 @@ describe('processCodex', () => {
       }
       return createCodexMockProcess();
     });
+
+    mockPtySpawn.mockImplementation(() => createCodexMockProcess());
 
     const issue = createMockIssue(1, 'Test Issue', 'Test body');
     const job = createMockJob({
@@ -479,6 +501,7 @@ describe('processCodex', () => {
 
   it('should throw when git commit fails with real error', async () => {
     const mockSpawn = vi.mocked(spawn);
+    const mockPtySpawn = vi.mocked(nodePty.spawn);
     const mockLogger = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() };
     mockCreateJobLogger.mockReturnValue(mockLogger);
 
@@ -529,6 +552,8 @@ describe('processCodex', () => {
       return createCodexMockProcess();
     });
 
+    mockPtySpawn.mockImplementation(() => createCodexMockProcess());
+
     const issue = createMockIssue(1, 'Test Issue', 'Test body');
     const job = createMockJob({
       taskId: 'test-task',
@@ -549,7 +574,8 @@ describe('processCodex', () => {
 
   it('should stream stderr from codex process to logger', async () => {
     const mockSpawn = vi.mocked(spawn);
-    const stderrHandlers: ((data: Buffer) => void)[] = [];
+    const mockPtySpawn = vi.mocked(nodePty.spawn);
+    const dataHandlers: ((data: string) => void)[] = [];
 
     // Set up mock logger BEFORE calling processCodex
     const mockLogger = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() };
@@ -559,20 +585,19 @@ describe('processCodex', () => {
       if (cmd === 'git') {
         return createGitMockProcess();
       }
+      return createCodexMockProcess();
+    });
+
+    mockPtySpawn.mockImplementation(() => {
       return {
-        stdout: {
-          on: vi.fn(),
-        },
-        stderr: {
-          on: vi.fn((event: string, cb: (data: Buffer) => void) => {
-            if (event === 'data') stderrHandlers.push(cb);
-          }),
-        },
-        on: vi.fn((event: string, cb: (code: number) => void) => {
-          if (event === 'close') setTimeout(() => cb(0), 10);
+        onData: vi.fn((cb: (data: string) => void) => {
+          dataHandlers.push(cb);
+        }),
+        onExit: vi.fn((cb: (exit: { exitCode: number; reason?: string }) => void) => {
+          setTimeout(() => cb({ exitCode: 0, reason: '' }), 10);
         }),
         kill: vi.fn(),
-      } as unknown as ReturnType<typeof spawn>;
+      } as unknown as ReturnType<typeof nodePty.spawn>;
     });
 
     const issue = createMockIssue(1, 'Test Issue', 'Test body');
@@ -585,18 +610,20 @@ describe('processCodex', () => {
 
     await processCodex(job);
 
-    // Verify a stderr data handler was registered
-    expect(stderrHandlers.length).toBe(1);
+    // Verify a data handler was registered
+    expect(dataHandlers.length).toBe(1);
 
-    // Simulate codex writing to stderr and verify logger is called
-    stderrHandlers[0](Buffer.from('error message from codex'));
+    // Simulate codex writing to PTY output and verify logger is called
+    // Note: PTY combines stdout/stderr into onData, so all output logs to info
+    dataHandlers[0]('error message from codex');
 
-    // Verify the error was logged with [codex] prefix
-    expect(mockLogger.error).toHaveBeenCalledWith('[codex] error message from codex');
+    // Verify the output was logged with [codex] prefix
+    expect(mockLogger.info).toHaveBeenCalledWith('[codex] error message from codex');
   });
 
   it('should use existing local branch when it already exists', async () => {
     const mockSpawn = vi.mocked(spawn);
+    const mockPtySpawn = vi.mocked(nodePty.spawn);
 
     mockSpawn.mockImplementation((cmd: string, args: string[]) => {
       if (cmd === 'git') {
@@ -608,6 +635,8 @@ describe('processCodex', () => {
       }
       return createCodexMockProcess();
     });
+
+    mockPtySpawn.mockImplementation(() => createCodexMockProcess());
 
     const issue = createMockIssue(1, 'Test Issue', 'Test body');
     const job = createMockJob({
@@ -627,6 +656,7 @@ describe('processCodex', () => {
 
   it('should throw when git push fails', async () => {
     const mockSpawn = vi.mocked(spawn);
+    const mockPtySpawn = vi.mocked(nodePty.spawn);
 
     mockSpawn.mockImplementation((cmd: string, args: string[]) => {
       if (cmd === 'git') {
@@ -669,6 +699,8 @@ describe('processCodex', () => {
       return createCodexMockProcess();
     });
 
+    mockPtySpawn.mockImplementation(() => createCodexMockProcess());
+
     const issue = createMockIssue(1, 'Test Issue', 'Test body');
     const job = createMockJob({
       taskId: 'test-task',
@@ -687,6 +719,7 @@ describe('processCodex', () => {
 
   it('should throw when createPullRequest fails', async () => {
     const mockSpawn = vi.mocked(spawn);
+    const mockPtySpawn = vi.mocked(nodePty.spawn);
 
     mockSpawn.mockImplementation((cmd: string, args: string[]) => {
       if (cmd === 'git') {
@@ -711,6 +744,8 @@ describe('processCodex', () => {
       return createCodexMockProcess();
     });
 
+    mockPtySpawn.mockImplementation(() => createCodexMockProcess());
+
     // Make createPullRequest reject
     mockCreatePullRequest.mockRejectedValue(new Error('GitHub API error: repo not found'));
 
@@ -730,6 +765,7 @@ describe('processCodex', () => {
 
   it('should throw when git reset --hard fails', async () => {
     const mockSpawn = vi.mocked(spawn);
+    const mockPtySpawn = vi.mocked(nodePty.spawn);
 
     mockSpawn.mockImplementation((cmd: string, args: string[]) => {
       if (cmd === 'git') {
@@ -759,6 +795,8 @@ describe('processCodex', () => {
       return createCodexMockProcess();
     });
 
+    mockPtySpawn.mockImplementation(() => createCodexMockProcess());
+
     const issue = createMockIssue(1, 'Test Issue', 'Test body');
     const job = createMockJob({
       taskId: 'test-task',
@@ -774,6 +812,7 @@ describe('processCodex', () => {
 
   it('should throw when git checkout of existing branch fails', async () => {
     const mockSpawn = vi.mocked(spawn);
+    const mockPtySpawn = vi.mocked(nodePty.spawn);
 
     mockSpawn.mockImplementation((cmd: string, args: string[]) => {
       if (cmd === 'git') {
@@ -800,6 +839,8 @@ describe('processCodex', () => {
       return createCodexMockProcess();
     });
 
+    mockPtySpawn.mockImplementation(() => createCodexMockProcess());
+
     const issue = createMockIssue(1, 'Test Issue', 'Test body');
     const job = createMockJob({
       taskId: 'test-task',
@@ -815,6 +856,7 @@ describe('processCodex', () => {
 
   it('should throw when git checkout -b --track fails', async () => {
     const mockSpawn = vi.mocked(spawn);
+    const mockPtySpawn = vi.mocked(nodePty.spawn);
 
     mockSpawn.mockImplementation((cmd: string, args: string[]) => {
       if (cmd === 'git') {
@@ -841,6 +883,8 @@ describe('processCodex', () => {
       return createCodexMockProcess();
     });
 
+    mockPtySpawn.mockImplementation(() => createCodexMockProcess());
+
     const issue = createMockIssue(1, 'Test Issue', 'Test body');
     const job = createMockJob({
       taskId: 'test-task',
@@ -856,6 +900,7 @@ describe('processCodex', () => {
 
   it('should retry push with exponential backoff on transient failure', async () => {
     const mockSpawn = vi.mocked(spawn);
+    const mockPtySpawn = vi.mocked(nodePty.spawn);
     let pushAttempts = 0;
 
     mockSpawn.mockImplementation((cmd: string, args: string[]) => {
@@ -898,6 +943,8 @@ describe('processCodex', () => {
       }
       return createCodexMockProcess();
     });
+
+    mockPtySpawn.mockImplementation(() => createCodexMockProcess());
 
     const issue = createMockIssue(1, 'Test Issue', 'Test body');
     const job = createMockJob({

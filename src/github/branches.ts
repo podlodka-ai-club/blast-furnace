@@ -38,3 +38,15 @@ export async function getRef(branchName: string): Promise<string> {
 
   return response.data.object.sha;
 }
+
+/**
+ * Delete a reference (branch) from the repository
+ */
+export async function deleteBranch(branchName: string): Promise<void> {
+  validateBranchName(branchName);
+  await githubClient.git.deleteRef({
+    owner: config.github.owner,
+    repo: config.github.repo,
+    ref: `heads/${branchName}`,
+  });
+}

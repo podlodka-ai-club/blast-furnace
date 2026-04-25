@@ -1,20 +1,13 @@
 import { spawn } from 'child_process';
+import * as pty from 'node-pty';
 import { createJobLogger } from './logger.js';
-import { config } from '../config/index.js';
-const DEFAULT_CODEX_CLI_PATH = 'npx @openai/codex';
+import { createTempWorkingDir, cloneRepoInto, cleanupWorkingDir, getRepoRemoteUrl } from '../utils/working-dir.js';
+import { createPullRequest } from '../github/pullRequests.js';
+const DEFAULT_CODEX_CLI_PATH = 'npx';
+const DEFAULT_CODEX_ARGS = ['@openai/codex'];
 const DEFAULT_TIMEOUT_MS = 300000;
-function getCodexConfig() {
-    return {
-        codexCliPath: process.env['CODEX_CLI_PATH'] ?? DEFAULT_CODEX_CLI_PATH,
-        timeoutMs: parseInt(process.env['CODEX_TIMEOUT_MS'] ?? String(DEFAULT_TIMEOUT_MS), 10),
-    };
-}
-function getGithubRemoteUrl() {
-    const { owner, repo, token } = config.github;
-    return `https://${token}@github.com/${owner}/${repo}.git`;
-}
 async function fetchBranchWithRetry(branchName, cwd, logger, maxRetries = 3) {
-    const remoteUrl = getGithubRemoteUrl();
+    const remoteUrl = getRepoRemoteUrl();
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             await execGitCommand(['fetch', remoteUrl, `heads/${branchName}`], cwd);
@@ -23,11 +16,29 @@ async function fetchBranchWithRetry(branchName, cwd, logger, maxRetries = 3) {
         catch (err) {
             if (attempt === maxRetries)
                 throw err;
-            const delay = Math.pow(2, attempt) * 1000;
-            logger.warn(`Fetch attempt ${attempt} failed for ${branchName}, retrying in ${delay}ms...`);
+            const delay = Math.pow(2, attempt - 1) * 1000;
+            logger.warn(`Fetch attempt ${attempt} failed for ${branchName}: ${err}, retrying in ${delay}ms...`);
             await new Promise((r) => setTimeout(r, delay));
         }
     }
+}
+async function pushWithRetry(remoteUrl, branchName, cwd, logger, maxRetries = 3) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            await execGitCommand(['push', remoteUrl, branchName], cwd);
+            return;
+        }
+        catch (err) {
+            if (attempt === maxRetries)
+                throw err;
+            const delay = Math.pow(2, attempt - 1) * 1000;
+            logger.warn(`Push attempt ${attempt} failed for ${branchName}: ${err}, retrying in ${delay}ms...`);
+            await new Promise((r) => setTimeout(r, delay));
+        }
+    }
+}
+function sanitizeForGit(text, maxLength = 200) {
+    return text.replace(/[\r\n]/g, ' ').slice(0, maxLength);
 }
 function execGitCommand(args, cwd) {
     return new Promise((resolve, reject) => {
@@ -45,7 +56,7 @@ function execGitCommand(args, cwd) {
                 resolve(stdout.trim());
             }
             else {
-                reject(new Error(`git command failed: ${stderr || stdout}`));
+                reject(new Error(`git command failed: ${stderr}`));
             }
         });
         child.on('error', reject);
@@ -54,18 +65,16 @@ function execGitCommand(args, cwd) {
 export async function processCodex(job) {
     const logger = createJobLogger(job);
     const { issue, branchName } = job.data;
-    const codexConfig = getCodexConfig();
+    const codexCliPath = process.env['CODEX_CLI_PATH'] ?? DEFAULT_CODEX_CLI_PATH;
+    const timeoutMs = parseInt(process.env['CODEX_TIMEOUT_MS'] ?? String(DEFAULT_TIMEOUT_MS), 10);
     logger.info(`Running codex provider for issue #${issue.number} on branch ${branchName}`);
-    const repoCwd = process.env['GIT_WORKING_DIR'] ?? process.cwd();
+    let repoCwd = null;
     try {
+        repoCwd = await createTempWorkingDir('codex');
+        const remoteUrl = getRepoRemoteUrl();
+        logger.info(`Cloning repository into temp directory: ${repoCwd}`);
+        await cloneRepoInto(repoCwd, remoteUrl);
         logger.info(`Checking out branch: ${branchName}`);
-        const remoteUrl = getGithubRemoteUrl();
-        const currentRemoteUrl = await execGitCommand(['remote', 'get-url', 'origin'], repoCwd)
-            .catch(() => '');
-        if (!currentRemoteUrl.includes(config.github.owner) || !currentRemoteUrl.includes(config.github.repo)) {
-            logger.info(`Setting origin remote to ${config.github.owner}/${config.github.repo}`);
-            await execGitCommand(['remote', 'set-url', 'origin', remoteUrl], repoCwd);
-        }
         await fetchBranchWithRetry(branchName, repoCwd, logger);
         const branchExists = await execGitCommand(['rev-parse', '--verify', '--quiet', branchName], repoCwd)
             .then(() => true)
@@ -77,70 +86,80 @@ export async function processCodex(job) {
         else {
             await execGitCommand(['checkout', '-b', branchName, '--track', `origin/${branchName}`], repoCwd);
         }
-    }
-    catch (err) {
-        logger.error(`Failed to checkout branch ${branchName}: ${err}`);
-        throw err;
-    }
-    const prompt = `Issue #${issue.number}: ${issue.title}\n\n${issue.body ?? '(No description provided)'}`;
-    logger.info(`Spawning codex-cli with issue prompt`);
-    const codexProcess = spawn(codexConfig.codexCliPath, [prompt], {
-        cwd: repoCwd,
-        stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    codexProcess.stdout?.on('data', (data) => {
-        const line = data.toString().trim();
-        if (line) {
-            logger.info(`[codex] ${line}`);
-        }
-    });
-    codexProcess.stderr?.on('data', (data) => {
-        const line = data.toString().trim();
-        if (line) {
-            logger.error(`[codex] ${line}`);
-        }
-    });
-    const exitCode = await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-            codexProcess.kill('SIGTERM');
-            reject(new Error(`codex process timed out after ${codexConfig.timeoutMs}ms`));
-        }, codexConfig.timeoutMs);
-        codexProcess.on('close', (code) => {
-            clearTimeout(timer);
-            resolve(code ?? 1);
+        const prompt = `Issue #${issue.number}: ${issue.title}\n\n${issue.body ?? '(No description provided)'}`;
+        const cliParts = codexCliPath.split(/\s+/);
+        const cliCmd = cliParts[0];
+        const cliArgs = [...cliParts.slice(1), ...DEFAULT_CODEX_ARGS];
+        logger.info(`Spawning codex-cli with issue prompt`);
+        const ptxProcess = pty.spawn(cliCmd, [...cliArgs, prompt], {
+            cwd: repoCwd,
+            name: 'xterm-color',
+            env: { ...process.env },
         });
-        codexProcess.on('error', (err) => {
-            clearTimeout(timer);
-            reject(err);
+        ptxProcess.onData((data) => {
+            const line = data.toString().trim();
+            if (line) {
+                logger.info(`[codex] ${line}`);
+            }
         });
-    });
-    if (exitCode !== 0) {
-        logger.error(`codex process exited with code ${exitCode}`);
-        throw new Error(`codex process failed with exit code ${exitCode}`);
-    }
-    logger.info('codex process completed successfully');
-    try {
-        const status = await execGitCommand(['status', '--porcelain'], repoCwd);
-        if (status) {
-            logger.info('Changes detected, committing...');
-            await execGitCommand(['add', '-A'], repoCwd);
-            const commitResult = await execGitCommand(['commit', '-m', `Processed issue #${issue.number} via codex: ${issue.title}`], repoCwd);
-            logger.info(`Changes committed: ${commitResult}`);
+        const exitCode = await new Promise((resolve, reject) => {
+            let settled = false;
+            const settle = (fn) => {
+                if (!settled) {
+                    settled = true;
+                    fn();
+                }
+            };
+            const timer = setTimeout(() => {
+                ptxProcess.kill('SIGTERM');
+                settle(() => reject(new Error(`codex process timed out after ${timeoutMs}ms`)));
+            }, timeoutMs);
+            ptxProcess.onExit(({ exitCode }) => {
+                clearTimeout(timer);
+                settle(() => resolve(exitCode));
+            });
+        });
+        if (exitCode !== 0) {
+            logger.error(`codex process exited with code ${exitCode}`);
+            throw new Error(`codex process failed with exit code ${exitCode}`);
         }
-        else {
-            logger.info('No changes detected, skipping commit');
+        logger.info('codex process completed successfully');
+        try {
+            const status = await execGitCommand(['status', '--porcelain'], repoCwd);
+            if (status) {
+                logger.info('Changes detected, committing...');
+                await execGitCommand(['add', '-A'], repoCwd);
+                const sanitizedTitle = sanitizeForGit(issue.title);
+                const commitResult = await execGitCommand(['commit', '-m', `Processed issue #${issue.number} via codex: ${sanitizedTitle}`], repoCwd);
+                logger.info(`Changes committed: ${commitResult}`);
+                logger.info('Pushing changes to remote branch...');
+                const pushRemoteUrl = getRepoRemoteUrl();
+                await pushWithRetry(pushRemoteUrl, branchName, repoCwd, logger);
+                logger.info(`Changes pushed to ${branchName}`);
+                logger.info('Creating pull request...');
+                const prResult = await createPullRequest({
+                    title: `Process issue #${issue.number}: ${sanitizedTitle}`,
+                    head: branchName,
+                    base: 'main',
+                    body: `Closes #${issue.number}`,
+                });
+                logger.info(`Pull request created: ${prResult.htmlUrl}`);
+            }
+            else {
+                logger.info('No changes detected, skipping commit and push');
+            }
         }
-    }
-    catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        if (errorMessage.includes('nothing to commit')) {
-            logger.info('No changes detected, skipping commit');
-        }
-        else {
-            logger.error(`Git commit failed: ${err}`);
+        catch (err) {
+            logger.error(`Git operation failed: ${err}`);
             throw err;
         }
+        logger.info(`Codex provider completed for issue #${issue.number}`);
     }
-    logger.info(`Codex provider completed for issue #${issue.number}`);
+    finally {
+        if (repoCwd) {
+            logger.info(`Cleaning up temp working directory: ${repoCwd}`);
+            await cleanupWorkingDir(repoCwd);
+        }
+    }
 }
 export const codexProviderHandler = processCodex;

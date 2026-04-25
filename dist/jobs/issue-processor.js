@@ -1,5 +1,5 @@
 import { createJobLogger } from './logger.js';
-import { getRef, pushBranch } from '../github/branches.js';
+import { getRef, pushBranch, deleteBranch } from '../github/branches.js';
 import { jobQueue } from './queue.js';
 function slugify(text) {
     let slug = text
@@ -26,43 +26,59 @@ export async function processIssue(job) {
     logger.info(`Processing issue #${issue.number}: ${issue.title}`);
     logger.info(`Issue body: ${issue.body ?? '(no body)'}`);
     const branchName = `issue-${issue.number}-${slugify(issue.title)}`;
-    logger.info(`Creating branch: ${branchName}`);
     let sha;
     try {
+        await job.updateProgress({ step: 'fetching-main-ref' });
         sha = await getRef('main');
     }
     catch (err) {
         logger.error(`Failed to get ref for main: ${err}`);
         throw err;
     }
+    let branchExists = false;
     try {
-        await pushBranch(branchName, sha);
+        await getRef(branchName);
+        branchExists = true;
     }
-    catch (err) {
-        logger.error(`Failed to push branch ${branchName}: ${err}`);
-        throw err;
+    catch {
+    }
+    if (branchExists) {
+        logger.info(`Branch ${branchName} already exists, skipping creation`);
+    }
+    else {
+        logger.info(`Creating branch: ${branchName}`);
+        try {
+            await job.updateProgress({ step: 'creating-branch', branch: branchName });
+            await pushBranch(branchName, sha);
+        }
+        catch (err) {
+            logger.error(`Failed to push branch ${branchName}: ${err}`);
+            throw err;
+        }
     }
     try {
+        await job.updateProgress({ step: 'verifying-branch', branch: branchName });
         const verifySha = await getRef(branchName);
         logger.info(`Branch ${branchName} created successfully (SHA: ${verifySha})`);
-    }
-    catch (err) {
-        logger.error(`Branch ${branchName} was not found after creation: ${err}`);
-        throw new Error(`Branch ${branchName} verification failed`);
-    }
-    logger.info(`Enqueueing codex provider job for issue #${issue.number}`);
-    const codexJobData = {
-        taskId: job.data.taskId,
-        type: 'codex-provider',
-        issue,
-        branchName,
-    };
-    try {
+        await job.updateProgress({ step: 'enqueueing-codex', issue: issue.number });
+        logger.info(`Enqueueing codex provider job for issue #${issue.number}`);
+        const codexJobData = {
+            taskId: job.data.taskId,
+            type: 'codex-provider',
+            issue,
+            branchName,
+        };
         await jobQueue.add('codex-provider', codexJobData);
         logger.info(`Codex provider job enqueued for branch: ${branchName}`);
     }
     catch (err) {
-        logger.error(`Failed to enqueue codex provider job for issue #${issue.number}: ${err}`);
+        try {
+            await deleteBranch(branchName);
+            logger.info(`Cleaned up orphaned branch ${branchName}`);
+        }
+        catch (cleanupErr) {
+            logger.error(`Failed to clean up orphaned branch ${branchName}: ${cleanupErr}`);
+        }
         throw err;
     }
 }

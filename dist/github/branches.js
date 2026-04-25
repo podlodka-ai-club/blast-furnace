@@ -24,3 +24,11 @@ export async function getRef(branchName) {
     });
     return response.data.object.sha;
 }
+export async function deleteBranch(branchName) {
+    validateBranchName(branchName);
+    await githubClient.git.deleteRef({
+        owner: config.github.owner,
+        repo: config.github.repo,
+        ref: `heads/${branchName}`,
+    });
+}

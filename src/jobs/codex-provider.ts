@@ -1,11 +1,13 @@
 import { spawn } from 'child_process';
+import * as pty from 'node-pty';
 import type { Job } from 'bullmq';
 import type { CodexProviderJobData } from '../types/index.js';
 import { createJobLogger } from './logger.js';
 import { createTempWorkingDir, cloneRepoInto, cleanupWorkingDir, getRepoRemoteUrl } from '../utils/working-dir.js';
 import { createPullRequest } from '../github/pullRequests.js';
 
-const DEFAULT_CODEX_CLI_PATH = 'npx @openai/codex';
+const DEFAULT_CODEX_CLI_PATH = 'npx';
+const DEFAULT_CODEX_ARGS = ['@openai/codex'];
 const DEFAULT_TIMEOUT_MS = 300000; // 5 minutes
 
 /**
@@ -143,31 +145,30 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
     // Step 2: Build the prompt from issue title and body
     const prompt = `Issue #${issue.number}: ${issue.title}\n\n${issue.body ?? '(No description provided)'}`;
 
-    // Step 3: Spawn codex-cli as a child process
-    // Note: We avoid shell: true to prevent shell injection from user-controlled prompt
+    // Step 3: Spawn codex-cli as a PTY (pseudo-terminal) process
+    // We use node-pty because codex-cli is an interactive TTY application
+    // that queries terminal capabilities and hangs without a PTY.
+    // Parse CODEX_CLI_PATH to handle commands like "npx @openai/codex" where
+    // the executable (npx) and its arguments (@openai/codex) need to be split.
+    const cliParts = codexCliPath.split(/\s+/);
+    const cliCmd = cliParts[0];
+    const cliArgs = [...cliParts.slice(1), ...DEFAULT_CODEX_ARGS];
     logger.info(`Spawning codex-cli with issue prompt`);
-    const codexProcess = spawn(codexCliPath, [prompt], {
+    const ptxProcess = pty.spawn(cliCmd, [...cliArgs, prompt], {
       cwd: repoCwd,
-      stdio: ['pipe', 'pipe', 'pipe'],
+      name: 'xterm-color',
+      env: { ...process.env },
     });
 
-    // Stream stdout to logger
-    codexProcess.stdout?.on('data', (data) => {
+    // Stream PTY output to logger
+    ptxProcess.onData((data: string) => {
       const line = data.toString().trim();
       if (line) {
         logger.info(`[codex] ${line}`);
       }
     });
 
-    // Stream stderr to logger
-    codexProcess.stderr?.on('data', (data) => {
-      const line = data.toString().trim();
-      if (line) {
-        logger.error(`[codex] ${line}`);
-      }
-    });
-
-    // Step 4: Wait for process to complete with timeout
+    // Step 4: Wait for PTY process to complete with timeout
     const exitCode = await new Promise<number>((resolve, reject) => {
       let settled = false;
       const settle = (fn: () => void) => {
@@ -177,18 +178,13 @@ export async function processCodex(job: Job<CodexProviderJobData>): Promise<void
         }
       };
       const timer = setTimeout(() => {
-        codexProcess.kill('SIGTERM');
+        ptxProcess.kill('SIGTERM');
         settle(() => reject(new Error(`codex process timed out after ${timeoutMs}ms`)));
       }, timeoutMs);
 
-      codexProcess.on('close', (code) => {
+      ptxProcess.onExit(({ exitCode }) => {
         clearTimeout(timer);
-        settle(() => resolve(code ?? 1));
-      });
-
-      codexProcess.on('error', (err) => {
-        clearTimeout(timer);
-        settle(() => reject(err));
+        settle(() => resolve(exitCode));
       });
     });
 

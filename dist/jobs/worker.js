@@ -10,6 +10,7 @@ export function createWorker(processor, options = {}) {
             ...(config.redis.password !== undefined && { password: config.redis.password }),
         },
         concurrency: options.concurrency ?? 5,
+        stalledInterval: 60000,
     });
     worker.on('active', (job) => {
         const logger = createJobLogger(job);

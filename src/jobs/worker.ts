@@ -19,6 +19,7 @@ export function createWorker(
       ...(config.redis.password !== undefined && { password: config.redis.password }),
     },
     concurrency: options.concurrency ?? 5,
+    stalledInterval: 60000, // 60 seconds - GitHub API calls can be slow
   });
 
   // Add logging middleware
