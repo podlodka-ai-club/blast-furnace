@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { FastifyInstance } from 'fastify';
-import { buildServer, startServer } from './index.js';
+import { buildServer } from './index.js';
 
 // Mock the config module with full structure
 vi.mock('../config/index.js', () => ({
@@ -16,9 +16,7 @@ vi.mock('../config/index.js', () => ({
       token: 'test-token',
       owner: 'test-owner',
       repo: 'test-repo',
-      issueStrategy: 'polling',
       pollIntervalMs: 60000,
-      webhookSecret: undefined,
     },
   },
 }));
@@ -35,13 +33,15 @@ vi.mock('../jobs/queue.js', () => ({
   closeQueue: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('../jobs/issue-watcher.js', () => ({
+  REPO_LIST_KEY: 'github:repos',
+}));
+
 describe('server', () => {
   let server: FastifyInstance;
-  const testPort = 3456;
 
   beforeAll(async () => {
     server = await buildServer({ logger: false });
-    await startServer(server, testPort, '127.0.0.1');
   });
 
   afterAll(async () => {
@@ -117,14 +117,42 @@ describe('buildServer', () => {
     await server.close();
   });
 
-  it('does not register webhook route when issueStrategy is polling', async () => {
+  it('does not register webhook route or enqueue issue work', async () => {
+    const { jobQueue } = await import('../jobs/queue.js');
+    vi.clearAllMocks();
+
     const server = await buildServer({ logger: false });
-    // With polling strategy, webhook route should not be registered
     const response = await server.inject({
       method: 'POST',
       url: '/webhooks/github',
+      payload: {
+        action: 'opened',
+        issue: {
+          id: 123,
+          number: 1,
+          title: 'Test Issue',
+          body: 'Test body',
+        },
+      },
     });
+
     expect(response.statusCode).toBe(404);
+    expect(jobQueue.add).not.toHaveBeenCalled();
+    await server.close();
+  });
+
+  it('rejects invalid JSON with the normal Fastify parser', async () => {
+    const server = await buildServer({ logger: false });
+    const response = await server.inject({
+      method: 'POST',
+      url: '/repos',
+      headers: {
+        'content-type': 'application/json',
+      },
+      payload: '{',
+    });
+
+    expect(response.statusCode).toBe(400);
     await server.close();
   });
 });

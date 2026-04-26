@@ -43,9 +43,7 @@ async function main() {
     }
     server = await buildServer({ logger: true });
     await startServer(server, config.port);
-    if (config.github.issueStrategy === 'polling') {
-        await startIssueWatcher();
-    }
+    await startIssueWatcher();
     worker = createWorker(multiHandler);
 }
 async function shutdown(signal) {

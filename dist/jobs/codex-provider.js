@@ -43,7 +43,18 @@ async function fetchBranchWithRetry(branchName, cwd, logger, maxRetries = 3) {
         }
     }
 }
-function buildCodexCliArgs(cliCmd, cliArgs, prompt) {
+function hasExplicitModelArg(args) {
+    return args.some((arg, index) => {
+        if (arg === '-m' || arg === '--model') {
+            return true;
+        }
+        if (arg.startsWith('--model=')) {
+            return true;
+        }
+        return arg === '-c' && args[index + 1]?.startsWith('model=');
+    });
+}
+function buildCodexCliArgs(cliCmd, cliArgs, prompt, model) {
     const invocationArgs = [...cliArgs];
     const hasExplicitSubcommand = invocationArgs.some((arg) => CODEX_SUBCOMMANDS.has(arg));
     const basename = path.basename(cliCmd);
@@ -53,6 +64,9 @@ function buildCodexCliArgs(cliCmd, cliArgs, prompt) {
     }
     if (!invocationArgs.includes('--dangerously-bypass-approvals-and-sandbox')) {
         invocationArgs.push('--dangerously-bypass-approvals-and-sandbox');
+    }
+    if (model && !hasExplicitModelArg(invocationArgs)) {
+        invocationArgs.push('--model', model);
     }
     invocationArgs.push(prompt);
     return invocationArgs;
@@ -82,6 +96,7 @@ function execGitCommand(args, cwd) {
 export async function runCodexWork(job, logger = createJobLogger(job), state = { repoCwd: null }) {
     const { issue, branchName } = job.data;
     const codexCliPath = process.env['CODEX_CLI_PATH'] ?? config.codex?.cliPath ?? 'npx @openai/codex';
+    const codexModel = process.env['CODEX_MODEL'] ?? config.codex?.model ?? 'gpt-5.4';
     const timeoutMs = parseInt(process.env['CODEX_TIMEOUT_MS'] ?? String(config.codex?.timeoutMs ?? DEFAULT_TIMEOUT_MS), 10);
     logger.info(`Running codex provider for issue #${issue.number} on branch ${branchName}`);
     const repoCwd = await createTempWorkingDir('codex');
@@ -108,7 +123,7 @@ export async function runCodexWork(job, logger = createJobLogger(job), state = {
     }
     const cliCmd = cliParts[0];
     const cliArgs = cliParts.slice(1);
-    const finalCliArgs = buildCodexCliArgs(cliCmd, cliArgs, prompt);
+    const finalCliArgs = buildCodexCliArgs(cliCmd, cliArgs, prompt, codexModel);
     logger.info(`Spawning codex-cli with issue prompt`);
     await ensureNodePtySpawnHelperExecutable(logger);
     const ptxProcess = pty.spawn(cliCmd, finalCliArgs, {

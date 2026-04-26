@@ -17,8 +17,6 @@ import type {
   ServerOptions,
   HealthResponse,
   JobPayload,
-  GitHubWebhookEvent,
-  GitHubIssueEventPayload,
   IssueProcessorJobData,
   IssueWatcherJobData,
   RepoWatcherJobData,
@@ -242,11 +240,19 @@ describe('types', () => {
           token: 'ghp_token',
           owner: 'owner',
           repo: 'repo',
+          pollIntervalMs: 60000,
+        },
+        codex: {
+          cliPath: 'npx @openai/codex',
+          model: 'gpt-5.4',
+          timeoutMs: 300000,
         },
       };
       expect(config.env).toBe('production');
       expect(config.redis.host).toBe('redis.example.com');
       expect(config.github.token).toBe('ghp_token');
+      expect(config.github).not.toHaveProperty('issueStrategy');
+      expect(config.github).not.toHaveProperty('webhookSecret');
     });
   });
 
@@ -267,8 +273,12 @@ describe('types', () => {
         token: 'token',
         owner: 'owner',
         repo: 'repo',
+        pollIntervalMs: 60000,
       };
       expect(config.token).toBe('token');
+      expect(config.pollIntervalMs).toBe(60000);
+      expect(config).not.toHaveProperty('issueStrategy');
+      expect(config).not.toHaveProperty('webhookSecret');
     });
   });
 
@@ -307,76 +317,6 @@ describe('types', () => {
       };
       expect(payload.taskId).toBe('task-123');
       expect(payload.type).toBe('process');
-    });
-  });
-
-  describe('GitHubWebhookEvent', () => {
-    it('should accept valid webhook event', () => {
-      const event: GitHubWebhookEvent = {
-        action: 'opened',
-        issue: {
-          id: 1,
-          number: 42,
-          title: 'Test issue',
-          body: 'Issue body',
-          state: 'open',
-          labels: ['bug'],
-          assignee: null,
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-        },
-        repository: {
-          id: 123,
-          name: 'test-repo',
-          fullName: 'owner/test-repo',
-        },
-        sender: {
-          login: 'username',
-        },
-      };
-      expect(event.action).toBe('opened');
-      expect(event.issue.number).toBe(42);
-      expect(event.repository.fullName).toBe('owner/test-repo');
-    });
-  });
-
-  describe('GitHubIssueEventPayload', () => {
-    it('should accept valid issue event payload', () => {
-      const payload: GitHubIssueEventPayload = {
-        action: 'opened',
-        issue: {
-          id: 1,
-          number: 42,
-          title: 'Test issue',
-          body: 'Issue body',
-          state: 'open',
-          labels: [],
-          assignee: null,
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-        },
-      };
-      expect(payload.action).toBe('opened');
-      expect(payload.issue.title).toBe('Test issue');
-    });
-
-    it('should accept closed action', () => {
-      const payload: GitHubIssueEventPayload = {
-        action: 'closed',
-        issue: {
-          id: 1,
-          number: 42,
-          title: 'Test issue',
-          body: null,
-          state: 'closed',
-          labels: [],
-          assignee: null,
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-02T00:00:00.000Z',
-        },
-      };
-      expect(payload.action).toBe('closed');
-      expect(payload.issue.state).toBe('closed');
     });
   });
 

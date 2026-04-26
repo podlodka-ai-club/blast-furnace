@@ -131,13 +131,12 @@ export interface GitHubConfig {
   token: string;
   owner: string;
   repo: string;
-  issueStrategy: 'polling' | 'webhook';
   pollIntervalMs: number;
-  webhookSecret?: string;
 }
 
 export interface CodexConfig {
   cliPath: string;
+  model: string;
   timeoutMs: number;
 }
 
@@ -165,25 +164,6 @@ export interface JobPayload {
   taskId: string;
   type: string;
   payload?: Record<string, unknown>;
-}
-
-// GitHub webhook types
-export interface GitHubWebhookEvent {
-  action: string;
-  issue: GitHubIssue;
-  repository: {
-    id: number;
-    name: string;
-    fullName: string;
-  };
-  sender: {
-    login: string;
-  };
-}
-
-export interface GitHubIssueEventPayload {
-  action: 'opened' | 'closed' | 'assigned' | 'unassigned' | 'labeled' | 'unlabeled' | 'synchronize';
-  issue: GitHubIssue;
 }
 
 // Job data types for issue processing

@@ -54,7 +54,19 @@ async function fetchBranchWithRetry(
   }
 }
 
-function buildCodexCliArgs(cliCmd: string, cliArgs: string[], prompt: string): string[] {
+function hasExplicitModelArg(args: string[]): boolean {
+  return args.some((arg, index) => {
+    if (arg === '-m' || arg === '--model') {
+      return true;
+    }
+    if (arg.startsWith('--model=')) {
+      return true;
+    }
+    return arg === '-c' && args[index + 1]?.startsWith('model=');
+  });
+}
+
+function buildCodexCliArgs(cliCmd: string, cliArgs: string[], prompt: string, model: string): string[] {
   const invocationArgs = [...cliArgs];
   const hasExplicitSubcommand = invocationArgs.some((arg) => CODEX_SUBCOMMANDS.has(arg));
   const basename = path.basename(cliCmd);
@@ -68,6 +80,10 @@ function buildCodexCliArgs(cliCmd: string, cliArgs: string[], prompt: string): s
 
   if (!invocationArgs.includes('--dangerously-bypass-approvals-and-sandbox')) {
     invocationArgs.push('--dangerously-bypass-approvals-and-sandbox');
+  }
+
+  if (model && !hasExplicitModelArg(invocationArgs)) {
+    invocationArgs.push('--model', model);
   }
 
   invocationArgs.push(prompt);
@@ -114,6 +130,7 @@ export async function runCodexWork(
 ): Promise<ReviewJobData> {
   const { issue, branchName } = job.data;
   const codexCliPath = process.env['CODEX_CLI_PATH'] ?? config.codex?.cliPath ?? 'npx @openai/codex';
+  const codexModel = process.env['CODEX_MODEL'] ?? config.codex?.model ?? 'gpt-5.4';
   const timeoutMs = parseInt(
     process.env['CODEX_TIMEOUT_MS'] ?? String(config.codex?.timeoutMs ?? DEFAULT_TIMEOUT_MS),
     10
@@ -165,7 +182,7 @@ export async function runCodexWork(
   }
   const cliCmd = cliParts[0];
   const cliArgs = cliParts.slice(1);
-  const finalCliArgs = buildCodexCliArgs(cliCmd, cliArgs, prompt);
+  const finalCliArgs = buildCodexCliArgs(cliCmd, cliArgs, prompt, codexModel);
   logger.info(`Spawning codex-cli with issue prompt`);
   await ensureNodePtySpawnHelperExecutable(logger);
   const ptxProcess = pty.spawn(cliCmd, finalCliArgs, {

@@ -1,10 +1,10 @@
 # Blast Furnace
 
-Agent Orchestrator server that receives GitHub Issues via polling or webhooks (configurable) and processes tasks through background jobs using BullMQ.
+Agent Orchestrator server that receives GitHub Issues through polling and processes tasks through background jobs using BullMQ.
 
 ## Overview
 
-Blast Furnace is a continuous-running server that watches a GitHub repository for new issues using either polling or webhook delivery. When an issue is received, it is queued for processing, which logs the issue details, creates a new branch based on the issue, and opens a pull request.
+Blast Furnace is a continuous-running server that watches GitHub repositories for new issues using polling intake. When an issue is discovered, it is queued for processing, which logs the issue details, creates a new branch based on the issue, and opens a pull request.
 
 ## Prerequisites
 
@@ -66,10 +66,9 @@ The project includes:
 | `REDIS_PORT` | 6379 | Redis port |
 | `REDIS_PASSWORD` | (none) | Redis password (optional) |
 | `CORS_ORIGIN` | true | CORS allowed origins, comma-separated list or `*` for all |
-| `GITHUB_ISSUE_STRATEGY` | polling | How to receive issues: `polling` or `webhook` |
 | `GITHUB_POLL_INTERVAL_MS` | 60000 | Polling interval in milliseconds (minimum 1000) |
-| `GITHUB_WEBHOOK_SECRET` | (none) | HMAC secret for webhook signature validation (optional) |
 | `CODEX_CLI_PATH` | `npx @openai/codex` | Command used to launch Codex CLI |
+| `CODEX_MODEL` | `gpt-5.4` | Model passed to Codex CLI with `--model` |
 | `CODEX_TIMEOUT_MS` | 300000 | Codex CLI timeout in milliseconds |
 
 ## Architecture
@@ -85,12 +84,13 @@ Redis is the shared persistence layer behind this model:
 Current high-level flow:
 
 ```text
-GitHub polling/webhook
-  -> BullMQ queue
-      -> issue-processor job
-          -> BullMQ queue
-              -> codex-provider job
-                  -> commit/push/PR steps
+GitHub polling intake
+  -> issue-watcher job
+      -> BullMQ queue
+          -> issue-processor job
+              -> BullMQ queue
+                  -> codex-provider job
+                      -> commit/push/PR steps
 ```
 
 For example, `issue-processor` receives a `GitHubIssue`, creates or verifies `issue-{number}-{slugified-title}`, then enqueues `codex-provider` with the same issue plus `branchName`. If a worker is available, BullMQ may run the next job almost immediately; otherwise it remains queued until worker capacity is available.
@@ -99,11 +99,9 @@ For example, `issue-processor` receives a `GitHubIssue`, creates or verifies `is
 
 Fastify v5 is used as the HTTP framework due to its performance and TypeScript compatibility.
 
-### Issue Reception
+### Intake
 
-Issues are received via one of two strategies:
-- **Polling**: A repeatable job periodically fetches open issues from GitHub
-- **Webhook**: GitHub sends webhook events to the server's `/webhooks/github` endpoint
+Issues are received through polling. A repeatable `issue-watcher` job periodically fetches open GitHub issues labeled `ready`, using registered repositories from Redis or the configured `GITHUB_OWNER` and `GITHUB_REPO` fallback.
 
 ### Background Job Processing
 
@@ -115,26 +113,18 @@ BullMQ v5 with Redis provides the background job infrastructure:
 
 The current job flow is:
 
-1. Issue reception
+1. Intake
 2. Job queue
 3. Issue processor: logs issue details, creates or reuses `issue-{number}-{slugified-title}`, then enqueues Codex
 4. Codex provider: clones the repo into a temp directory, checks out the issue branch, runs Codex CLI, commits and pushes changes if present, opens a PR, then attempts to update labels
 
 ## Features
 
-### Issue Reception
+### Intake
 
-Two strategies for receiving GitHub issues:
-
-**Polling (default)**
 - A repeatable job runs on a configurable interval (default: 60 seconds)
 - The last poll timestamp is stored in Redis, not in job data (which is static for repeatable jobs)
 - On first run, all open issues are fetched; subsequent runs fetch only issues updated since last poll
-
-**Webhook**
-- POST /webhooks/github receives issue events from GitHub
-- Route is only registered when `GITHUB_ISSUE_STRATEGY=webhook` (conditional registration)
-- Signature validation uses HMAC SHA256 with timing-safe comparison to prevent attacks
 
 ### Issue Processing
 
@@ -153,14 +143,6 @@ When an issue is queued:
 
 - Returns server health status with timestamp and uptime in seconds
 - Response: `{ "status": "ok", "timestamp": "2026-04-22T00:00:00.000Z", "uptime": 1234 }`
-
-**POST /webhooks/github**
-
-- Registered only when `GITHUB_ISSUE_STRATEGY=webhook`
-- Receives GitHub webhook events
-- Validates HMAC signature if `GITHUB_WEBHOOK_SECRET` is configured
-- Queues `issues.opened` payloads for async processing and returns 200 immediately
-- Request body must include `action` and `issue` fields
 
 **GET /repos**
 
@@ -226,31 +208,6 @@ const LAST_POLL_KEY = 'github:issue-watcher:last-poll';
 await redisClient.set(LAST_POLL_KEY, new Date().toISOString());
 // Read before fetching
 const lastPollTimestamp = await redisClient.get(LAST_POLL_KEY);
-```
-
-### Conditional Webhook Route Registration
-
-The webhook route is only registered when the webhook strategy is configured:
-
-```typescript
-if (config.github.issueStrategy === 'webhook') {
-  await server.register(githubWebhooksRoute);
-}
-```
-
-### HMAC Timing-Safe Validation
-
-Webhook signatures are validated using `crypto.timingSafeEqual`:
-```typescript
-function validateSignature(payload: string, signature: string, secret: string): boolean {
-  const expectedSignature = `sha256=${createHmac('sha256', secret).update(payload).digest('hex')}`;
-  const signatureBuffer = Buffer.from(signature);
-  const expectedBuffer = Buffer.from(expectedSignature);
-  if (signatureBuffer.length !== expectedBuffer.length) {
-    return false;
-  }
-  return timingSafeEqual(signatureBuffer, expectedBuffer);
-}
 ```
 
 ### Branch Name Validation and Slugify
@@ -361,7 +318,8 @@ src/
     index.test.ts          - Server tests
     routes/
       health.ts            - GET /health endpoint
-      github-webhooks.ts   - POST /webhooks/github for GitHub issue events
+      repos.ts             - Redis-backed repository management API
+      repos-ui.ts          - HTML repository management UI
   jobs/
     index.ts               - Job infrastructure exports
     index.test.ts          - Job tests
@@ -377,6 +335,7 @@ src/
     issues.ts              - GitHub issues API functions
     branches.ts            - GitHub branches/ref API functions
     pullRequests.ts        - GitHub pull requests API functions
+```
 
 ## Docker Redis
 

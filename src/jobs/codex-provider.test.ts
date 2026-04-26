@@ -39,11 +39,11 @@ vi.mock('../config/index.js', () => ({
       token: 'test-token',
       owner: 'test-owner',
       repo: 'test-repo',
-      issueStrategy: 'polling',
       pollIntervalMs: 60000,
     },
     codex: {
       cliPath: 'npx @openai/codex',
+      model: 'gpt-5.4',
       timeoutMs: 300000,
     },
   },
@@ -154,8 +154,9 @@ function createCodexMockProcess(exitCode: number = 0): ReturnType<typeof nodePty
 }
 
 describe('processCodex', () => {
-  // Track original CODEX_CLI_PATH to restore after tests that modify it
+  // Track original Codex env to restore after tests that modify it
   const originalCodexPath = process.env['CODEX_CLI_PATH'];
+  const originalCodexModel = process.env['CODEX_MODEL'];
 
   beforeEach(() => {
     vi.resetModules();
@@ -182,11 +183,16 @@ describe('processCodex', () => {
   });
 
   afterEach(() => {
-    // Restore CODEX_CLI_PATH after tests that modify it
+    // Restore Codex env after tests that modify it
     if (originalCodexPath !== undefined) {
       process.env['CODEX_CLI_PATH'] = originalCodexPath;
     } else {
       delete process.env['CODEX_CLI_PATH'];
+    }
+    if (originalCodexModel !== undefined) {
+      process.env['CODEX_MODEL'] = originalCodexModel;
+    } else {
+      delete process.env['CODEX_MODEL'];
     }
   });
 
@@ -244,7 +250,7 @@ describe('processCodex', () => {
     expect(mockEnsureNodePtySpawnHelperExecutable).toHaveBeenCalledTimes(1);
     expect(mockPtySpawn).toHaveBeenCalledWith(
       'npx',
-      ['@openai/codex', 'exec', '--dangerously-bypass-approvals-and-sandbox', expect.stringContaining('Issue #1: Test Issue')],
+      ['@openai/codex', 'exec', '--dangerously-bypass-approvals-and-sandbox', '--model', 'gpt-5.4', expect.stringContaining('Issue #1: Test Issue')],
       expect.objectContaining({ cwd: TEMP_DIR })
     );
 
@@ -365,7 +371,71 @@ describe('processCodex', () => {
 
     expect(mockPtySpawn).toHaveBeenCalledWith(
       '/custom/path/to/codex',
-      ['exec', '--dangerously-bypass-approvals-and-sandbox', expect.stringContaining('Issue #1: Test Issue')],
+      ['exec', '--dangerously-bypass-approvals-and-sandbox', '--model', 'gpt-5.4', expect.stringContaining('Issue #1: Test Issue')],
+      expect.objectContaining({ cwd: TEMP_DIR })
+    );
+  });
+
+  it('should use CODEX_MODEL from environment when set', async () => {
+    process.env['CODEX_MODEL'] = 'gpt-5.4-mini';
+
+    const mockSpawn = vi.mocked(spawn);
+    const mockPtySpawn = vi.mocked(nodePty.spawn);
+
+    mockSpawn.mockImplementation((cmd: string) => {
+      if (cmd === 'git') {
+        return createGitMockProcess();
+      }
+      return createCodexMockProcess();
+    });
+
+    mockPtySpawn.mockImplementation(() => createCodexMockProcess());
+
+    const issue = createMockIssue(1, 'Test Issue', 'Test body');
+    const job = createMockJob({
+      taskId: 'test-task',
+      type: 'codex-provider',
+      issue,
+      branchName: 'issue-1-test-issue',
+    });
+
+    await processCodex(job);
+
+    expect(mockPtySpawn).toHaveBeenCalledWith(
+      'npx',
+      ['@openai/codex', 'exec', '--dangerously-bypass-approvals-and-sandbox', '--model', 'gpt-5.4-mini', expect.stringContaining('Issue #1: Test Issue')],
+      expect.objectContaining({ cwd: TEMP_DIR })
+    );
+  });
+
+  it('should not add default model when CODEX_CLI_PATH already includes a model flag', async () => {
+    process.env['CODEX_CLI_PATH'] = '/custom/path/to/codex --model gpt-5.2';
+
+    const mockSpawn = vi.mocked(spawn);
+    const mockPtySpawn = vi.mocked(nodePty.spawn);
+
+    mockSpawn.mockImplementation((cmd: string) => {
+      if (cmd === 'git') {
+        return createGitMockProcess();
+      }
+      return createCodexMockProcess();
+    });
+
+    mockPtySpawn.mockImplementation(() => createCodexMockProcess());
+
+    const issue = createMockIssue(1, 'Test Issue', 'Test body');
+    const job = createMockJob({
+      taskId: 'test-task',
+      type: 'codex-provider',
+      issue,
+      branchName: 'issue-1-test-issue',
+    });
+
+    await processCodex(job);
+
+    expect(mockPtySpawn).toHaveBeenCalledWith(
+      '/custom/path/to/codex',
+      ['--model', 'gpt-5.2', 'exec', '--dangerously-bypass-approvals-and-sandbox', expect.stringContaining('Issue #1: Test Issue')],
       expect.objectContaining({ cwd: TEMP_DIR })
     );
   });
@@ -396,7 +466,7 @@ describe('processCodex', () => {
     // Verify codex was spawned with default body text
     expect(mockPtySpawn).toHaveBeenCalledWith(
       'npx',
-      ['@openai/codex', 'exec', '--dangerously-bypass-approvals-and-sandbox', expect.stringContaining('No description provided')],
+      ['@openai/codex', 'exec', '--dangerously-bypass-approvals-and-sandbox', '--model', 'gpt-5.4', expect.stringContaining('No description provided')],
       expect.any(Object)
     );
   });

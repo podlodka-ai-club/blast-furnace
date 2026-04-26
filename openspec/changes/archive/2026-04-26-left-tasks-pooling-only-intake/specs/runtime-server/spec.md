@@ -1,9 +1,4 @@
-# Runtime Server Specification
-
-## Purpose
-Defines the current application runtime, configuration loading, HTTP server behavior, health endpoint, graceful shutdown, and local Redis development environment.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Environment Configuration
 The system SHALL load runtime configuration from environment variables with documented defaults and validation.
@@ -16,7 +11,6 @@ The system SHALL load runtime configuration from environment variables with docu
 - **AND** default `REDIS_PORT` to `6379`
 - **AND** default `GITHUB_POLL_INTERVAL_MS` to `60000`
 - **AND** default `CODEX_CLI_PATH` to `npx @openai/codex`
-- **AND** default `CODEX_MODEL` to `gpt-5.4`
 - **AND** default `CODEX_TIMEOUT_MS` to `300000`
 
 #### Scenario: Legacy webhook configuration is present
@@ -55,46 +49,3 @@ The system SHALL expose a Fastify HTTP server with CORS and JSON parsing behavio
 #### Scenario: Invalid JSON is received
 - **WHEN** a request with content type `application/json` contains invalid JSON
 - **THEN** the server SHALL reject it with a bad request error
-
-### Requirement: Health Endpoint
-The system SHALL expose a health endpoint at `GET /health`.
-
-#### Scenario: Health is requested
-- **WHEN** a client requests `GET /health`
-- **THEN** the response SHALL include `status: "ok"`
-- **AND** include an ISO timestamp
-- **AND** include uptime in whole seconds
-
-### Requirement: Graceful Shutdown
-The system SHALL shut down server and job infrastructure in a coordinated sequence.
-
-#### Scenario: Shutdown signal is received
-- **WHEN** the process receives `SIGINT` or `SIGTERM`
-- **THEN** the system SHALL stop accepting HTTP requests
-- **AND** close the BullMQ worker if it exists
-- **AND** close queue events and the queue
-- **AND** close the issue watcher Redis client
-- **AND** exit with status `0` when all shutdown steps succeed
-
-#### Scenario: Shutdown fails or times out
-- **WHEN** any shutdown step fails
-- **THEN** the system SHALL continue attempting later shutdown steps
-- **AND** exit with status `1`
-- **WHEN** shutdown exceeds 10 seconds
-- **THEN** the system SHALL force process exit with status `1`
-
-### Requirement: Local Redis Environment
-The project SHALL provide Docker-based Redis support for local development.
-
-#### Scenario: Redis is started through Docker Compose
-- **WHEN** Docker Compose starts the local environment
-- **THEN** Redis SHALL run from the `redis:7-alpine` image
-- **AND** expose `127.0.0.1:6379`
-- **AND** provide a healthcheck using `redis-cli ping`
-
-#### Scenario: Development start script is used
-- **WHEN** `./scripts/start.sh` is run
-- **THEN** the script SHALL check Docker availability
-- **AND** start Redis through Docker Compose
-- **AND** wait for Redis health
-- **AND** start the development server with `npm run dev`

@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FastifyInstance } from 'fastify';
 
-// Mock the config module with webhook strategy before importing buildServer
 vi.mock('../../config/index.js', () => ({
   config: {
     env: 'test',
@@ -15,9 +14,7 @@ vi.mock('../../config/index.js', () => ({
       token: 'test-token',
       owner: 'test-owner',
       repo: 'test-repo',
-      issueStrategy: 'webhook',
       pollIntervalMs: 60000,
-      webhookSecret: 'test-secret',
     },
   },
 }));
@@ -34,10 +31,14 @@ vi.mock('../../jobs/queue.js', () => ({
   closeQueue: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('../../jobs/issue-watcher.js', () => ({
+  REPO_LIST_KEY: 'github:repos',
+}));
+
 // Import buildServer after mocks are set up
 import { buildServer } from '../index.js';
 
-describe('buildServer with webhook strategy', () => {
+describe('buildServer without webhook intake', () => {
   let server: FastifyInstance;
 
   beforeEach(async () => {
@@ -48,7 +49,7 @@ describe('buildServer with webhook strategy', () => {
     await server.close();
   });
 
-  it('registers GitHub webhooks route when issueStrategy is webhook', async () => {
+  it('does not register GitHub webhooks route', async () => {
     const response = await server.inject({
       method: 'POST',
       url: '/webhooks/github',
@@ -62,11 +63,13 @@ describe('buildServer with webhook strategy', () => {
         },
       },
     });
-    // Should return 200 (or 401 if signature validation fails without proper signature header)
-    expect([200, 401]).toContain(response.statusCode);
+    expect(response.statusCode).toBe(404);
   });
 
-  it('rejects webhook request without signature when webhookSecret is configured', async () => {
+  it('does not enqueue issue processing work for webhook-shaped requests', async () => {
+    const { jobQueue } = await import('../../jobs/queue.js');
+    vi.clearAllMocks();
+
     const response = await server.inject({
       method: 'POST',
       url: '/webhooks/github',
@@ -80,7 +83,8 @@ describe('buildServer with webhook strategy', () => {
         },
       },
     });
-    // Without proper x-hub-signature-256 header, should return 401
-    expect(response.statusCode).toBe(401);
+
+    expect(response.statusCode).toBe(404);
+    expect(jobQueue.add).not.toHaveBeenCalled();
   });
 });

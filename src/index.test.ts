@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Job } from 'bullmq';
 
-// Mock the config module with different strategies
 const mockConfig = {
   env: 'test',
   port: 3000,
@@ -13,9 +12,7 @@ const mockConfig = {
     token: 'test-token',
     owner: 'test-owner',
     repo: 'test-repo',
-    issueStrategy: 'polling' as const,
     pollIntervalMs: 60000,
-    webhookSecret: undefined,
   },
 };
 
@@ -37,6 +34,7 @@ vi.mock('./jobs/issue-processor.js', () => ({
 vi.mock('./jobs/issue-watcher.js', () => ({
   issueWatcherHandler: vi.fn().mockResolvedValue(undefined),
   startIssueWatcher: vi.fn().mockResolvedValue(undefined),
+  closeIssueWatcherRedis: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('./jobs/codex-provider.js', () => ({
@@ -285,5 +283,15 @@ describe('strategy selection', () => {
   it('should export startIssueWatcher function', async () => {
     const { startIssueWatcher } = await import('./jobs/issue-watcher.js');
     expect(typeof startIssueWatcher).toBe('function');
+  });
+
+  it('starts the issue watcher during startup without strategy selection', async () => {
+    const { startIssueWatcher } = await import('./jobs/issue-watcher.js');
+
+    await import('./index.js');
+
+    await vi.waitFor(() => {
+      expect(startIssueWatcher).toHaveBeenCalledTimes(1);
+    });
   });
 });

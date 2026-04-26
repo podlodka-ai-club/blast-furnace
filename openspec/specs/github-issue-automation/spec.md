@@ -4,22 +4,17 @@
 Defines the product-level behavior of Blast Furnace as an agent orchestrator that turns eligible GitHub Issues into pull requests through an asynchronous, queue-driven pipeline.
 ## Requirements
 ### Requirement: Eligible Issue Intake
-The system SHALL accept GitHub Issues as automation tasks from configured GitHub repositories.
+The system SHALL accept GitHub Issues as automation tasks from configured GitHub repositories through polling intake.
 
-#### Scenario: Polling discovers eligible issues
-- **WHEN** polling intake is enabled
+#### Scenario: Intake discovers eligible issues
+- **WHEN** polling intake runs
 - **THEN** the system SHALL look for open GitHub Issues labeled `ready`
 - **AND** treat each matching issue as a task to automate
 
-#### Scenario: Webhook receives a newly opened issue
-- **WHEN** webhook intake is enabled
-- **AND** GitHub sends a valid `issues.opened` event
-- **THEN** the system SHALL treat the issue as a task to automate
-
 #### Scenario: Intake acknowledges work without doing it synchronously
-- **WHEN** an eligible issue is received through polling or webhook intake
+- **WHEN** an eligible issue is discovered through polling intake
 - **THEN** the system SHALL enqueue processing work for asynchronous execution
-- **AND** SHALL NOT require the intake path to complete implementation work before acknowledging receipt or finishing the polling cycle
+- **AND** SHALL NOT require the intake path to complete implementation work before finishing the polling cycle
 
 ### Requirement: Queue-Driven Pipeline
 The system SHALL process automation tasks as discrete asynchronous stages connected through BullMQ.
@@ -38,17 +33,17 @@ The system SHALL process automation tasks as discrete asynchronous stages connec
 - **THEN** the system SHALL allow BullMQ retry handling to re-run the stage according to configured retry behavior
 
 ### Requirement: Repository Selection
-The system SHALL support automation for one configured repository by default and multiple registered repositories when polling.
+The system SHALL support automation for one configured repository by default and multiple registered repositories through polling intake.
 
-#### Scenario: No polling repositories are registered
-- **WHEN** polling runs without registered repositories
+#### Scenario: No repositories are registered
+- **WHEN** intake runs without registered repositories
 - **THEN** the system SHALL use the configured `GITHUB_OWNER` and `GITHUB_REPO` as the target repository
 
-#### Scenario: Polling repositories are registered
-- **WHEN** one or more repositories are registered for polling
+#### Scenario: Repositories are registered
+- **WHEN** one or more repositories are registered for intake
 - **THEN** the system SHALL check each registered repository for eligible issues
 
-#### Scenario: Operator manages polling repositories
+#### Scenario: Operator manages intake repositories
 - **WHEN** an operator uses the repository API or management page
 - **THEN** the system SHALL allow repositories to be added, listed, and removed from the polling registry
 
@@ -146,4 +141,3 @@ The system SHALL provide basic operational surfaces for running and observing th
 #### Scenario: Operator runs local development environment
 - **WHEN** an operator starts the project locally using the provided scripts
 - **THEN** the system SHALL start Redis and the development server using the documented local workflow
-

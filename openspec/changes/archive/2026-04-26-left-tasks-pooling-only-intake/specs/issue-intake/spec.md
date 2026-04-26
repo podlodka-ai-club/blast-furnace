@@ -1,9 +1,4 @@
-# Issue Intake Specification
-
-## Purpose
-Defines the current polling mechanism that receives GitHub issues and enqueues them for processing.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Intake Strategy Selection
 The system SHALL use polling as the only supported strategy for receiving GitHub issues.
@@ -49,3 +44,9 @@ The system SHALL poll GitHub for open issues labeled `ready`.
 - **THEN** the watcher SHALL enqueue one `issue-processor` job per issue
 - **AND** each job SHALL include the mapped `GitHubIssue`
 - **AND** the watcher SHALL store the current timestamp in Redis after processing
+
+## REMOVED Requirements
+
+### Requirement: GitHub Webhook Endpoint
+**Reason**: Webhook intake is no longer part of the supported runtime contract; polling is the only supported intake path.
+**Migration**: Use polling intake through the repeatable `issue-watcher` job. Register repositories through the polling repository management API or rely on the configured `GITHUB_OWNER` and `GITHUB_REPO` fallback.

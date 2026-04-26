@@ -17,11 +17,11 @@
 
 Сейчас фактический pipeline в коде выглядит так:
 
-`issue-watcher / webhook -> issue-processor -> plan -> codex-provider -> review -> make-pr -> check-pr`
+`issue-watcher -> issue-processor -> plan -> codex-provider -> review -> make-pr -> check-pr`
 
 Ключевые особенности текущего состояния:
 
-- intake работает двумя способами: polling и webhook;
+- intake работает через polling: repeatable `issue-watcher` job ищет подходящие issue;
 - `issue-processor` подготавливает ветку;
 - `codex-provider` одновременно готовит локальный workspace и запускает Codex;
 - `plan` и `review` сейчас фактически passthrough-заглушки;
@@ -99,18 +99,11 @@ BullMQ остается транспортом, retry-механизмом и or
 
 ### Что входит в работу
 
-- удалить webhook flow как runtime-вариант;
-- убрать регистрацию webhook-роута из основного сценария работы;
-- убрать двусмысленность конфигурации, при которой система может стартовать в polling или webhook mode;
 - зафиксировать polling как единственный поддерживаемый intake path;
 - обновить документацию, OpenSpec, конфиг и тесты под новую модель.
 
 ### Что именно нужно поменять
 
-- удалить или вывести из активного использования:
-  - `POST /webhooks/github`
-  - `GITHUB_ISSUE_STRATEGY=webhook`
-  - `GITHUB_WEBHOOK_SECRET` как часть рабочего контракта
 - оставить в runtime только polling intake через repeatable `issue-watcher` job
 - в архитектуре и документации шаг называть просто `Intake`, без разделения на webhook/polling
 

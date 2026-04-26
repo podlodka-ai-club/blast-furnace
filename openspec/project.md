@@ -1,7 +1,7 @@
 # Project Context
 
 ## Purpose
-Blast Furnace is a continuously running agent orchestrator server. It receives work from GitHub Issues, either by polling or by webhook, and processes each issue through background jobs.
+Blast Furnace is a continuously running agent orchestrator server. It receives work from GitHub Issues through polling intake and processes each issue through background jobs.
 
 The current implementation focuses on a practical MVP:
 - watch configured GitHub repositories for issues
@@ -40,7 +40,7 @@ Longer-term product direction is an agent development pipeline with deterministi
 - Keep behavior deterministic in server, job, GitHub, and git orchestration code. Leave reasoning-heavy work to agent executors only where deterministic code is not practical.
 
 ### Architecture Patterns
-- `src/index.ts` is the application entry point. It loads config, builds the Fastify server, creates the queue worker, registers the appropriate issue intake strategy, and owns graceful shutdown.
+- `src/index.ts` is the application entry point. It loads config, builds the Fastify server, starts polling intake, creates the queue worker, and owns graceful shutdown.
 - Configuration is loaded from environment variables in `src/config/index.ts`; avoid reading environment variables directly elsewhere unless there is an established exception.
 - HTTP routes live under `src/server/routes/` and are registered by the server factory in `src/server/index.ts`.
 - Background job infrastructure lives in `src/jobs/`. The queue and queue events are configured in `queue.ts`, worker creation in `worker.ts`, and handlers are split by job type.
@@ -48,8 +48,6 @@ Longer-term product direction is an agent development pipeline with deterministi
 - GitHub API operations are isolated in `src/github/`, split by concern: client construction, issues, branches, pull requests, and label transitions.
 - Temporary repository work happens through `src/utils/working-dir.ts`. Codex work should happen in an isolated temp directory, not directly in the orchestrator repository.
 - Polling state that must change between BullMQ repeatable job executions is stored in Redis because repeatable job data is static.
-- Webhook routes are conditionally registered only when `GITHUB_ISSUE_STRATEGY=webhook`.
-- Security-sensitive comparisons, such as GitHub webhook HMAC signatures, must use timing-safe validation.
 - Git operations such as branch creation, commit, push, and PR creation are deterministic orchestrator responsibilities, not decisions left to the agent prompt.
 
 ### Testing Strategy
@@ -71,7 +69,7 @@ Longer-term product direction is an agent development pipeline with deterministi
 ## Domain Context
 - The domain is agent-assisted software development orchestration.
 - GitHub Issues are the primary task intake mechanism.
-- A task can arrive through polling or through the `/webhooks/github` endpoint.
+- A task arrives through polling by the repeatable `issue-watcher` job.
 - Repository polling can be configured through Redis-backed repository CRUD endpoints and the `/repos/manage` HTML UI.
 - The current processing flow is issue intake, queueing, issue processor, Codex provider, optional commit/push/PR, then label transition.
 - Important job payload types are `IssueWatcherJobData`, `IssueProcessorJobData`, `RepoWatcherJobData`, and `CodexProviderJobData`.
@@ -87,17 +85,15 @@ Longer-term product direction is an agent development pipeline with deterministi
 - Worker concurrency defaults to 5.
 - Completed and failed jobs should be cleaned up according to queue defaults.
 - GitHub support is the current scope; GitLab and other trackers are out of scope.
-- Secrets such as `GITHUB_TOKEN`, webhook secrets, and local environment files must not be committed.
+- Secrets such as `GITHUB_TOKEN` and local environment files must not be committed.
 - `GITHUB_POLL_INTERVAL_MS` has a minimum of 1000 milliseconds.
-- Webhook HMAC validation is optional when no secret is configured, but required when `GITHUB_WEBHOOK_SECRET` is set.
-- Codex execution is bounded by `CODEX_TIMEOUT_MS`, defaulting to 300000 milliseconds.
+- Codex execution uses `CODEX_MODEL`, defaulting to `gpt-5.4`, and is bounded by `CODEX_TIMEOUT_MS`, defaulting to 300000 milliseconds.
 - Agent execution should not directly own repository-level git actions; deterministic orchestrator code should own those actions.
 
 ## External Dependencies
 - GitHub REST API, accessed through Octokit, for issues, branches, refs, labels, and pull requests.
-- GitHub webhook delivery for issue events when webhook intake is enabled.
 - Redis for BullMQ queue state, repeatable jobs, queue events, and repository watcher state.
-- Codex CLI, configured with `CODEX_CLI_PATH`, for AI-assisted implementation.
+- Codex CLI, configured with `CODEX_CLI_PATH` and `CODEX_MODEL`, for AI-assisted implementation.
 - Docker Compose for local Redis development.
 
 ## Commands
@@ -121,9 +117,8 @@ Longer-term product direction is an agent development pipeline with deterministi
 - `GITHUB_TOKEN`: required for GitHub operations.
 - `GITHUB_OWNER`: required target repository owner.
 - `GITHUB_REPO`: required target repository name.
-- `GITHUB_ISSUE_STRATEGY`: `polling` or `webhook`, defaults to `polling`.
 - `GITHUB_POLL_INTERVAL_MS`: defaults to `60000`.
-- `GITHUB_WEBHOOK_SECRET`: optional HMAC secret.
 - `CODEX_CLI_PATH`: defaults to `npx @openai/codex`.
+- `CODEX_MODEL`: defaults to `gpt-5.4`.
 - `CODEX_TIMEOUT_MS`: defaults to `300000`.
 - `CORS_ORIGIN`: used by the server, defaulting to permissive development behavior.

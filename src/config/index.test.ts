@@ -26,6 +26,7 @@ describe('config', () => {
     delete process.env['GITHUB_POLL_INTERVAL_MS'];
     delete process.env['GITHUB_WEBHOOK_SECRET'];
     delete process.env['CODEX_CLI_PATH'];
+    delete process.env['CODEX_MODEL'];
     delete process.env['CODEX_TIMEOUT_MS'];
 
     // Import fresh module
@@ -39,10 +40,11 @@ describe('config', () => {
     expect(config.github.token).toBe('');
     expect(config.github.owner).toBe('');
     expect(config.github.repo).toBe('');
-    expect(config.github.issueStrategy).toBe('polling');
     expect(config.github.pollIntervalMs).toBe(60000);
-    expect(config.github.webhookSecret).toBeUndefined();
+    expect(config.github).not.toHaveProperty('issueStrategy');
+    expect(config.github).not.toHaveProperty('webhookSecret');
     expect(config.codex.cliPath).toBe('npx @openai/codex');
+    expect(config.codex.model).toBe('gpt-5.4');
     expect(config.codex.timeoutMs).toBe(300000);
   });
 
@@ -58,6 +60,7 @@ describe('config', () => {
     process.env['GITHUB_POLL_INTERVAL_MS'] = '30000';
     process.env['GITHUB_WEBHOOK_SECRET'] = 'test-secret';
     process.env['CODEX_CLI_PATH'] = '/usr/local/bin/codex';
+    process.env['CODEX_MODEL'] = 'gpt-5.4-mini';
     process.env['CODEX_TIMEOUT_MS'] = '600000';
 
     // Import fresh module
@@ -71,20 +74,23 @@ describe('config', () => {
     expect(config.github.token).toBe('test-token');
     expect(config.github.owner).toBe('test-owner');
     expect(config.github.repo).toBe('test-repo');
-    expect(config.github.issueStrategy).toBe('webhook');
     expect(config.github.pollIntervalMs).toBe(30000);
-    expect(config.github.webhookSecret).toBe('test-secret');
+    expect(config.github).not.toHaveProperty('issueStrategy');
+    expect(config.github).not.toHaveProperty('webhookSecret');
     expect(config.codex.cliPath).toBe('/usr/local/bin/codex');
+    expect(config.codex.model).toBe('gpt-5.4-mini');
     expect(config.codex.timeoutMs).toBe(600000);
   });
 
-  it('should default to polling strategy for invalid issue strategy value', async () => {
-    process.env['GITHUB_ISSUE_STRATEGY'] = 'invalid';
+  it('should ignore legacy issue strategy and webhook secret environment variables', async () => {
+    process.env['GITHUB_ISSUE_STRATEGY'] = 'webhook';
+    process.env['GITHUB_WEBHOOK_SECRET'] = 'legacy-secret';
 
     vi.resetModules();
     const { config } = await import('./index.js');
 
-    expect(config.github.issueStrategy).toBe('polling');
+    expect(config.github).not.toHaveProperty('issueStrategy');
+    expect(config.github).not.toHaveProperty('webhookSecret');
   });
 
   it('should use default poll interval for invalid poll interval value', async () => {

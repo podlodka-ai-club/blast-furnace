@@ -12,12 +12,6 @@ function parsePollInterval(value, defaultVal) {
     }
     return parsed;
 }
-function parseIssueStrategy(value) {
-    if (value === 'webhook') {
-        return 'webhook';
-    }
-    return 'polling';
-}
 function parseTimeout(value, defaultVal) {
     const parsed = parseInt(value ?? String(defaultVal), 10);
     const maxTimeout = 600000;
@@ -39,12 +33,11 @@ function loadConfig() {
             token: process.env['GITHUB_TOKEN'] ?? '',
             owner: process.env['GITHUB_OWNER'] ?? '',
             repo: process.env['GITHUB_REPO'] ?? '',
-            issueStrategy: parseIssueStrategy(process.env['GITHUB_ISSUE_STRATEGY']),
             pollIntervalMs: parsePollInterval(process.env['GITHUB_POLL_INTERVAL_MS'], 60000),
-            webhookSecret: process.env['GITHUB_WEBHOOK_SECRET'] ?? undefined,
         },
         codex: {
             cliPath: process.env['CODEX_CLI_PATH'] ?? 'npx @openai/codex',
+            model: process.env['CODEX_MODEL'] ?? 'gpt-5.4',
             timeoutMs: parseTimeout(process.env['CODEX_TIMEOUT_MS'], 300000),
         },
     };

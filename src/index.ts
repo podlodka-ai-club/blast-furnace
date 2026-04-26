@@ -63,10 +63,7 @@ async function main(): Promise<void> {
   server = await buildServer({ logger: true });
   await startServer(server, config.port);
 
-  // Start polling if configured
-  if (config.github.issueStrategy === 'polling') {
-    await startIssueWatcher();
-  }
+  await startIssueWatcher();
 
   // Create worker after server is ready
   worker = createWorker(multiHandler);

@@ -3,7 +3,7 @@
 
 ## Project Overview
 
-Blast Furnace is an Agent Orchestrator server that runs continuously, receives GitHub Issues via polling or webhooks (configurable), and processes tasks through a pipeline using background jobs.
+Blast Furnace is an Agent Orchestrator server that runs continuously, receives GitHub Issues through polling intake, and processes tasks through a pipeline using background jobs.
 
 ## Tech Stack
 
@@ -34,7 +34,6 @@ src/
     index.test.ts    - Server tests
     routes/
       health.ts      - GET /health endpoint
-      github-webhooks.ts - POST /webhooks/github for GitHub issue events
       repos.ts       - Repository management (Redis-backed CRUD for GitHub repos)
       repos-ui.ts    - Web UI for repository management (GET /repos/manage)
   jobs/
@@ -66,7 +65,6 @@ Defined in `src/types/index.ts`:
 - `AppConfig`, `RedisConfig`, `GitHubConfig`
 - `JobPayload`
 - `IssueProcessorJobData`, `IssueWatcherJobData`, `RepoWatcherJobData`, `CodexProviderJobData` (job data types)
-- `GitHubWebhookEvent`, `GitHubIssueEventPayload` (webhook types)
 - `RepoListResponse` (API response type)
 
 ## Configuration
@@ -78,10 +76,9 @@ Most configuration is loaded from environment variables in `src/config/index.ts`
 - `REDIS_PORT` (default: 6379)
 - `REDIS_PASSWORD` (optional, no default)
 - `GITHUB_TOKEN`, `GITHUB_OWNER`, `GITHUB_REPO`
-- `GITHUB_ISSUE_STRATEGY` (polling | webhook, default: polling) - how to receive GitHub issues
 - `GITHUB_POLL_INTERVAL_MS` (default: 60000) - polling interval in milliseconds
-- `GITHUB_WEBHOOK_SECRET` (optional) - HMAC secret for webhook signature validation
 - `CODEX_CLI_PATH` (optional, default: npx @openai/codex) - command used to launch codex CLI
+- `CODEX_MODEL` (optional, default: gpt-5.4) - model passed to codex CLI
 - `CODEX_TIMEOUT_MS` (optional, default: 300000 = 5 minutes) - timeout for codex CLI execution
 
 Additional configuration read directly from environment:

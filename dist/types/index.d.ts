@@ -101,12 +101,11 @@ export interface GitHubConfig {
     token: string;
     owner: string;
     repo: string;
-    issueStrategy: 'polling' | 'webhook';
     pollIntervalMs: number;
-    webhookSecret?: string;
 }
 export interface CodexConfig {
     cliPath: string;
+    model: string;
     timeoutMs: number;
 }
 export interface AppConfig {
@@ -128,22 +127,6 @@ export interface JobPayload {
     taskId: string;
     type: string;
     payload?: Record<string, unknown>;
-}
-export interface GitHubWebhookEvent {
-    action: string;
-    issue: GitHubIssue;
-    repository: {
-        id: number;
-        name: string;
-        fullName: string;
-    };
-    sender: {
-        login: string;
-    };
-}
-export interface GitHubIssueEventPayload {
-    action: 'opened' | 'closed' | 'assigned' | 'unassigned' | 'labeled' | 'unlabeled' | 'synchronize';
-    issue: GitHubIssue;
 }
 export interface IssueProcessorJobData extends JobPayload {
     type: 'issue-processor';
