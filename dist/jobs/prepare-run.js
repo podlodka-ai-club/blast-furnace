@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { getRef, pushBranch, deleteBranch } from '../github/branches.js';
 import { assertConfiguredRepository } from '../github/repository.js';
 import { cloneRepoInto, cleanupWorkingDir, createTempWorkingDir, getRepoRemoteUrl } from '../utils/working-dir.js';
+import { stageOutputSchemas } from './handoff-contracts.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
-import { resolveRunLogPath, scheduleNextJob, writeArtifactFile, writeRunSummary, } from './orchestration.js';
+import { appendHandoffRecordAndUpdateSummary, createRunFileSet, initializeRunSummary, scheduleNextJob, } from './orchestration.js';
 import { createForwardStagePayload } from './stage-payloads.js';
 export function createPrepareRunPayload(input) {
     const runId = input.runId ?? randomUUID();
@@ -135,6 +136,23 @@ export async function runPrepareRunWork(job, logger = createJobLogger(job), stat
     await job.updateProgress?.({ step: 'creating-workspace', runId });
     const workspacePath = await createTempWorkingDir('prepare-run');
     state.workspacePath = workspacePath;
+    const runStartedAt = new Date().toISOString();
+    const runFileSet = createRunFileSet(workspacePath, runId, new Date(runStartedAt));
+    await initializeRunSummary(workspacePath, runFileSet, {
+        runId,
+        status: 'running',
+        currentStage: 'prepare-run',
+        runStartedAt,
+        stageAttempt,
+        reworkAttempt: job.data.reworkAttempt,
+        latestHandoffRecord: null,
+        stages: {
+            'prepare-run': {
+                attempts: stageAttempt,
+                status: 'running',
+            },
+        },
+    });
     let sha;
     try {
         await job.updateProgress?.({ step: 'fetching-main-ref', runId });
@@ -169,35 +187,30 @@ export async function runPrepareRunWork(job, logger = createJobLogger(job), stat
     await cloneRepoInto(workspacePath, remoteUrl);
     logger.info(`Checking out prepared branch: ${branchName}`);
     await checkoutPreparedBranch(branchName, workspacePath, logger);
-    const runLogPath = resolveRunLogPath(workspacePath, runId);
+    const runLogPath = join(runFileSet.runDirectory, 'run.log');
     await mkdir(dirname(runLogPath), { recursive: true });
     await writeFile(runLogPath, '', { flag: 'a' });
-    await writeRunSummary(workspacePath, {
-        runId,
-        status: 'running',
-        stages: {
-            'prepare-run': {
-                attempts: stageAttempt,
-                status: 'running',
-            },
-        },
-    });
-    await writeArtifactFile(workspacePath, {
-        runId,
-        stageName: 'prepare-run',
-        attempt: stageAttempt,
-        artifactName: 'base-context.json',
-    }, {
+    const output = stageOutputSchemas['prepare-run'].parse({
+        status: 'success',
+        branchName,
+        workspacePath,
         runId,
         issue,
         repository,
-        branchName,
-        workspacePath,
+        stageAttempt,
+        reworkAttempt: job.data.reworkAttempt,
     });
-    const assessJobData = createForwardStagePayload(job.data, 'assess', {
-        branchName,
-        workspacePath,
+    const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(workspacePath, {
+        runId,
+        fromStage: 'prepare-run',
+        toStage: 'assess',
+        stageAttempt,
+        reworkAttempt: job.data.reworkAttempt,
+        dependsOn: null,
+        status: 'success',
+        output,
     });
+    const assessJobData = createForwardStagePayload(job.data, 'assess', inputRecordRef);
     return {
         assessJobData,
         runLogPath,
@@ -214,10 +227,10 @@ export async function runPrepareRunFlow(job) {
     let handoffCompleted = false;
     try {
         const result = await runPrepareRunWork(job, logger, state);
-        await job.updateProgress?.({ step: 'enqueueing-assess', issue: result.assessJobData.issue.number });
+        await job.updateProgress?.({ step: 'enqueueing-assess', issue: job.data.issue.number });
         await scheduleNextJob(jobQueue, 'assess', result.assessJobData);
         handoffCompleted = true;
-        logger.info(`Assess job enqueued for branch: ${result.assessJobData.branchName}`);
+        logger.info(`Assess job enqueued for run: ${result.assessJobData.runId}`);
     }
     catch (err) {
         if (!handoffCompleted) {

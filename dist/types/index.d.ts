@@ -48,9 +48,52 @@ export interface RunStageSummary {
     status: string;
     updatedAt?: string;
 }
+export interface RunFileSet {
+    runId: RunId;
+    timestampPrefix: string;
+    runDirectory: string;
+    runSummaryPath: string;
+    handoffLedgerPath: string;
+}
+export interface InputRecordRef {
+    runDir: string;
+    handoffPath: string;
+    recordId: string;
+    sequence: number;
+    stage: WorkflowStage;
+}
+export interface HandoffRecordDependency {
+    recordId: string;
+    sequence: number;
+    stage: WorkflowStage;
+}
+export type HandoffStatus = 'success' | 'failure' | 'blocked' | 'clarify' | 'rework-needed';
+export interface HandoffRecord<TOutput = unknown> {
+    recordId: string;
+    sequence: number;
+    runId: RunId;
+    createdAt: string;
+    fromStage: WorkflowStage;
+    toStage: WorkflowStage | null;
+    stageAttempt: number;
+    reworkAttempt: number;
+    dependsOn: HandoffRecordDependency | null;
+    status: HandoffStatus;
+    output: TOutput;
+    nextInput: StageJobPayload | null;
+}
 export interface RunSummaryData {
     runId: RunId;
     status: string;
+    currentStage?: WorkflowStage | null;
+    runStartedAt?: string;
+    timestampPrefix?: string;
+    runDirectory?: string;
+    runSummaryPath?: string;
+    handoffLedgerPath?: string;
+    stageAttempt?: number;
+    reworkAttempt?: number;
+    latestHandoffRecord?: InputRecordRef | null;
     stages: Record<string, RunStageSummary>;
     createdAt?: string;
     updatedAt?: string;
@@ -128,6 +171,9 @@ export interface StageJobPayload<TStage extends WorkflowStage = WorkflowStage> e
     stageAttempt: number;
     reworkAttempt: number;
 }
+export interface StageHandoffJobPayload<TStage extends Exclude<WorkflowStage, 'intake' | 'prepare-run'>> extends StageJobPayload<TStage> {
+    inputRecordRef: InputRecordRef;
+}
 export interface RepositoryIdentity {
     owner: string;
     repo: string;
@@ -152,6 +198,85 @@ export interface ReviewResult {
     status: 'stubbed';
     summary: string;
 }
+export interface PrepareRunOutput extends PreparedRunFields {
+    status: 'success';
+    runId: RunId;
+    stageAttempt: number;
+    reworkAttempt: number;
+}
+export interface AssessOutput extends PreparedRunFields {
+    status: 'success';
+    runId: RunId;
+    stageAttempt: number;
+    reworkAttempt: number;
+    assessment: AssessmentResult;
+}
+export interface PlanOutput extends PreparedRunFields {
+    status: 'success';
+    runId: RunId;
+    stageAttempt: number;
+    reworkAttempt: number;
+    assessment: AssessmentResult;
+    plan: PlanResult;
+}
+export interface DevelopOutput extends PreparedRunFields {
+    status: 'success';
+    runId: RunId;
+    stageAttempt: number;
+    reworkAttempt: number;
+    assessment: AssessmentResult;
+    plan: PlanResult;
+    development: DevelopmentResult;
+}
+export interface QualityGateOutput extends PreparedRunFields {
+    status: 'success';
+    runId: RunId;
+    stageAttempt: number;
+    reworkAttempt: number;
+    assessment: AssessmentResult;
+    plan: PlanResult;
+    development: DevelopmentResult;
+    quality: QualityGateResult;
+}
+export interface ReviewOutput extends PreparedRunFields {
+    status: 'success';
+    runId: RunId;
+    stageAttempt: number;
+    reworkAttempt: number;
+    assessment: AssessmentResult;
+    plan: PlanResult;
+    development: DevelopmentResult;
+    quality: QualityGateResult;
+    review: ReviewResult;
+}
+export interface PullRequestOutput extends PreparedRunFields {
+    status: 'pull-request-created';
+    runId: RunId;
+    stageAttempt: number;
+    reworkAttempt: number;
+    development: DevelopmentResult;
+    quality: QualityGateResult;
+    review: ReviewResult;
+    pullRequest: PullRequestResponse;
+}
+export interface NoChangeOutput extends PreparedRunFields {
+    status: 'no-changes';
+    runId: RunId;
+    stageAttempt: number;
+    reworkAttempt: number;
+    development: DevelopmentResult;
+    quality: QualityGateResult;
+    review: ReviewResult;
+}
+export type MakePrOutput = PullRequestOutput | NoChangeOutput;
+export interface SyncTrackerStateOutput extends PreparedRunFields {
+    status: 'tracker-synced';
+    runId: RunId;
+    stageAttempt: number;
+    reworkAttempt: number;
+    pullRequest: PullRequestResponse;
+    trackerLabels: string[];
+}
 export interface IntakeJobData extends StageJobPayload<'intake'> {
     lastPollTimestamp?: string;
     owner?: string;
@@ -167,39 +292,10 @@ export interface PreparedRunFields {
     branchName: string;
     workspacePath: string;
 }
-export interface AssessJobData extends StageJobPayload<'assess'>, PreparedRunFields {
-}
-export interface PlanJobData extends StageJobPayload<'plan'>, PreparedRunFields {
-    assessment: AssessmentResult;
-}
-export interface DevelopJobData extends StageJobPayload<'develop'>, PreparedRunFields {
-    assessment: AssessmentResult;
-    plan: PlanResult;
-}
-export interface QualityGateJobData extends StageJobPayload<'quality-gate'>, PreparedRunFields {
-    assessment: AssessmentResult;
-    plan: PlanResult;
-    development: DevelopmentResult;
-}
-export interface ReviewJobData extends StageJobPayload<'review'>, PreparedRunFields {
-    assessment: AssessmentResult;
-    plan: PlanResult;
-    development: DevelopmentResult;
-    quality: QualityGateResult;
-}
-export interface MakePrJobData extends StageJobPayload<'make-pr'> {
-    issue: GitHubIssue;
-    repository: RepositoryIdentity;
-    branchName: string;
-    workspacePath: string;
-    development: DevelopmentResult;
-    quality: QualityGateResult;
-    review: ReviewResult;
-}
-export interface SyncTrackerStateJobData extends StageJobPayload<'sync-tracker-state'> {
-    issue: GitHubIssue;
-    repository: RepositoryIdentity;
-    branchName: string;
-    workspacePath: string;
-    pullRequest: PullRequestResponse;
-}
+export type AssessJobData = StageHandoffJobPayload<'assess'>;
+export type PlanJobData = StageHandoffJobPayload<'plan'>;
+export type DevelopJobData = StageHandoffJobPayload<'develop'>;
+export type QualityGateJobData = StageHandoffJobPayload<'quality-gate'>;
+export type ReviewJobData = StageHandoffJobPayload<'review'>;
+export type MakePrJobData = StageHandoffJobPayload<'make-pr'>;
+export type SyncTrackerStateJobData = StageHandoffJobPayload<'sync-tracker-state'>;

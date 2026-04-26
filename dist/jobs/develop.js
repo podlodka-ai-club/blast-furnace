@@ -2,9 +2,10 @@ import * as pty from 'node-pty';
 import path from 'node:path';
 import { config } from '../config/index.js';
 import { ensureNodePtySpawnHelperExecutable } from '../utils/node-pty.js';
+import { stageOutputSchemas, stagePayloadSchemas } from './handoff-contracts.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
-import { scheduleNextJob } from './orchestration.js';
+import { appendHandoffRecordAndUpdateSummary, readValidatedStageInputRecord, scheduleNextJob, } from './orchestration.js';
 import { createForwardStagePayload } from './stage-payloads.js';
 const DEFAULT_TIMEOUT_MS = 300000;
 const CODEX_SUBCOMMANDS = new Set([
@@ -67,12 +68,15 @@ function buildDevelopPrompt(data) {
     ].join('\n');
 }
 export async function runDevelopWork(job, logger = createJobLogger(job)) {
-    const { branchName, issue, workspacePath } = job.data;
+    stagePayloadSchemas.develop.parse(job.data);
+    const inputRecord = await readValidatedStageInputRecord(job.data);
+    const planned = stageOutputSchemas.plan.parse(inputRecord.output);
+    const { branchName, issue, workspacePath } = planned;
     const codexCliPath = process.env['CODEX_CLI_PATH'] ?? config.codex?.cliPath ?? 'npx @openai/codex';
     const codexModel = process.env['CODEX_MODEL'] ?? config.codex?.model ?? 'gpt-5.4';
     const timeoutMs = parseInt(process.env['CODEX_TIMEOUT_MS'] ?? String(config.codex?.timeoutMs ?? DEFAULT_TIMEOUT_MS), 10);
     logger.info(`Running develop for issue #${issue.number} on branch ${branchName}`);
-    const prompt = buildDevelopPrompt(job.data);
+    const prompt = buildDevelopPrompt(planned);
     const cliParts = codexCliPath.split(/\s+/).filter(Boolean);
     if (cliParts.length === 0) {
         throw new Error('CODEX_CLI_PATH must not be empty');
@@ -115,15 +119,33 @@ export async function runDevelopWork(job, logger = createJobLogger(job)) {
         throw new Error(`codex process failed with exit code ${exitCode}`);
     }
     logger.info('codex process completed successfully');
-    return createForwardStagePayload(job.data, 'quality-gate', {
+    const output = stageOutputSchemas.develop.parse({
+        ...planned,
+        status: 'success',
+        runId: job.data.runId,
+        stageAttempt: job.data.stageAttempt,
+        reworkAttempt: job.data.reworkAttempt,
         development: DEVELOPMENT_RESULT,
     });
+    const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(output.workspacePath, {
+        runId: job.data.runId,
+        fromStage: 'develop',
+        toStage: 'quality-gate',
+        stageAttempt: job.data.stageAttempt,
+        reworkAttempt: job.data.reworkAttempt,
+        dependsOn: job.data.inputRecordRef,
+        status: 'success',
+        output,
+    });
+    return createForwardStagePayload(job.data, 'quality-gate', inputRecordRef);
 }
 export async function runDevelopFlow(job) {
     const logger = createJobLogger(job);
     const qualityGateJobData = await runDevelopWork(job, logger);
+    const outputRecord = await readValidatedStageInputRecord(qualityGateJobData);
+    const output = stageOutputSchemas.develop.parse(outputRecord.output);
     await scheduleNextJob(jobQueue, 'quality-gate', qualityGateJobData);
-    logger.info(`Quality gate job enqueued for branch: ${qualityGateJobData.branchName}`);
+    logger.info(`Quality gate job enqueued for branch: ${output.branchName}`);
 }
 export const processDevelop = runDevelopFlow;
 export const developHandler = processDevelop;

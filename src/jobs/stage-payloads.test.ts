@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import type { AssessJobData, GitHubIssue } from '../types/index.js';
-import { createForwardStagePayload } from './stage-payloads.js';
+import type { AssessJobData, GitHubIssue, InputRecordRef, PrepareRunJobData } from '../types/index.js';
+import {
+  createForwardStagePayload,
+  validateStagePayload,
+  validateStageInputRecord,
+} from './stage-payloads.js';
 
 function createIssue(): GitHubIssue {
   return {
@@ -17,12 +21,20 @@ function createIssue(): GitHubIssue {
 }
 
 describe('stage payload factories', () => {
-  it('preserves runId and reworkAttempt while setting the next stage and domain stage attempt', () => {
-    const assessPayload: AssessJobData = {
+  const inputRecordRef: InputRecordRef = {
+    runDir: '/tmp/work/.orchestrator/runs/2026-04-26_08.07_run-123',
+    handoffPath: '/tmp/work/.orchestrator/runs/2026-04-26_08.07_run-123/2026-04-26_08.07_run-123_handoff.jsonl',
+    recordId: '000001_prepare-run_to_assess',
+    sequence: 1,
+    stage: 'prepare-run',
+  };
+
+  it('preserves runId and reworkAttempt while setting transport-only next stage data', () => {
+    const preparePayload: PrepareRunJobData = {
       taskId: 'task-assess',
-      type: 'assess',
+      type: 'prepare-run',
       runId: 'run-123',
-      stage: 'assess',
+      stage: 'prepare-run',
       stageAttempt: 2,
       reworkAttempt: 3,
       issue: createIssue(),
@@ -30,25 +42,23 @@ describe('stage payload factories', () => {
         owner: 'test-owner',
         repo: 'test-repo',
       },
-      branchName: 'issue-42-test-issue',
-      workspacePath: '/tmp/prepare-run-123',
     };
 
-    const payload = createForwardStagePayload(assessPayload, 'plan', {
-      assessment: {
-        status: 'stubbed',
-        summary: 'Assessment deferred.',
-      },
-    });
+    const payload = createForwardStagePayload(preparePayload, 'assess', inputRecordRef);
 
     expect(payload).toMatchObject({
       taskId: 'task-assess',
-      type: 'plan',
+      type: 'assess',
       runId: 'run-123',
-      stage: 'plan',
+      stage: 'assess',
       stageAttempt: 1,
       reworkAttempt: 3,
+      inputRecordRef,
     });
+    expect(payload).not.toHaveProperty('issue');
+    expect(payload).not.toHaveProperty('repository');
+    expect(payload).not.toHaveProperty('branchName');
+    expect(payload).not.toHaveProperty('workspacePath');
   });
 
   it('does not derive domain stageAttempt from BullMQ retry metadata', () => {
@@ -59,24 +69,65 @@ describe('stage payload factories', () => {
       stage: 'assess',
       stageAttempt: 1,
       reworkAttempt: 0,
-      issue: createIssue(),
-      repository: {
-        owner: 'test-owner',
-        repo: 'test-repo',
-      },
-      branchName: 'issue-42-test-issue',
-      workspacePath: '/tmp/prepare-run-123',
+      inputRecordRef,
     };
     const bullMqAttemptsMade = 8;
 
-    const payload = createForwardStagePayload(assessPayload, 'plan', {
-      assessment: {
-        status: 'stubbed',
-        summary: `BullMQ attempts ignored: ${bullMqAttemptsMade}`,
-      },
-    });
+    const payload = createForwardStagePayload(assessPayload, 'plan', inputRecordRef);
 
     expect(payload.stageAttempt).toBe(1);
     expect(payload.stageAttempt).not.toBe(bullMqAttemptsMade);
+  });
+
+  it('validates transport-only downstream payloads and rejects business fields', () => {
+    const payload = createForwardStagePayload(
+      {
+        taskId: 'task-assess',
+        type: 'assess',
+        runId: 'run-123',
+        stage: 'assess',
+        stageAttempt: 1,
+        reworkAttempt: 0,
+        inputRecordRef,
+      } satisfies AssessJobData,
+      'plan',
+      inputRecordRef
+    );
+
+    expect(() => validateStagePayload('plan', payload)).not.toThrow();
+    expect(() => validateStagePayload('plan', { ...payload, issue: createIssue() })).toThrow(
+      'must not include issue'
+    );
+  });
+
+  it('rejects input handoff records that do not match the receiving stage context', () => {
+    const payload = createForwardStagePayload(
+      {
+        taskId: 'task-assess',
+        type: 'assess',
+        runId: 'run-123',
+        stage: 'assess',
+        stageAttempt: 1,
+        reworkAttempt: 0,
+        inputRecordRef,
+      } satisfies AssessJobData,
+      'plan',
+      inputRecordRef
+    );
+
+    expect(() => validateStageInputRecord(payload, {
+      recordId: '000001_prepare-run_to_assess',
+      sequence: 1,
+      runId: 'run-123',
+      createdAt: '2026-04-26T08:07:30.000Z',
+      fromStage: 'prepare-run',
+      toStage: 'assess',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      dependsOn: null,
+      status: 'success',
+      output: {},
+      nextInput: null,
+    })).toThrow('toStage mismatch');
   });
 });

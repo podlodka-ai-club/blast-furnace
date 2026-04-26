@@ -6,5 +6,6 @@ export { createJobLogger } from './logger.js';
 export type { JobLogger } from './logger.js';
 export type { JobPayload } from '../types/index.js';
 export { closeQueue } from './queue.js';
-export { resolveRunDirectory, resolveStageAttemptDirectory, resolveArtifactPath, resolveEventPath, resolveRunSummaryPath, resolveRunLogPath, writeArtifactFile, writeEventFile, readRunSummary, writeRunSummary, updateRunSummary, scheduleNextJob, } from './orchestration.js';
-export type { QueueLike } from './orchestration.js';
+export { resolveRunDirectory, resolveStageAttemptDirectory, resolveArtifactPath, resolveEventPath, resolveRunSummaryPath, resolveRunLogPath, createRunFileSet, resolveRunFileSet, resolveRunFileSetFromSummary, appendHandoffRecord, appendHandoffRecordAndUpdateSummary, readHandoffRecord, readHandoffRecords, readValidatedStageInputRecord, initializeRunSummary, writeArtifactFile, writeEventFile, readRunSummary, writeRunSummary, updateRunSummary, updateRunSummaryForHandoff, scheduleNextJob, } from './orchestration.js';
+export type { AppendHandoffRecordInput, AppendHandoffRecordResult, QueueLike } from './orchestration.js';
+export { handoffRecordSchema, inputRecordRefSchema, runSummaryPointerSchema, stageOutputSchemas, stagePayloadSchemas, } from './handoff-contracts.js';

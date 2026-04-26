@@ -1,8 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Job } from 'bullmq';
-import type { GitHubIssue, MakePrJobData } from '../types/index.js';
+import type { GitHubIssue, MakePrJobData, RepositoryIdentity } from '../types/index.js';
 import { spawn } from 'child_process';
 import { processMakePr, runMakePrFlow, runMakePrWork } from './make-pr.js';
+import {
+  appendHandoffRecordAndUpdateSummary,
+  createRunFileSet,
+  initializeRunSummary,
+  readHandoffRecords,
+} from './orchestration.js';
 
 const { mockCreateJobLogger } = vi.hoisted(() => ({
   mockCreateJobLogger: vi.fn(),
@@ -74,43 +83,6 @@ function createIssue(title = 'Test Issue'): GitHubIssue {
   };
 }
 
-function createJob(
-  issue = createIssue(),
-  overrides: Partial<MakePrJobData> = {}
-): Job<MakePrJobData> {
-  return {
-    id: 'job-make-pr',
-    data: {
-      taskId: 'task-make-pr',
-      type: 'make-pr',
-      runId: 'run-123',
-      stage: 'make-pr',
-      stageAttempt: 1,
-      reworkAttempt: 0,
-      issue,
-      repository: {
-        owner: 'test-owner',
-        repo: 'test-repo',
-      },
-      branchName: 'issue-42-test-issue',
-      workspacePath: '/tmp/prepare-run-abc123',
-      development: {
-        status: 'completed',
-        summary: 'Codex completed successfully.',
-      },
-      quality: {
-        status: 'passed',
-        summary: 'Quality gate deferred for this iteration.',
-      },
-      review: {
-        status: 'stubbed',
-        summary: 'Review deferred for this iteration.',
-      },
-      ...overrides,
-    },
-  } as unknown as Job<MakePrJobData>;
-}
-
 function createGitMockProcess(exitCode = 0, stdout = '', stderr = ''): ReturnType<typeof spawn> {
   return {
     stdout: {
@@ -131,6 +103,8 @@ function createGitMockProcess(exitCode = 0, stdout = '', stderr = ''): ReturnTyp
 }
 
 describe('make-pr job', () => {
+  const tempRoots: string[] = [];
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockCreateJobLogger.mockReturnValue({
@@ -148,7 +122,85 @@ describe('make-pr job', () => {
     mockJobQueueAdd.mockResolvedValue(undefined);
   });
 
-  it('should finalize reviewed target-stage data from the received workspace path', async () => {
+  afterEach(async () => {
+    await Promise.all(tempRoots.map((root) => rm(root, { recursive: true, force: true })));
+    tempRoots.length = 0;
+  });
+
+  async function createJob(
+    issue = createIssue(),
+    repository: RepositoryIdentity = {
+      owner: 'test-owner',
+      repo: 'test-repo',
+    }
+  ): Promise<Job<MakePrJobData>> {
+    const workspacePath = await mkdtemp(join(tmpdir(), 'make-pr-ledger-'));
+    tempRoots.push(workspacePath);
+    const fileSet = createRunFileSet(workspacePath, 'run-123', new Date('2026-04-26T08:07:30.000Z'));
+    await initializeRunSummary(workspacePath, fileSet, {
+      runId: 'run-123',
+      status: 'running',
+      currentStage: 'review',
+      runStartedAt: '2026-04-26T08:07:30.000Z',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      latestHandoffRecord: null,
+      stages: {},
+    });
+    const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(workspacePath, {
+      runId: 'run-123',
+      fromStage: 'review',
+      toStage: 'make-pr',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      status: 'success',
+      output: {
+        status: 'success',
+        runId: 'run-123',
+        issue,
+        repository,
+        branchName: 'issue-42-test-issue',
+        workspacePath,
+        stageAttempt: 1,
+        reworkAttempt: 0,
+        assessment: {
+          status: 'stubbed',
+          summary: 'Assessment deferred for this iteration.',
+        },
+        plan: {
+          status: 'stubbed',
+          summary: 'Planning deferred for this iteration.',
+        },
+        development: {
+          status: 'completed',
+          summary: 'Codex completed successfully.',
+        },
+        quality: {
+          status: 'passed',
+          summary: 'Quality gate deferred for this iteration.',
+        },
+        review: {
+          status: 'stubbed',
+          summary: 'Review deferred for this iteration.',
+        },
+      },
+    });
+
+    return {
+      id: 'job-make-pr',
+      data: {
+        taskId: 'task-make-pr',
+        type: 'make-pr',
+        runId: 'run-123',
+        stage: 'make-pr',
+        stageAttempt: 1,
+        reworkAttempt: 0,
+        inputRecordRef,
+      },
+    } as unknown as Job<MakePrJobData>;
+  }
+
+  it('finalizes reviewed data from the ledger workspace path', async () => {
     const mockSpawn = vi.mocked(spawn);
     mockSpawn.mockImplementation((cmd: string, args: readonly string[]) => {
       if (cmd === 'git' && args[0] === 'status') {
@@ -156,35 +208,49 @@ describe('make-pr job', () => {
       }
       return createGitMockProcess();
     });
-    const job = createJob();
+    const job = await createJob();
 
     const result = await runMakePrWork(job);
 
-    expect(spawn).toHaveBeenCalledWith('git', ['status', '--porcelain'], { cwd: '/tmp/prepare-run-abc123' });
-    expect(result).toEqual({
+    expect(spawn).toHaveBeenCalledWith('git', ['status', '--porcelain'], {
+      cwd: expect.stringContaining('make-pr-ledger-'),
+    });
+    expect(result).toMatchObject({
       status: 'pull-request-created',
-      pullRequest: {
-        number: 7,
-        htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+      output: {
+        pullRequest: {
+          number: 7,
+          htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+        },
       },
     });
   });
 
-  it('should skip finalization, clean up directly, and not enqueue sync-tracker-state when no changes exist', async () => {
+  it('skips finalization, appends terminal no-change output, cleans up, and does not enqueue sync-tracker-state', async () => {
     const mockSpawn = vi.mocked(spawn);
     mockSpawn.mockReturnValue(createGitMockProcess(0, ''));
-    const job = createJob();
+    const job = await createJob();
 
     await processMakePr(job);
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
 
-    expect(mockSpawn).toHaveBeenCalledWith('git', ['status', '--porcelain'], { cwd: '/tmp/prepare-run-abc123' });
+    expect(mockSpawn).toHaveBeenCalledWith('git', ['status', '--porcelain'], {
+      cwd: expect.stringContaining('make-pr-ledger-'),
+    });
+    expect(records[1]).toMatchObject({
+      fromStage: 'make-pr',
+      toStage: null,
+      output: {
+        status: 'no-changes',
+      },
+    });
     expect(mockCreatePullRequest).not.toHaveBeenCalled();
     expect(mockMoveIssueToInReview).not.toHaveBeenCalled();
     expect(mockJobQueueAdd).not.toHaveBeenCalled();
-    expect(mockCleanupWorkingDir).toHaveBeenCalledWith('/tmp/prepare-run-abc123');
+    expect(mockCleanupWorkingDir).toHaveBeenCalledWith(expect.stringContaining('make-pr-ledger-'));
   });
 
-  it('should commit, push, create a pull request, and enqueue sync-tracker-state when changes exist', async () => {
+  it('commits, pushes, creates a pull request, appends output, and enqueues sync-tracker-state by reference', async () => {
     const mockSpawn = vi.mocked(spawn);
     mockSpawn.mockImplementation((cmd: string, args: readonly string[]) => {
       if (cmd === 'git' && args[0] === 'status') {
@@ -192,19 +258,20 @@ describe('make-pr job', () => {
       }
       return createGitMockProcess();
     });
-    const job = createJob();
+    const job = await createJob();
 
     await runMakePrFlow(job);
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
 
     expect(mockSpawn).toHaveBeenCalledWith(
       'git',
       ['commit', '-m', 'Processed issue #42 via codex: Test Issue'],
-      { cwd: '/tmp/prepare-run-abc123' }
+      { cwd: expect.stringContaining('make-pr-ledger-') }
     );
     expect(mockSpawn).toHaveBeenCalledWith(
       'git',
       ['push', 'https://test-token@github.com/test-owner/test-repo.git', 'issue-42-test-issue'],
-      { cwd: '/tmp/prepare-run-abc123' }
+      { cwd: expect.stringContaining('make-pr-ledger-') }
     );
     expect(mockCreatePullRequest).toHaveBeenCalledWith({
       title: 'Process issue #42: Test Issue',
@@ -212,32 +279,32 @@ describe('make-pr job', () => {
       base: 'main',
       body: 'Closes #42',
     });
-    expect(mockMoveIssueToInReview).not.toHaveBeenCalled();
-    expect(mockJobQueueAdd).toHaveBeenCalledWith('sync-tracker-state', {
-      taskId: 'task-make-pr',
-      type: 'sync-tracker-state',
-      runId: 'run-123',
-      stage: 'sync-tracker-state',
-      stageAttempt: 1,
-      reworkAttempt: 0,
-      issue: job.data.issue,
-      repository: job.data.repository,
-      branchName: 'issue-42-test-issue',
-      workspacePath: '/tmp/prepare-run-abc123',
-      pullRequest: {
-        number: 7,
-        htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+    expect(records[1]).toMatchObject({
+      fromStage: 'make-pr',
+      toStage: 'sync-tracker-state',
+      output: {
+        status: 'pull-request-created',
+        pullRequest: {
+          number: 7,
+        },
       },
     });
+    expect(mockMoveIssueToInReview).not.toHaveBeenCalled();
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('sync-tracker-state', expect.objectContaining({
+      type: 'sync-tracker-state',
+      stage: 'sync-tracker-state',
+      inputRecordRef: expect.objectContaining({
+        recordId: '000002_make-pr_to_sync-tracker-state',
+      }),
+    }));
+    expect(mockJobQueueAdd.mock.calls[0][1]).not.toHaveProperty('pullRequest');
     expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
   });
 
-  it('should fail mismatched repository identity before make-pr side effects', async () => {
-    const job = createJob(createIssue(), {
-      repository: {
-        owner: 'other-owner',
-        repo: 'other-repo',
-      },
+  it('fails mismatched repository identity before make-pr side effects', async () => {
+    const job = await createJob(createIssue(), {
+      owner: 'other-owner',
+      repo: 'other-repo',
     });
 
     await expect(runMakePrFlow(job)).rejects.toThrow('Repository identity mismatch');
@@ -248,7 +315,7 @@ describe('make-pr job', () => {
     expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
   });
 
-  it('should fail without enqueueing sync-tracker-state when push fails', async () => {
+  it('fails without enqueueing sync-tracker-state when push fails', async () => {
     const mockSpawn = vi.mocked(spawn);
     mockSpawn.mockImplementation((cmd: string, args: readonly string[]) => {
       if (cmd === 'git' && args[0] === 'status') {
@@ -259,7 +326,7 @@ describe('make-pr job', () => {
       }
       return createGitMockProcess();
     });
-    const job = createJob();
+    const job = await createJob();
 
     await expect(processMakePr(job)).rejects.toThrow('git command failed');
 

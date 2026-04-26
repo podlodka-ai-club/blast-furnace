@@ -1,6 +1,16 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Job } from 'bullmq';
 import type { AssessJobData, GitHubIssue } from '../types/index.js';
+import {
+  appendHandoffRecordAndUpdateSummary,
+  createRunFileSet,
+  initializeRunSummary,
+  readHandoffRecords,
+  readRunSummary,
+} from './orchestration.js';
 
 const { mockJobQueueAdd, mockCreateJobLogger } = vi.hoisted(() => ({
   mockJobQueueAdd: vi.fn(),
@@ -31,28 +41,9 @@ function createIssue(): GitHubIssue {
   };
 }
 
-function createJob(issue = createIssue()): Job<AssessJobData> {
-  return {
-    id: 'job-assess',
-    data: {
-      taskId: 'task-assess',
-      type: 'assess',
-      runId: 'run-123',
-      stage: 'assess',
-      stageAttempt: 1,
-      reworkAttempt: 0,
-      issue,
-      repository: {
-        owner: 'test-owner',
-        repo: 'test-repo',
-      },
-      branchName: 'issue-42-test-issue',
-      workspacePath: '/tmp/prepare-run-abc123',
-    },
-  } as unknown as Job<AssessJobData>;
-}
-
 describe('assess job', () => {
+  const tempRoots: string[] = [];
+
   beforeEach(() => {
     vi.resetAllMocks();
     mockCreateJobLogger.mockReturnValue({
@@ -64,40 +55,121 @@ describe('assess job', () => {
     mockJobQueueAdd.mockResolvedValue(undefined);
   });
 
-  it('should produce stub assessment data and preserve prepared run context', async () => {
+  afterEach(async () => {
+    await Promise.all(tempRoots.map((root) => rm(root, { recursive: true, force: true })));
+    tempRoots.length = 0;
+  });
+
+  async function createJob(): Promise<Job<AssessJobData>> {
+    const workspacePath = await mkdtemp(join(tmpdir(), 'assess-ledger-'));
+    tempRoots.push(workspacePath);
+    const issue = createIssue();
+    const fileSet = createRunFileSet(workspacePath, 'run-123', new Date('2026-04-26T08:07:30.000Z'));
+    await initializeRunSummary(workspacePath, fileSet, {
+      runId: 'run-123',
+      status: 'running',
+      currentStage: 'prepare-run',
+      runStartedAt: '2026-04-26T08:07:30.000Z',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      latestHandoffRecord: null,
+      stages: {},
+    });
+    const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(workspacePath, {
+      runId: 'run-123',
+      fromStage: 'prepare-run',
+      toStage: 'assess',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      status: 'success',
+      output: {
+        status: 'success',
+        runId: 'run-123',
+        issue,
+        repository: {
+          owner: 'test-owner',
+          repo: 'test-repo',
+        },
+        branchName: 'issue-42-test-issue',
+        workspacePath,
+        stageAttempt: 1,
+        reworkAttempt: 0,
+      },
+    });
+
+    return {
+      id: 'job-assess',
+      data: {
+        taskId: 'task-assess',
+        type: 'assess',
+        runId: 'run-123',
+        stage: 'assess',
+        stageAttempt: 1,
+        reworkAttempt: 0,
+        inputRecordRef,
+      },
+    } as unknown as Job<AssessJobData>;
+  }
+
+  it('appends assessment output and returns a transport-only plan payload', async () => {
     const { runAssessWork } = await import('./assess.js');
-    const job = createJob();
+    const job = await createJob();
 
     const result = await runAssessWork(job);
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
+    const summary = await readRunSummary(records[0].output.workspacePath as string, 'run-123');
 
-    expect(result).toEqual({
-      ...job.data,
+    expect(result).toMatchObject({
+      taskId: 'task-assess',
       type: 'plan',
+      runId: 'run-123',
       stage: 'plan',
       stageAttempt: 1,
-      assessment: {
-        status: 'stubbed',
-        summary: 'Assessment deferred for this iteration.',
+      reworkAttempt: 0,
+      inputRecordRef: {
+        recordId: '000002_assess_to_plan',
+        sequence: 2,
+        stage: 'assess',
+      },
+    });
+    expect(result).not.toHaveProperty('issue');
+    expect(records[1]).toMatchObject({
+      fromStage: 'assess',
+      toStage: 'plan',
+      dependsOn: {
+        recordId: '000001_prepare-run_to_assess',
+        sequence: 1,
+        stage: 'prepare-run',
+      },
+      output: {
+        assessment: {
+          status: 'stubbed',
+          summary: 'Assessment deferred for this iteration.',
+        },
+      },
+    });
+    expect(summary).toMatchObject({
+      currentStage: 'plan',
+      latestHandoffRecord: {
+        recordId: '000002_assess_to_plan',
       },
     });
   });
 
-  it('should enqueue plan with assessment output', async () => {
+  it('enqueues plan with only an input record reference', async () => {
     const { runAssessFlow } = await import('./assess.js');
-    const job = createJob();
+    const job = await createJob();
 
     await runAssessFlow(job);
 
-    expect(mockJobQueueAdd).toHaveBeenCalledWith('plan', {
-      ...job.data,
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('plan', expect.objectContaining({
       type: 'plan',
       stage: 'plan',
-      stageAttempt: 1,
-      assessment: {
-        status: 'stubbed',
-        summary: 'Assessment deferred for this iteration.',
-      },
-    });
+      inputRecordRef: expect.objectContaining({
+        recordId: '000002_assess_to_plan',
+      }),
+    }));
+    expect(mockJobQueueAdd.mock.calls[0][1]).not.toHaveProperty('issue');
   });
 
   it('should export assessHandler', async () => {

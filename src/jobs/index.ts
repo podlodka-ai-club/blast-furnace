@@ -13,11 +13,28 @@ export {
   resolveEventPath,
   resolveRunSummaryPath,
   resolveRunLogPath,
+  createRunFileSet,
+  resolveRunFileSet,
+  resolveRunFileSetFromSummary,
+  appendHandoffRecord,
+  appendHandoffRecordAndUpdateSummary,
+  readHandoffRecord,
+  readHandoffRecords,
+  readValidatedStageInputRecord,
+  initializeRunSummary,
   writeArtifactFile,
   writeEventFile,
   readRunSummary,
   writeRunSummary,
   updateRunSummary,
+  updateRunSummaryForHandoff,
   scheduleNextJob,
 } from './orchestration.js';
-export type { QueueLike } from './orchestration.js';
+export type { AppendHandoffRecordInput, AppendHandoffRecordResult, QueueLike } from './orchestration.js';
+export {
+  handoffRecordSchema,
+  inputRecordRefSchema,
+  runSummaryPointerSchema,
+  stageOutputSchemas,
+  stagePayloadSchemas,
+} from './handoff-contracts.js';

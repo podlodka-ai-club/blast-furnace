@@ -1,6 +1,6 @@
 import type { Job } from 'bullmq';
 import Redis from 'ioredis';
-import type { IntakeJobData } from '../types/index.js';
+import type { GitHubIssue, IntakeJobData, RepositoryIdentity } from '../types/index.js';
 import { config } from '../config/index.js';
 import { fetchIssues } from '../github/issues.js';
 import { READY_LABEL } from '../github/issue-labels.js';
@@ -10,12 +10,33 @@ import { createPrepareRunPayload } from './prepare-run.js';
 
 const LAST_POLL_KEY = 'github:intake:last-poll';
 const LEGACY_LAST_POLL_KEY = 'github:issue-watcher:last-poll';
+const PROCESSING_LOCK_TTL_SECONDS = Math.max(
+  Math.ceil((config.codex?.timeoutMs ?? 300000) / 1000) * 2,
+  Math.ceil(config.github.pollIntervalMs / 1000) * 2
+);
 
 const redisClient = new Redis({
   host: config.redis.host,
   port: config.redis.port,
   ...(config.redis.password !== undefined && { password: config.redis.password }),
 });
+
+function processingLockKey(repository: RepositoryIdentity, issue: GitHubIssue): string {
+  return `github:intake:processing:${repository.owner}:${repository.repo}:${issue.number}`;
+}
+
+async function claimIssueForProcessing(
+  repository: RepositoryIdentity,
+  issue: GitHubIssue,
+  runId: string
+): Promise<{ claimed: boolean; lockKey: string }> {
+  const lockKey = processingLockKey(repository, issue);
+  const result = await redisClient.set(lockKey, runId, 'EX', PROCESSING_LOCK_TTL_SECONDS, 'NX');
+  return {
+    claimed: result === 'OK',
+    lockKey,
+  };
+}
 
 export async function startIntake(): Promise<void> {
   let connectionEstablishedByThisCall = false;
@@ -71,7 +92,18 @@ export async function intakeHandler(_job: Job<IntakeJobData>): Promise<void> {
   });
 
   for (const issue of issues) {
-    await jobQueue.add('prepare-run', createPrepareRunPayload({ issue, repository }));
+    const payload = createPrepareRunPayload({ issue, repository });
+    const claim = await claimIssueForProcessing(repository, issue, payload.runId);
+    if (!claim.claimed) {
+      continue;
+    }
+
+    try {
+      await jobQueue.add('prepare-run', payload);
+    } catch (err) {
+      await redisClient.del(claim.lockKey);
+      throw err;
+    }
   }
 
   await redisClient.set(LAST_POLL_KEY, new Date().toISOString());

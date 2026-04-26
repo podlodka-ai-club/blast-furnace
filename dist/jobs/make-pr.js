@@ -2,9 +2,11 @@ import { spawn } from 'child_process';
 import { createPullRequest } from '../github/pullRequests.js';
 import { assertConfiguredRepository } from '../github/repository.js';
 import { cleanupWorkingDir, getRepoRemoteUrl } from '../utils/working-dir.js';
+import { stageOutputSchemas, stagePayloadSchemas } from './handoff-contracts.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
-import { scheduleNextJob } from './orchestration.js';
+import { appendHandoffRecordAndUpdateSummary, readValidatedStageInputRecord, scheduleNextJob, } from './orchestration.js';
+import { createForwardStagePayload } from './stage-payloads.js';
 function execGitCommand(args, cwd) {
     return new Promise((resolve, reject) => {
         const child = spawn('git', args, { cwd });
@@ -46,13 +48,36 @@ function sanitizeForGit(text, maxLength = 200) {
     return text.replace(/[\r\n]/g, ' ').slice(0, maxLength);
 }
 export async function runMakePrWork(job, logger = createJobLogger(job)) {
-    const { issue, repository, branchName, workspacePath } = job.data;
+    stagePayloadSchemas['make-pr'].parse(job.data);
+    const inputRecord = await readValidatedStageInputRecord(job.data);
+    const reviewed = stageOutputSchemas.review.parse(inputRecord.output);
+    const { issue, repository, branchName, workspacePath } = reviewed;
     assertConfiguredRepository(repository);
     logger.info(`Finalizing issue #${issue.number} on branch ${branchName}`);
     const status = await execGitCommand(['status', '--porcelain'], workspacePath);
     if (!status) {
         logger.info('No changes detected, skipping commit, push, pull request, and tracker synchronization');
-        return { status: 'no-changes' };
+        const output = stageOutputSchemas['make-pr'].parse({
+            ...reviewed,
+            status: 'no-changes',
+            runId: job.data.runId,
+            stageAttempt: job.data.stageAttempt,
+            reworkAttempt: job.data.reworkAttempt,
+        });
+        if (output.status !== 'no-changes') {
+            throw new Error('Expected no-changes make-pr output');
+        }
+        await appendHandoffRecordAndUpdateSummary(workspacePath, {
+            runId: job.data.runId,
+            fromStage: 'make-pr',
+            toStage: null,
+            stageAttempt: job.data.stageAttempt,
+            reworkAttempt: job.data.reworkAttempt,
+            dependsOn: job.data.inputRecordRef,
+            status: 'success',
+            output,
+        }, 'completed');
+        return { status: 'no-changes', output };
     }
     logger.info('Changes detected, committing...');
     await execGitCommand(['add', '-A'], workspacePath);
@@ -70,35 +95,43 @@ export async function runMakePrWork(job, logger = createJobLogger(job)) {
         body: `Closes #${issue.number}`,
     });
     logger.info(`Pull request created: ${prResult.htmlUrl}`);
-    return {
+    const output = stageOutputSchemas['make-pr'].parse({
+        ...reviewed,
         status: 'pull-request-created',
         pullRequest: prResult,
+        runId: job.data.runId,
+        stageAttempt: job.data.stageAttempt,
+        reworkAttempt: job.data.reworkAttempt,
+    });
+    if (output.status !== 'pull-request-created') {
+        throw new Error('Expected pull-request-created make-pr output');
+    }
+    const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(workspacePath, {
+        runId: job.data.runId,
+        fromStage: 'make-pr',
+        toStage: 'sync-tracker-state',
+        stageAttempt: job.data.stageAttempt,
+        reworkAttempt: job.data.reworkAttempt,
+        dependsOn: job.data.inputRecordRef,
+        status: 'success',
+        output,
+    });
+    return {
+        status: 'pull-request-created',
+        output,
+        syncTrackerStateJobData: createForwardStagePayload(job.data, 'sync-tracker-state', inputRecordRef),
     };
 }
 export async function runMakePrFlow(job) {
     const logger = createJobLogger(job);
-    const { issue, repository, branchName, workspacePath, runId, reworkAttempt } = job.data;
     try {
         const result = await runMakePrWork(job, logger);
         if (result.status === 'no-changes') {
-            logger.info(`Cleaning up temp working directory: ${workspacePath}`);
-            await cleanupWorkingDir(workspacePath);
+            logger.info(`Cleaning up temp working directory: ${result.output.workspacePath}`);
+            await cleanupWorkingDir(result.output.workspacePath);
             return;
         }
-        const syncTrackerStateJobData = {
-            taskId: job.data.taskId,
-            type: 'sync-tracker-state',
-            runId,
-            stage: 'sync-tracker-state',
-            stageAttempt: 1,
-            reworkAttempt,
-            issue,
-            repository,
-            branchName,
-            workspacePath,
-            pullRequest: result.pullRequest,
-        };
-        await scheduleNextJob(jobQueue, 'sync-tracker-state', syncTrackerStateJobData);
+        await scheduleNextJob(jobQueue, 'sync-tracker-state', result.syncTrackerStateJobData);
     }
     catch (err) {
         logger.error(`Make PR operation failed: ${err}`);

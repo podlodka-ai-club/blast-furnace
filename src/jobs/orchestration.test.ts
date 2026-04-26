@@ -10,6 +10,9 @@ import {
   resolveEventPath,
   resolveRunLogPath,
   resolveRunSummaryPath,
+  createRunFileSet,
+  appendHandoffRecord,
+  readHandoffRecords,
   writeArtifactFile,
   writeEventFile,
   readRunSummary,
@@ -52,6 +55,32 @@ describe('job orchestration infrastructure', () => {
     );
     expect(resolveRunSummaryPath(root, 'run-123')).toBe(join(root, '.orchestrator', 'runs', 'run-123', 'run.json'));
     expect(resolveRunLogPath(root, 'run-123')).toBe(join(root, '.orchestrator', 'runs', 'run-123', 'run.log'));
+  });
+
+  it('resolves timestamped run directory, summary, and handoff ledger paths from one UTC prefix', async () => {
+    const root = await createTempRoot();
+
+    const fileSet = createRunFileSet(root, 'run-123', new Date('2026-04-26T08:07:30.000Z'));
+
+    expect(fileSet).toEqual({
+      runId: 'run-123',
+      timestampPrefix: '2026-04-26_08.07',
+      runDirectory: join(root, '.orchestrator', 'runs', '2026-04-26_08.07_run-123'),
+      runSummaryPath: join(
+        root,
+        '.orchestrator',
+        'runs',
+        '2026-04-26_08.07_run-123',
+        '2026-04-26_08.07_run-123_run.json'
+      ),
+      handoffLedgerPath: join(
+        root,
+        '.orchestrator',
+        'runs',
+        '2026-04-26_08.07_run-123',
+        '2026-04-26_08.07_run-123_handoff.jsonl'
+      ),
+    });
   });
 
   it('writes artifact and event files append-only and fails rather than overwrite existing files', async () => {
@@ -103,6 +132,100 @@ describe('job orchestration infrastructure', () => {
           attempts: 1,
           status: 'completed',
         },
+      },
+    });
+  });
+
+  it('persists timestamped run summary paths and resolves them without recomputing time', async () => {
+    const root = await createTempRoot();
+    const fileSet = createRunFileSet(root, 'run-123', new Date('2026-04-26T08:07:30.000Z'));
+
+    await writeRunSummary(root, {
+      runId: 'run-123',
+      status: 'running',
+      currentStage: 'prepare-run',
+      runStartedAt: '2026-04-26T08:07:30.000Z',
+      timestampPrefix: fileSet.timestampPrefix,
+      runDirectory: fileSet.runDirectory,
+      runSummaryPath: fileSet.runSummaryPath,
+      handoffLedgerPath: fileSet.handoffLedgerPath,
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      latestHandoffRecord: null,
+      stages: {},
+    });
+
+    await updateRunSummary(root, 'run-123', (summary) => ({
+      ...summary,
+      status: 'completed',
+      currentStage: 'assess',
+    }));
+
+    await expect(readRunSummary(root, 'run-123')).resolves.toMatchObject({
+      runId: 'run-123',
+      status: 'completed',
+      currentStage: 'assess',
+      timestampPrefix: '2026-04-26_08.07',
+      runDirectory: fileSet.runDirectory,
+      runSummaryPath: fileSet.runSummaryPath,
+      handoffLedgerPath: fileSet.handoffLedgerPath,
+    });
+  });
+
+  it('appends one handoff JSON object per line without overwriting existing records', async () => {
+    const root = await createTempRoot();
+    const fileSet = createRunFileSet(root, 'run-123', new Date('2026-04-26T08:07:30.000Z'));
+    await writeRunSummary(root, {
+      runId: 'run-123',
+      status: 'running',
+      currentStage: 'prepare-run',
+      runStartedAt: '2026-04-26T08:07:30.000Z',
+      timestampPrefix: fileSet.timestampPrefix,
+      runDirectory: fileSet.runDirectory,
+      runSummaryPath: fileSet.runSummaryPath,
+      handoffLedgerPath: fileSet.handoffLedgerPath,
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      latestHandoffRecord: null,
+      stages: {},
+    });
+
+    const first = await appendHandoffRecord(root, {
+      runId: 'run-123',
+      fromStage: 'prepare-run',
+      toStage: 'assess',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      status: 'success',
+      output: { status: 'success', prepared: true },
+    });
+    const second = await appendHandoffRecord(root, {
+      runId: 'run-123',
+      fromStage: 'assess',
+      toStage: 'plan',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      dependsOn: first.inputRecordRef,
+      status: 'success',
+      output: { status: 'success', assessed: true },
+    });
+
+    await expect(readFile(fileSet.handoffLedgerPath, 'utf8')).resolves.toContain(
+      `${JSON.stringify(first.record)}\n${JSON.stringify(second.record)}\n`
+    );
+    await expect(readHandoffRecords(fileSet.handoffLedgerPath)).resolves.toEqual([first.record, second.record]);
+    expect(first.record).toMatchObject({
+      recordId: '000001_prepare-run_to_assess',
+      sequence: 1,
+      dependsOn: null,
+    });
+    expect(second.record).toMatchObject({
+      recordId: '000002_assess_to_plan',
+      sequence: 2,
+      dependsOn: {
+        recordId: first.record.recordId,
+        sequence: first.record.sequence,
+        stage: 'prepare-run',
       },
     });
   });

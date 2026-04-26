@@ -1,9 +1,10 @@
-import { rm } from 'node:fs/promises';
+import { mkdir, readdir, rm } from 'node:fs/promises';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Job } from 'bullmq';
 import type { GitHubIssue, PrepareRunJobData } from '../types/index.js';
 import { spawn } from 'child_process';
 import { createPrepareRunPayload, runPrepareRunFlow, runPrepareRunWork } from './prepare-run.js';
+import { readHandoffRecords, readRunSummary } from './orchestration.js';
 
 const TEMP_DIR = '/tmp/prepare-run-abc123';
 
@@ -184,13 +185,44 @@ describe('prepare-run job', () => {
     const job = createJob();
 
     const result = await runPrepareRunWork(job);
+    const records = await readHandoffRecords(result.assessJobData.inputRecordRef.handoffPath);
+    const summary = await readRunSummary(TEMP_DIR, 'run-123');
 
-    expect(result.runLogPath).toBe(`${TEMP_DIR}/.orchestrator/runs/run-123/run.log`);
+    expect(result.runLogPath).toMatch(
+      /^\/tmp\/prepare-run-abc123\/\.orchestrator\/runs\/\d{4}-\d{2}-\d{2}_\d{2}\.\d{2}_run-123\/run\.log$/
+    );
     expect(result.assessJobData).toMatchObject({
       runId: 'run-123',
       stage: 'assess',
       stageAttempt: 1,
       reworkAttempt: 0,
+      inputRecordRef: {
+        recordId: '000001_prepare-run_to_assess',
+        sequence: 1,
+        stage: 'prepare-run',
+      },
+    });
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      fromStage: 'prepare-run',
+      toStage: 'assess',
+      dependsOn: null,
+      output: {
+        issue: job.data.issue,
+        branchName: 'issue-42-test-issue',
+        workspacePath: TEMP_DIR,
+      },
+    });
+    expect(summary).toMatchObject({
+      runId: 'run-123',
+      currentStage: 'assess',
+      timestampPrefix: expect.stringMatching(/^\d{4}-\d{2}-\d{2}_\d{2}\.\d{2}$/),
+      runDirectory: expect.stringContaining('.orchestrator/runs/'),
+      runSummaryPath: expect.stringContaining('_run.json'),
+      handoffLedgerPath: expect.stringContaining('_handoff.jsonl'),
+      latestHandoffRecord: {
+        recordId: '000001_prepare-run_to_assess',
+      },
     });
   });
 
@@ -243,7 +275,25 @@ describe('prepare-run job', () => {
     );
   });
 
-  it('enqueues assess with prepared run, issue, repository, branch, workspace, and attempt data', async () => {
+  it('clones before writing orchestrator metadata into the workspace', async () => {
+    mockCreateTempWorkingDir.mockImplementation(async () => {
+      await mkdir(TEMP_DIR, { recursive: true });
+      return TEMP_DIR;
+    });
+    mockCloneRepoInto.mockImplementation(async (workingDir: string) => {
+      expect(await readdir(workingDir)).toEqual([]);
+    });
+    const job = createJob();
+
+    await runPrepareRunWork(job);
+
+    expect(mockCloneRepoInto).toHaveBeenCalledWith(
+      TEMP_DIR,
+      'https://test-token@github.com/test-owner/test-repo.git'
+    );
+  });
+
+  it('enqueues assess with only transport metadata and an input record reference', async () => {
     const job = createJob();
 
     await runPrepareRunFlow(job);
@@ -255,14 +305,16 @@ describe('prepare-run job', () => {
       stage: 'assess',
       stageAttempt: 1,
       reworkAttempt: 0,
-      issue: job.data.issue,
-      repository: {
-        owner: 'test-owner',
-        repo: 'test-repo',
-      },
-      branchName: 'issue-42-test-issue',
-      workspacePath: TEMP_DIR,
+      inputRecordRef: expect.objectContaining({
+        recordId: '000001_prepare-run_to_assess',
+        sequence: 1,
+        stage: 'prepare-run',
+      }),
     });
+    expect(mockJobQueueAdd.mock.calls[0][1]).not.toHaveProperty('issue');
+    expect(mockJobQueueAdd.mock.calls[0][1]).not.toHaveProperty('repository');
+    expect(mockJobQueueAdd.mock.calls[0][1]).not.toHaveProperty('branchName');
+    expect(mockJobQueueAdd.mock.calls[0][1]).not.toHaveProperty('workspacePath');
   });
 
   it('fails mismatched repository identity before prepare-run side effects', async () => {

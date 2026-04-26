@@ -15,6 +15,7 @@ import type {
   ServerOptions,
   HealthResponse,
   JobPayload,
+  InputRecordRef,
   WorkflowStage,
   StageJobPayload,
   IntakeJobData,
@@ -303,6 +304,13 @@ describe('types', () => {
     });
 
     it('should include the stage envelope on every target stage job payload type', () => {
+      const inputRecordRef: InputRecordRef = {
+        runDir: '/tmp/prepare-run-123/.orchestrator/runs/2026-04-26_08.07_run-123',
+        handoffPath: '/tmp/prepare-run-123/.orchestrator/runs/2026-04-26_08.07_run-123/2026-04-26_08.07_run-123_handoff.jsonl',
+        recordId: '000001_prepare-run_to_assess',
+        sequence: 1,
+        stage: 'prepare-run',
+      };
       const payloads: Array<StageJobPayload<WorkflowStage>> = [
         {
           taskId: 'task-intake',
@@ -342,23 +350,7 @@ describe('types', () => {
           stage: 'assess',
           stageAttempt: 1,
           reworkAttempt: 0,
-          issue: {
-            id: 1,
-            number: 42,
-            title: 'Test issue',
-            body: null,
-            state: 'open',
-            labels: [],
-            assignee: null,
-            createdAt: '2024-01-01T00:00:00.000Z',
-            updatedAt: '2024-01-01T00:00:00.000Z',
-          },
-          repository: {
-            owner: 'test-owner',
-            repo: 'test-repo',
-          },
-          branchName: 'issue-42-test-issue',
-          workspacePath: '/tmp/prepare-run-123',
+          inputRecordRef,
         } satisfies AssessJobData,
         {
           taskId: 'task-plan',
@@ -367,26 +359,11 @@ describe('types', () => {
           stage: 'plan',
           stageAttempt: 1,
           reworkAttempt: 0,
-          issue: {
-            id: 1,
-            number: 42,
-            title: 'Test issue',
-            body: null,
-            state: 'open',
-            labels: [],
-            assignee: null,
-            createdAt: '2024-01-01T00:00:00.000Z',
-            updatedAt: '2024-01-01T00:00:00.000Z',
-          },
-          repository: {
-            owner: 'test-owner',
-            repo: 'test-repo',
-          },
-          branchName: 'issue-42-test-issue',
-          workspacePath: '/tmp/prepare-run-123',
-          assessment: {
-            status: 'stubbed',
-            summary: 'Assessment deferred.',
+          inputRecordRef: {
+            ...inputRecordRef,
+            recordId: '000002_assess_to_plan',
+            sequence: 2,
+            stage: 'assess',
           },
         } satisfies PlanJobData,
         {
@@ -396,30 +373,11 @@ describe('types', () => {
           stage: 'develop',
           stageAttempt: 1,
           reworkAttempt: 0,
-          issue: {
-            id: 1,
-            number: 42,
-            title: 'Test issue',
-            body: null,
-            state: 'open',
-            labels: [],
-            assignee: null,
-            createdAt: '2024-01-01T00:00:00.000Z',
-            updatedAt: '2024-01-01T00:00:00.000Z',
-          },
-          repository: {
-            owner: 'test-owner',
-            repo: 'test-repo',
-          },
-          branchName: 'issue-42-test-issue',
-          workspacePath: '/tmp/prepare-run-123',
-          assessment: {
-            status: 'stubbed',
-            summary: 'Assessment deferred.',
-          },
-          plan: {
-            status: 'stubbed',
-            summary: 'Planning deferred.',
+          inputRecordRef: {
+            ...inputRecordRef,
+            recordId: '000003_plan_to_develop',
+            sequence: 3,
+            stage: 'plan',
           },
         } satisfies DevelopJobData,
         {
@@ -429,34 +387,11 @@ describe('types', () => {
           stage: 'quality-gate',
           stageAttempt: 1,
           reworkAttempt: 0,
-          issue: {
-            id: 1,
-            number: 42,
-            title: 'Test issue',
-            body: null,
-            state: 'open',
-            labels: [],
-            assignee: null,
-            createdAt: '2024-01-01T00:00:00.000Z',
-            updatedAt: '2024-01-01T00:00:00.000Z',
-          },
-          repository: {
-            owner: 'test-owner',
-            repo: 'test-repo',
-          },
-          branchName: 'issue-42-test-issue',
-          workspacePath: '/tmp/prepare-run-123',
-          assessment: {
-            status: 'stubbed',
-            summary: 'Assessment deferred.',
-          },
-          plan: {
-            status: 'stubbed',
-            summary: 'Planning deferred.',
-          },
-          development: {
-            status: 'completed',
-            summary: 'Codex completed successfully.',
+          inputRecordRef: {
+            ...inputRecordRef,
+            recordId: '000004_develop_to_quality-gate',
+            sequence: 4,
+            stage: 'develop',
           },
         } satisfies QualityGateJobData,
         {
@@ -466,38 +401,11 @@ describe('types', () => {
           stage: 'review',
           stageAttempt: 1,
           reworkAttempt: 0,
-          issue: {
-            id: 1,
-            number: 42,
-            title: 'Test issue',
-            body: null,
-            state: 'open',
-            labels: [],
-            assignee: null,
-            createdAt: '2024-01-01T00:00:00.000Z',
-            updatedAt: '2024-01-01T00:00:00.000Z',
-          },
-          repository: {
-            owner: 'test-owner',
-            repo: 'test-repo',
-          },
-          branchName: 'issue-42-test-issue',
-          workspacePath: '/tmp/prepare-run-123',
-          assessment: {
-            status: 'stubbed',
-            summary: 'Assessment deferred.',
-          },
-          plan: {
-            status: 'stubbed',
-            summary: 'Planning deferred.',
-          },
-          development: {
-            status: 'completed',
-            summary: 'Codex completed successfully.',
-          },
-          quality: {
-            status: 'passed',
-            summary: 'Quality gate deferred.',
+          inputRecordRef: {
+            ...inputRecordRef,
+            recordId: '000005_quality-gate_to_review',
+            sequence: 5,
+            stage: 'quality-gate',
           },
         } satisfies ReviewJobData,
         {
@@ -507,34 +415,11 @@ describe('types', () => {
           stage: 'make-pr',
           stageAttempt: 1,
           reworkAttempt: 0,
-          issue: {
-            id: 1,
-            number: 42,
-            title: 'Test issue',
-            body: null,
-            state: 'open',
-            labels: [],
-            assignee: null,
-            createdAt: '2024-01-01T00:00:00.000Z',
-            updatedAt: '2024-01-01T00:00:00.000Z',
-          },
-          repository: {
-            owner: 'test-owner',
-            repo: 'test-repo',
-          },
-          branchName: 'issue-42-test-issue',
-          workspacePath: '/tmp/prepare-run-123',
-          development: {
-            status: 'completed',
-            summary: 'Codex completed successfully.',
-          },
-          quality: {
-            status: 'passed',
-            summary: 'Quality gate deferred.',
-          },
-          review: {
-            status: 'stubbed',
-            summary: 'Review deferred.',
+          inputRecordRef: {
+            ...inputRecordRef,
+            recordId: '000006_review_to_make-pr',
+            sequence: 6,
+            stage: 'review',
           },
         } satisfies MakePrJobData,
         {
@@ -544,26 +429,11 @@ describe('types', () => {
           stage: 'sync-tracker-state',
           stageAttempt: 1,
           reworkAttempt: 0,
-          issue: {
-            id: 1,
-            number: 42,
-            title: 'Test issue',
-            body: null,
-            state: 'open',
-            labels: [],
-            assignee: null,
-            createdAt: '2024-01-01T00:00:00.000Z',
-            updatedAt: '2024-01-01T00:00:00.000Z',
-          },
-          repository: {
-            owner: 'test-owner',
-            repo: 'test-repo',
-          },
-          branchName: 'issue-42-test-issue',
-          workspacePath: '/tmp/prepare-run-123',
-          pullRequest: {
-            number: 7,
-            htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+          inputRecordRef: {
+            ...inputRecordRef,
+            recordId: '000007_make-pr_to_sync-tracker-state',
+            sequence: 7,
+            stage: 'make-pr',
           },
         } satisfies SyncTrackerStateJobData,
       ];

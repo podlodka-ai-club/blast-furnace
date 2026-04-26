@@ -1,8 +1,17 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Job } from 'bullmq';
 import type { DevelopJobData, GitHubIssue } from '../types/index.js';
 import { spawn } from 'child_process';
 import * as nodePty from 'node-pty';
+import {
+  appendHandoffRecordAndUpdateSummary,
+  createRunFileSet,
+  initializeRunSummary,
+  readHandoffRecords,
+} from './orchestration.js';
 
 const { mockCreateJobLogger, mockJobQueueAdd } = vi.hoisted(() => ({
   mockCreateJobLogger: vi.fn(),
@@ -97,35 +106,6 @@ function createIssue(number: number, title: string, body: string | null): GitHub
   };
 }
 
-function createJob(issue = createIssue(42, 'Test Issue', 'Test body')): Job<DevelopJobData> {
-  return {
-    id: 'job-develop',
-    data: {
-      taskId: 'task-develop',
-      type: 'develop',
-      runId: 'run-123',
-      stage: 'develop',
-      stageAttempt: 1,
-      reworkAttempt: 0,
-      issue,
-      repository: {
-        owner: 'test-owner',
-        repo: 'test-repo',
-      },
-      branchName: 'issue-42-test-issue',
-      workspacePath: '/tmp/prepare-run-abc123',
-      assessment: {
-        status: 'stubbed',
-        summary: 'Assessment deferred for this iteration.',
-      },
-      plan: {
-        status: 'stubbed',
-        summary: 'Planning deferred for this iteration.',
-      },
-    },
-  } as unknown as Job<DevelopJobData>;
-}
-
 function createCodexMockProcess(exitCode = 0): ReturnType<typeof nodePty.spawn> {
   return {
     onData: vi.fn(),
@@ -140,6 +120,7 @@ describe('develop job', () => {
   const originalCodexPath = process.env['CODEX_CLI_PATH'];
   const originalCodexModel = process.env['CODEX_MODEL'];
   const originalCodexTimeout = process.env['CODEX_TIMEOUT_MS'];
+  const tempRoots: string[] = [];
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -158,8 +139,10 @@ describe('develop job', () => {
     mockMoveIssueToInReview.mockResolvedValue(['in review']);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.useRealTimers();
+    await Promise.all(tempRoots.map((root) => rm(root, { recursive: true, force: true })));
+    tempRoots.length = 0;
     if (originalCodexPath !== undefined) {
       process.env['CODEX_CLI_PATH'] = originalCodexPath;
     } else {
@@ -177,10 +160,70 @@ describe('develop job', () => {
     }
   });
 
-  it('uses the prepared workspace and does not prepare the repository again', async () => {
+  async function createJob(
+    issue = createIssue(42, 'Test Issue', 'Test body')
+  ): Promise<Job<DevelopJobData>> {
+    const workspacePath = await mkdtemp(join(tmpdir(), 'develop-ledger-'));
+    tempRoots.push(workspacePath);
+    const fileSet = createRunFileSet(workspacePath, 'run-123', new Date('2026-04-26T08:07:30.000Z'));
+    await initializeRunSummary(workspacePath, fileSet, {
+      runId: 'run-123',
+      status: 'running',
+      currentStage: 'plan',
+      runStartedAt: '2026-04-26T08:07:30.000Z',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      latestHandoffRecord: null,
+      stages: {},
+    });
+    const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(workspacePath, {
+      runId: 'run-123',
+      fromStage: 'plan',
+      toStage: 'develop',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      status: 'success',
+      output: {
+        status: 'success',
+        runId: 'run-123',
+        issue,
+        repository: {
+          owner: 'test-owner',
+          repo: 'test-repo',
+        },
+        branchName: 'issue-42-test-issue',
+        workspacePath,
+        stageAttempt: 1,
+        reworkAttempt: 0,
+        assessment: {
+          status: 'stubbed',
+          summary: 'Assessment deferred for this iteration.',
+        },
+        plan: {
+          status: 'stubbed',
+          summary: 'Planning deferred for this iteration.',
+        },
+      },
+    });
+
+    return {
+      id: 'job-develop',
+      data: {
+        taskId: 'task-develop',
+        type: 'develop',
+        runId: 'run-123',
+        stage: 'develop',
+        stageAttempt: 1,
+        reworkAttempt: 0,
+        inputRecordRef,
+      },
+    } as unknown as Job<DevelopJobData>;
+  }
+
+  it('uses the prepared workspace from the ledger and does not prepare the repository again', async () => {
     const { runDevelopFlow } = await import('./develop.js');
     vi.mocked(nodePty.spawn).mockReturnValue(createCodexMockProcess());
-    const job = createJob();
+    const job = await createJob();
 
     await runDevelopFlow(job);
 
@@ -190,7 +233,7 @@ describe('develop job', () => {
     expect(nodePty.spawn).toHaveBeenCalledWith(
       'npx',
       expect.any(Array),
-      expect.objectContaining({ cwd: '/tmp/prepare-run-abc123' })
+      expect.objectContaining({ cwd: expect.stringContaining('develop-ledger-') })
     );
   });
 
@@ -208,7 +251,7 @@ describe('develop job', () => {
       }),
       kill: vi.fn(),
     } as unknown as ReturnType<typeof nodePty.spawn>);
-    const job = createJob();
+    const job = await createJob();
 
     await runDevelopWork(job);
     dataHandlers[0]('codex output');
@@ -224,7 +267,7 @@ describe('develop job', () => {
         'gpt-5.4',
         expect.stringContaining('Issue #42: Test Issue'),
       ],
-      expect.objectContaining({ cwd: '/tmp/prepare-run-abc123' })
+      expect.objectContaining({ cwd: expect.stringContaining('develop-ledger-') })
     );
     const prompt = vi.mocked(nodePty.spawn).mock.calls[0][1].at(-1);
     expect(prompt).toContain('Test body');
@@ -232,57 +275,61 @@ describe('develop job', () => {
     expect(mockLogger.info).toHaveBeenCalledWith('[codex] codex output');
   });
 
-  it('enqueues quality-gate with development result after executor success', async () => {
+  it('appends development output and enqueues quality-gate with an input record reference', async () => {
     const { runDevelopFlow } = await import('./develop.js');
     vi.mocked(nodePty.spawn).mockReturnValue(createCodexMockProcess());
-    const job = createJob();
+    const job = await createJob();
 
     await runDevelopFlow(job);
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
 
-    expect(mockJobQueueAdd).toHaveBeenCalledWith('quality-gate', {
-      ...job.data,
-      type: 'quality-gate',
-      stage: 'quality-gate',
-      stageAttempt: 1,
-      development: {
-        status: 'completed',
-        summary: 'Codex completed successfully.',
+    expect(records[1]).toMatchObject({
+      fromStage: 'develop',
+      toStage: 'quality-gate',
+      output: {
+        development: {
+          status: 'completed',
+          summary: 'Codex completed successfully.',
+        },
       },
     });
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('quality-gate', expect.objectContaining({
+      type: 'quality-gate',
+      stage: 'quality-gate',
+      inputRecordRef: expect.objectContaining({
+        recordId: '000002_develop_to_quality-gate',
+      }),
+    }));
+    expect(mockJobQueueAdd.mock.calls[0][1]).not.toHaveProperty('development');
   });
 
   it('fails when codex exits with a non-zero code', async () => {
     const { runDevelopWork } = await import('./develop.js');
     vi.mocked(nodePty.spawn).mockReturnValue(createCodexMockProcess(1));
-    const job = createJob();
+    const job = await createJob();
 
     await expect(runDevelopWork(job)).rejects.toThrow('codex process failed with exit code 1');
   });
 
   it('kills and fails the executor when codex times out', async () => {
-    vi.useFakeTimers();
     process.env['CODEX_TIMEOUT_MS'] = '1';
     const { runDevelopWork } = await import('./develop.js');
+    const job = await createJob();
     const mockProcess = {
       onData: vi.fn(),
       onExit: vi.fn(),
       kill: vi.fn(),
     } as unknown as ReturnType<typeof nodePty.spawn>;
     vi.mocked(nodePty.spawn).mockReturnValue(mockProcess);
-    const job = createJob();
 
-    const promise = runDevelopWork(job);
-    const expectation = expect(promise).rejects.toThrow('codex process timed out after 1ms');
-    await vi.advanceTimersByTimeAsync(1);
-
-    await expectation;
+    await expect(runDevelopWork(job)).rejects.toThrow('codex process timed out after 1ms');
     expect(mockProcess.kill).toHaveBeenCalledWith('SIGTERM');
   });
 
   it('does not commit, push, create pull requests, transition labels, or clean up terminal workspace', async () => {
     const { runDevelopFlow } = await import('./develop.js');
     vi.mocked(nodePty.spawn).mockReturnValue(createCodexMockProcess());
-    const job = createJob();
+    const job = await createJob();
 
     await runDevelopFlow(job);
 

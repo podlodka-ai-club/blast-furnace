@@ -1,6 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Job } from 'bullmq';
 import type { GitHubIssue, QualityGateJobData } from '../types/index.js';
+import {
+  appendHandoffRecordAndUpdateSummary,
+  createRunFileSet,
+  initializeRunSummary,
+  readHandoffRecords,
+} from './orchestration.js';
 
 const { mockJobQueueAdd, mockCreateJobLogger } = vi.hoisted(() => ({
   mockJobQueueAdd: vi.fn(),
@@ -31,40 +40,9 @@ function createIssue(): GitHubIssue {
   };
 }
 
-function createJob(issue = createIssue()): Job<QualityGateJobData> {
-  return {
-    id: 'job-quality-gate',
-    data: {
-      taskId: 'task-quality-gate',
-      type: 'quality-gate',
-      runId: 'run-123',
-      stage: 'quality-gate',
-      stageAttempt: 1,
-      reworkAttempt: 0,
-      issue,
-      repository: {
-        owner: 'test-owner',
-        repo: 'test-repo',
-      },
-      branchName: 'issue-42-test-issue',
-      workspacePath: '/tmp/prepare-run-abc123',
-      assessment: {
-        status: 'stubbed',
-        summary: 'Assessment deferred for this iteration.',
-      },
-      plan: {
-        status: 'stubbed',
-        summary: 'Planning deferred for this iteration.',
-      },
-      development: {
-        status: 'completed',
-        summary: 'Codex completed successfully.',
-      },
-    },
-  } as unknown as Job<QualityGateJobData>;
-}
-
 describe('quality-gate job', () => {
+  const tempRoots: string[] = [];
+
   beforeEach(() => {
     vi.resetAllMocks();
     mockCreateJobLogger.mockReturnValue({
@@ -76,40 +54,115 @@ describe('quality-gate job', () => {
     mockJobQueueAdd.mockResolvedValue(undefined);
   });
 
-  it('should produce a stub passing quality result and preserve development context', async () => {
+  afterEach(async () => {
+    await Promise.all(tempRoots.map((root) => rm(root, { recursive: true, force: true })));
+    tempRoots.length = 0;
+  });
+
+  async function createJob(): Promise<Job<QualityGateJobData>> {
+    const workspacePath = await mkdtemp(join(tmpdir(), 'quality-ledger-'));
+    tempRoots.push(workspacePath);
+    const fileSet = createRunFileSet(workspacePath, 'run-123', new Date('2026-04-26T08:07:30.000Z'));
+    await initializeRunSummary(workspacePath, fileSet, {
+      runId: 'run-123',
+      status: 'running',
+      currentStage: 'develop',
+      runStartedAt: '2026-04-26T08:07:30.000Z',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      latestHandoffRecord: null,
+      stages: {},
+    });
+    const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(workspacePath, {
+      runId: 'run-123',
+      fromStage: 'develop',
+      toStage: 'quality-gate',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      status: 'success',
+      output: {
+        status: 'success',
+        runId: 'run-123',
+        issue: createIssue(),
+        repository: {
+          owner: 'test-owner',
+          repo: 'test-repo',
+        },
+        branchName: 'issue-42-test-issue',
+        workspacePath,
+        stageAttempt: 1,
+        reworkAttempt: 0,
+        assessment: {
+          status: 'stubbed',
+          summary: 'Assessment deferred for this iteration.',
+        },
+        plan: {
+          status: 'stubbed',
+          summary: 'Planning deferred for this iteration.',
+        },
+        development: {
+          status: 'completed',
+          summary: 'Codex completed successfully.',
+        },
+      },
+    });
+
+    return {
+      id: 'job-quality-gate',
+      data: {
+        taskId: 'task-quality-gate',
+        type: 'quality-gate',
+        runId: 'run-123',
+        stage: 'quality-gate',
+        stageAttempt: 1,
+        reworkAttempt: 0,
+        inputRecordRef,
+      },
+    } as unknown as Job<QualityGateJobData>;
+  }
+
+  it('appends quality output and returns a transport-only review payload', async () => {
     const { runQualityGateWork } = await import('./quality-gate.js');
-    const job = createJob();
+    const job = await createJob();
 
     const result = await runQualityGateWork(job);
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
 
-    expect(result).toEqual({
-      ...job.data,
+    expect(result).toMatchObject({
       type: 'review',
       stage: 'review',
-      stageAttempt: 1,
-      quality: {
-        status: 'passed',
-        summary: 'Quality gate deferred for this iteration.',
+      inputRecordRef: {
+        recordId: '000002_quality-gate_to_review',
+        stage: 'quality-gate',
+      },
+    });
+    expect(result).not.toHaveProperty('quality');
+    expect(records[1]).toMatchObject({
+      fromStage: 'quality-gate',
+      toStage: 'review',
+      output: {
+        quality: {
+          status: 'passed',
+          summary: 'Quality gate deferred for this iteration.',
+        },
       },
     });
   });
 
-  it('should enqueue review with quality output', async () => {
+  it('enqueues review with only an input record reference', async () => {
     const { runQualityGateFlow } = await import('./quality-gate.js');
-    const job = createJob();
+    const job = await createJob();
 
     await runQualityGateFlow(job);
 
-    expect(mockJobQueueAdd).toHaveBeenCalledWith('review', {
-      ...job.data,
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('review', expect.objectContaining({
       type: 'review',
       stage: 'review',
-      stageAttempt: 1,
-      quality: {
-        status: 'passed',
-        summary: 'Quality gate deferred for this iteration.',
-      },
-    });
+      inputRecordRef: expect.objectContaining({
+        recordId: '000002_quality-gate_to_review',
+      }),
+    }));
+    expect(mockJobQueueAdd.mock.calls[0][1]).not.toHaveProperty('issue');
   });
 
   it('should export qualityGateHandler', async () => {

@@ -1,4 +1,7 @@
-import type { StageJobPayload, WorkflowStage } from '../types/index.js';
-type ForwardPayload<TStage extends WorkflowStage, TSource extends StageJobPayload, TExtra extends Record<string, unknown>> = Omit<TSource, 'type' | 'stage' | 'stageAttempt'> & StageJobPayload<TStage> & TExtra;
-export declare function createForwardStagePayload<TStage extends WorkflowStage, TSource extends StageJobPayload, TExtra extends Record<string, unknown>>(source: TSource, nextStage: TStage, extra: TExtra, stageAttempt?: number): ForwardPayload<TStage, TSource, TExtra>;
+import type { HandoffRecord, InputRecordRef, StageHandoffJobPayload, StageJobPayload, WorkflowStage } from '../types/index.js';
+type DownstreamStage = Exclude<WorkflowStage, 'intake' | 'prepare-run'>;
+export declare function validateInputRecordRef(value: unknown): asserts value is InputRecordRef;
+export declare function createForwardStagePayload<TStage extends DownstreamStage>(source: StageJobPayload, nextStage: TStage, inputRecordRef: InputRecordRef, stageAttempt?: number): StageHandoffJobPayload<TStage>;
+export declare function validateStagePayload<TStage extends DownstreamStage>(expectedStage: TStage, payload: unknown): asserts payload is StageHandoffJobPayload<TStage>;
+export declare function validateStageInputRecord(payload: StageHandoffJobPayload<DownstreamStage>, record: HandoffRecord): void;
 export {};

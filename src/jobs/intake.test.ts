@@ -10,6 +10,7 @@ const { mockFetchIssues, mockJobQueueAdd, mockRedisClient } = vi.hoisted(() => (
     connect: vi.fn().mockResolvedValue(undefined),
     get: vi.fn().mockResolvedValue(null),
     set: vi.fn().mockResolvedValue('OK'),
+    del: vi.fn().mockResolvedValue(1),
     quit: vi.fn().mockResolvedValue('OK'),
     status: 'ready',
     smembers: vi.fn().mockResolvedValue([]),
@@ -53,6 +54,8 @@ describe('intake job', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mockJobQueueAdd.mockResolvedValue({ id: 'new-job-id' });
+    mockRedisClient.set.mockResolvedValue('OK');
+    mockRedisClient.del.mockResolvedValue(1);
     mockRedisClient.smembers.mockResolvedValue([]);
   });
 
@@ -288,6 +291,43 @@ describe('intake job', () => {
       const secondTaskId = secondCall[1].taskId;
 
       expect(firstTaskId).not.toBe(secondTaskId);
+    });
+
+    it('should skip issues that are already claimed for processing', async () => {
+      const { intakeHandler } = await import('./intake.js');
+
+      const mockIssue = {
+        id: 1,
+        number: 42,
+        title: 'Issue 1',
+        body: 'Body 1',
+        state: 'open' as const,
+        labels: ['ready'],
+        assignee: null,
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+      };
+
+      mockFetchIssues.mockResolvedValue([mockIssue]);
+      mockRedisClient.get.mockResolvedValue(null);
+      mockRedisClient.set.mockImplementation((key: string) => {
+        if (key === 'github:intake:processing:test-owner:test-repo:42') {
+          return Promise.resolve(null);
+        }
+        return Promise.resolve('OK');
+      });
+
+      const mockJob = createMockJob(undefined);
+      await intakeHandler(mockJob);
+
+      expect(mockRedisClient.set).toHaveBeenCalledWith(
+        'github:intake:processing:test-owner:test-repo:42',
+        expect.any(String),
+        'EX',
+        expect.any(Number),
+        'NX'
+      );
+      expect(mockJobQueueAdd).not.toHaveBeenCalled();
     });
 
     it('should propagate error when fetchIssues fails', async () => {
