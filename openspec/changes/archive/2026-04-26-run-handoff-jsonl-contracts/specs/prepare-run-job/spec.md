@@ -19,10 +19,10 @@ The system SHALL provide a `prepare-run` job handled by an isolated Prepare Run 
 #### Scenario: Run metadata is initialized
 - **WHEN** a `prepare-run` job starts
 - **THEN** the Prepare Run module SHALL initialize run metadata for the received `runId`
-- **AND** create `.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/`
+- **AND** create `.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/` under the Blast Furnace repository root
 - **AND** write `<YYYY-MM-DD_HH.MM_runId>_run.json`
 - **AND** create or prepare `<YYYY-MM-DD_HH.MM_runId>_handoff.jsonl`
-- **AND** establish a run-level log target
+- **AND** SHALL NOT create `run.log` or any replacement run-level runtime logging file
 
 #### Scenario: Branch name is prepared
 - **WHEN** Prepare Run receives an issue
@@ -43,6 +43,7 @@ The system SHALL provide a `prepare-run` job handled by an isolated Prepare Run 
 - **AND** clone the configured repository into that workspace
 - **AND** fetch the issue branch
 - **AND** check out and reset the local branch to the remote issue branch
+- **AND** the local workspace SHALL NOT contain `.orchestrator/**` from run metadata or handoff initialization
 
 #### Scenario: Base context is recorded
 - **WHEN** repository preparation succeeds
@@ -55,6 +56,7 @@ The system SHALL provide a `prepare-run` job handled by an isolated Prepare Run 
 - **WHEN** Prepare Run completes repository preparation and appends the first handoff record
 - **THEN** it SHALL enqueue an `assess` job
 - **AND** pass `runId`, `stage`, `stageAttempt`, `reworkAttempt`, and an input handoff record reference through the queue payload
+- **AND** the input handoff record reference SHALL point to the Blast Furnace repository's `.orchestrator/runs/...` paths rather than the local target repository workspace
 
 #### Scenario: Preparation fails before handoff
 - **WHEN** Prepare Run cannot prepare the run before enqueueing Assess
@@ -66,4 +68,3 @@ The system SHALL provide a `prepare-run` job handled by an isolated Prepare Run 
 - **WHEN** Prepare Run behavior is implemented
 - **THEN** Prepare Run-specific code SHALL live in its own job module
 - **AND** worker routing SHALL call that module for `prepare-run` jobs
-

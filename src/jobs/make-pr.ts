@@ -16,9 +16,16 @@ import { jobQueue } from './queue.js';
 import {
   appendHandoffRecordAndUpdateSummary,
   readValidatedStageInputRecord,
+  resolveOrchestrationStorageRoot,
   scheduleNextJob,
 } from './orchestration.js';
 import { createForwardStagePayload } from './stage-payloads.js';
+
+const TARGET_REPO_PATHS = [
+  '.',
+  ':(exclude).orchestrator',
+  ':(exclude).orchestrator/**',
+];
 
 function execGitCommand(args: string[], cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -90,7 +97,11 @@ export async function runMakePrWork(
 
   logger.info(`Finalizing issue #${issue.number} on branch ${branchName}`);
 
-  const status = await execGitCommand(['status', '--porcelain'], workspacePath);
+  const orchestrationRoot = resolveOrchestrationStorageRoot(job.data.inputRecordRef);
+  const status = await execGitCommand(
+    ['status', '--porcelain', '--untracked-files=all', '--', ...TARGET_REPO_PATHS],
+    workspacePath
+  );
 
   if (!status) {
     logger.info('No changes detected, skipping commit, push, pull request, and tracker synchronization');
@@ -104,7 +115,7 @@ export async function runMakePrWork(
     if (output.status !== 'no-changes') {
       throw new Error('Expected no-changes make-pr output');
     }
-    await appendHandoffRecordAndUpdateSummary(workspacePath, {
+    await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
       runId: job.data.runId,
       fromStage: 'make-pr',
       toStage: null,
@@ -118,7 +129,7 @@ export async function runMakePrWork(
   }
 
   logger.info('Changes detected, committing...');
-  await execGitCommand(['add', '-A'], workspacePath);
+  await execGitCommand(['add', '-A', '--', ...TARGET_REPO_PATHS], workspacePath);
 
   const sanitizedTitle = sanitizeForGit(issue.title);
   const commitResult = await execGitCommand(
@@ -151,7 +162,7 @@ export async function runMakePrWork(
   if (output.status !== 'pull-request-created') {
     throw new Error('Expected pull-request-created make-pr output');
   }
-  const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(workspacePath, {
+  const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
     runId: job.data.runId,
     fromStage: 'make-pr',
     toStage: 'sync-tracker-state',

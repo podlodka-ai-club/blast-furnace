@@ -27,6 +27,14 @@ export function resolveRunDirectory(root: string, runId: RunId): string {
   return join(root, '.orchestrator', 'runs', runId);
 }
 
+export function resolveOrchestrationStorageRoot(ref?: InputRecordRef): string {
+  if (ref) {
+    return dirname(dirname(dirname(ref.runDir)));
+  }
+
+  return process.env['ORCHESTRATION_STORAGE_ROOT'] ?? process.cwd();
+}
+
 function pad(value: number): string {
   return String(value).padStart(2, '0');
 }
@@ -95,10 +103,6 @@ export function resolveEventPath(root: string, runId: RunId, eventName: string):
 
 export function resolveRunSummaryPath(root: string, runId: RunId): string {
   return join(resolveRunDirectory(root, runId), 'run.json');
-}
-
-export function resolveRunLogPath(root: string, runId: RunId): string {
-  return join(resolveRunDirectory(root, runId), 'run.log');
 }
 
 async function writeJson(path: string, data: unknown, flag: 'w' | 'wx'): Promise<void> {

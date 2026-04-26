@@ -8,6 +8,7 @@ import { createJobLogger } from './logger.js';
 import {
   appendHandoffRecordAndUpdateSummary,
   readValidatedStageInputRecord,
+  resolveOrchestrationStorageRoot,
 } from './orchestration.js';
 
 async function readSyncTrackerStateInput(job: Job<SyncTrackerStateJobData>): Promise<PullRequestOutput> {
@@ -25,7 +26,7 @@ export async function runSyncTrackerStateWork(
   logger = createJobLogger(job),
   context?: PullRequestOutput
 ): Promise<PullRequestOutput['pullRequest']> {
-  const { issue, repository, branchName, workspacePath, pullRequest } = context ?? await readSyncTrackerStateInput(job);
+  const { issue, repository, branchName, pullRequest } = context ?? await readSyncTrackerStateInput(job);
   assertConfiguredRepository(repository);
 
   logger.info(`Synchronizing tracker state for PR #${pullRequest.number} on branch ${branchName}`);
@@ -45,7 +46,8 @@ export async function runSyncTrackerStateWork(
     reworkAttempt: job.data.reworkAttempt,
     trackerLabels,
   }) as SyncTrackerStateOutput;
-  await appendHandoffRecordAndUpdateSummary(workspacePath, {
+  const orchestrationRoot = resolveOrchestrationStorageRoot(job.data.inputRecordRef);
+  await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
     runId: job.data.runId,
     fromStage: 'sync-tracker-state',
     toStage: null,

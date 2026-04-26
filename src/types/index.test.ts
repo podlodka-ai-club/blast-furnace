@@ -305,8 +305,8 @@ describe('types', () => {
 
     it('should include the stage envelope on every target stage job payload type', () => {
       const inputRecordRef: InputRecordRef = {
-        runDir: '/tmp/prepare-run-123/.orchestrator/runs/2026-04-26_08.07_run-123',
-        handoffPath: '/tmp/prepare-run-123/.orchestrator/runs/2026-04-26_08.07_run-123/2026-04-26_08.07_run-123_handoff.jsonl',
+        runDir: '/opt/blast-furnace/.orchestrator/runs/2026-04-26_08.07_run-123',
+        handoffPath: '/opt/blast-furnace/.orchestrator/runs/2026-04-26_08.07_run-123/2026-04-26_08.07_run-123_handoff.jsonl',
         recordId: '000001_prepare-run_to_assess',
         sequence: 1,
         stage: 'prepare-run',

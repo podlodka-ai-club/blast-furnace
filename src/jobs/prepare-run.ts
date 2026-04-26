@@ -1,7 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
 import type { Job } from 'bullmq';
 import type {
   AssessJobData,
@@ -20,6 +18,7 @@ import {
   appendHandoffRecordAndUpdateSummary,
   createRunFileSet,
   initializeRunSummary,
+  resolveOrchestrationStorageRoot,
   scheduleNextJob,
 } from './orchestration.js';
 import { createForwardStagePayload } from './stage-payloads.js';
@@ -33,7 +32,6 @@ interface PrepareRunState {
 
 export interface PrepareRunWorkResult {
   assessJobData: AssessJobData;
-  runLogPath: string;
 }
 
 export interface CreatePrepareRunPayloadInput {
@@ -201,8 +199,9 @@ export async function runPrepareRunWork(
   await job.updateProgress?.({ step: 'creating-workspace', runId });
   const workspacePath = await createTempWorkingDir('prepare-run');
   state.workspacePath = workspacePath;
+  const orchestrationRoot = resolveOrchestrationStorageRoot();
   const runStartedAt = new Date().toISOString();
-  const runFileSet = createRunFileSet(workspacePath, runId, new Date(runStartedAt));
+  const runFileSet = createRunFileSet(orchestrationRoot, runId, new Date(runStartedAt));
 
   let sha: string;
   try {
@@ -241,7 +240,7 @@ export async function runPrepareRunWork(
   logger.info(`Checking out prepared branch: ${branchName}`);
   await checkoutPreparedBranch(branchName, workspacePath, logger);
 
-  await initializeRunSummary(workspacePath, runFileSet, {
+  await initializeRunSummary(orchestrationRoot, runFileSet, {
     runId,
     status: 'running',
     currentStage: 'prepare-run',
@@ -257,10 +256,6 @@ export async function runPrepareRunWork(
     },
   });
 
-  const runLogPath = join(runFileSet.runDirectory, 'run.log');
-  await mkdir(dirname(runLogPath), { recursive: true });
-  await writeFile(runLogPath, '', { flag: 'a' });
-
   const output = stageOutputSchemas['prepare-run'].parse({
     status: 'success',
     branchName,
@@ -271,7 +266,7 @@ export async function runPrepareRunWork(
     stageAttempt,
     reworkAttempt: job.data.reworkAttempt,
   }) as PrepareRunOutput;
-  const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(workspacePath, {
+  const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
     runId,
     fromStage: 'prepare-run',
     toStage: 'assess',
@@ -286,7 +281,6 @@ export async function runPrepareRunWork(
 
   return {
     assessJobData,
-    runLogPath,
   };
 }
 

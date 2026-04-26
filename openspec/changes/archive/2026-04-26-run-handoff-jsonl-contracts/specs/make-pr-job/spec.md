@@ -26,6 +26,8 @@ The system SHALL provide a `make-pr` job handled by an isolated Make PR module t
 - **THEN** it SHALL commit those changes to the issue branch
 - **AND** sanitize the issue title by removing newlines and limiting it to 200 characters
 - **AND** use commit message `Processed issue #{number} via codex: {sanitizedTitle}`
+- **AND** exclude `.orchestrator/**` from target repository status checks and staging
+- **AND** SHALL NOT include orchestration run artifacts in the target repository commit or pull request
 
 #### Scenario: Changes are pushed
 - **WHEN** Make PR creates a commit
@@ -55,4 +57,3 @@ The system SHALL provide a `make-pr` job handled by an isolated Make PR module t
 - **WHEN** Make PR behavior is implemented
 - **THEN** Make PR-specific code SHALL live in its own job module
 - **AND** worker routing SHALL call that module for `make-pr` jobs
-

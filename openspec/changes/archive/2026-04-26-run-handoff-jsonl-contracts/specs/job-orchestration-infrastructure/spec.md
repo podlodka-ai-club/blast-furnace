@@ -5,15 +5,17 @@ The system SHALL provide shared infrastructure for timestamped run-scoped orches
 
 #### Scenario: Run directory paths are resolved
 - **WHEN** job flow code needs a run-scoped filesystem location
-- **THEN** the shared infrastructure SHALL resolve paths under `.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/`
+- **THEN** the shared infrastructure SHALL resolve paths under `.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/` in the Blast Furnace repository
 - **AND** provide helpers for the timestamped run summary file and timestamped handoff JSONL file
 - **AND** preserve the timestamp prefix created when the run was initialized
+- **AND** downstream stages SHALL continue resolving that storage root from `inputRecordRef.runDir` rather than from the cloned target repository workspace
 
 #### Scenario: Handoff records are appended
 - **WHEN** the shared infrastructure writes handoff data for a stage transition
 - **THEN** it SHALL append one JSON object as one line to the run's handoff JSONL file
 - **AND** fail rather than overwrite or truncate existing handoff records
 - **AND** SHALL NOT write per-stage JSON artifact files for handoff outputs
+- **AND** SHALL NOT create `run.log` or another run-level runtime logging file
 
 #### Scenario: Run summary is updated
 - **WHEN** the shared infrastructure writes run summary state
@@ -54,4 +56,3 @@ The system SHALL provide shared run mechanics that Prepare Run can use to initia
 **Reason**: This change implements the previously deferred file-based handoff contract as a single per-run JSONL ledger instead of per-stage artifact files.
 
 **Migration**: Use the `run-handoff-ledger` capability and timestamped run file set. Downstream stages consume referenced JSONL records rather than BullMQ business payloads or deferred artifact references.
-

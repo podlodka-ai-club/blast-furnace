@@ -1,14 +1,14 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import type { PlanJobData } from '../types/index.js';
 import {
   resolveRunDirectory,
+  resolveOrchestrationStorageRoot,
   resolveStageAttemptDirectory,
   resolveArtifactPath,
   resolveEventPath,
-  resolveRunLogPath,
   resolveRunSummaryPath,
   createRunFileSet,
   appendHandoffRecord,
@@ -54,7 +54,21 @@ describe('job orchestration infrastructure', () => {
       join(root, '.orchestrator', 'runs', 'run-123', 'events', '0001-plan-started.json')
     );
     expect(resolveRunSummaryPath(root, 'run-123')).toBe(join(root, '.orchestrator', 'runs', 'run-123', 'run.json'));
-    expect(resolveRunLogPath(root, 'run-123')).toBe(join(root, '.orchestrator', 'runs', 'run-123', 'run.log'));
+  });
+
+  it('resolves the orchestration storage root from the process cwd or an input record ref', async () => {
+    const root = await createTempRoot();
+    const fileSet = createRunFileSet(root, 'run-123', new Date('2026-04-26T08:07:30.000Z'));
+
+    expect(resolveOrchestrationStorageRoot({
+      runDir: fileSet.runDirectory,
+      handoffPath: fileSet.handoffLedgerPath,
+      recordId: '000001_prepare-run_to_assess',
+      sequence: 1,
+      stage: 'prepare-run',
+    })).toBe(root);
+    expect(resolveOrchestrationStorageRoot()).toBe(process.env['ORCHESTRATION_STORAGE_ROOT'] ?? process.cwd());
+    expect(dirname(dirname(dirname(fileSet.runDirectory)))).toBe(root);
   });
 
   it('resolves timestamped run directory, summary, and handoff ledger paths from one UTC prefix', async () => {

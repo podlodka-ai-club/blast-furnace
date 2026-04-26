@@ -8,7 +8,7 @@ This design intentionally removes per-stage JSON artifact files from the handoff
 
 **Goals:**
 
-- Store each run under `.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/`.
+- Store each run under `.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/` in the Blast Furnace repository, not in the cloned target repository workspace.
 - Store the mutable run summary at `<YYYY-MM-DD_HH.MM_runId>_run.json` inside that directory.
 - Store the append-only handoff ledger at `<YYYY-MM-DD_HH.MM_runId>_handoff.jsonl` inside that directory.
 - Append one validated JSON object per stage transition, with the producing stage output embedded in the record.
@@ -20,6 +20,7 @@ This design intentionally removes per-stage JSON artifact files from the handoff
 
 - Do not introduce per-stage JSON artifact files for handoff data.
 - Do not move logs, PTY output, or large raw command output into the JSONL ledger unless a compact summary or pointer is enough.
+- Do not create `run.log` or a replacement runtime logging file for a run.
 - Do not change the user-visible GitHub behavior of branch creation, Codex execution, PR creation, label transitions, or cleanup except where queue/file handoff mechanics require it.
 - Do not implement the future clarify/rework loop beyond reserving output statuses and counters needed by the contracts.
 
@@ -30,12 +31,14 @@ This design intentionally removes per-stage JSON artifact files from the handoff
 Prepare Run will create a `RunFileSet` from a single timestamp and the `runId`.
 
 ```text
-.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/
+<blast-furnace>/.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/
   <YYYY-MM-DD_HH.MM_runId>_run.json
   <YYYY-MM-DD_HH.MM_runId>_handoff.jsonl
 ```
 
 The timestamp is computed once when the run is initialized and then persisted in `run.json`; all path helpers use the persisted value rather than recomputing time. The implementation should use UTC for the timestamp to avoid DST and host timezone ambiguity.
+
+The cloned target repository workspace remains separate from orchestration storage. Its path is recorded in stage output so Codex and git operations can use it, but `.orchestrator/**` is not written into that workspace and must not be committed to the target repository.
 
 Alternative considered: keep `.orchestrator/runs/<runId>/run.json`. That is simpler, but it does not satisfy chronological scanability from filenames and directories.
 
@@ -122,7 +125,7 @@ Use TypeScript types plus runtime schemas for transport payloads, handoff record
 
 ## Risks / Trade-offs
 
-- Ledger records can grow large if stage outputs include raw logs or process output -> keep records structured and summary-oriented, and store only bounded summaries or existing log pointers.
+- Ledger records can grow large if stage outputs include raw logs or process output -> keep records structured and summary-oriented, and store only bounded summaries or existing external log pointers.
 - Appending and then enqueueing is not transactional with BullMQ -> append and update `run.json` before enqueueing, and make downstream stages idempotently consume the referenced record.
 - A stage can receive a stale or wrong record reference -> validate `toStage`, `runId`, `stageAttempt`, and `reworkAttempt` before doing work.
 - Timestamp-based paths can drift if recomputed -> compute once at run initialization and persist the path prefix in `run.json`.
@@ -135,7 +138,8 @@ Use TypeScript types plus runtime schemas for transport payloads, handoff record
 3. Update Prepare Run to create the timestamped run directory, write the initial run summary, append the first handoff record, and enqueue Assess with `inputRecordRef`.
 4. Migrate Assess, Plan, Develop, Quality Gate, Review, Make PR, and Sync Tracker State to read their input from the JSONL ledger and append their own output record.
 5. Update queue payload helpers and tests to remove downstream business fields from stage payloads.
-6. Remove or stop using per-stage JSON artifact writes for handoff data.
+6. Keep the target repository workspace free of `.orchestrator/**` and exclude any legacy target-workspace orchestration files from Make PR status/add operations.
+7. Remove or stop using per-stage JSON artifact writes for handoff data.
 
 Rollback is straightforward before deployment because this is an internal file and payload contract change. After deployment, rollback would need a compatibility reader that can process both the old business-field payloads and the new `inputRecordRef` payloads until in-flight jobs drain.
 

@@ -8,11 +8,11 @@ export type { JobPayload } from '../types/index.js';
 export { closeQueue } from './queue.js';
 export {
   resolveRunDirectory,
+  resolveOrchestrationStorageRoot,
   resolveStageAttemptDirectory,
   resolveArtifactPath,
   resolveEventPath,
   resolveRunSummaryPath,
-  resolveRunLogPath,
   createRunFileSet,
   resolveRunFileSet,
   resolveRunFileSetFromSummary,

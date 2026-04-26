@@ -136,8 +136,10 @@ describe('make-pr job', () => {
   ): Promise<Job<MakePrJobData>> {
     const workspacePath = await mkdtemp(join(tmpdir(), 'make-pr-ledger-'));
     tempRoots.push(workspacePath);
-    const fileSet = createRunFileSet(workspacePath, 'run-123', new Date('2026-04-26T08:07:30.000Z'));
-    await initializeRunSummary(workspacePath, fileSet, {
+    const orchestrationRoot = await mkdtemp(join(tmpdir(), 'make-pr-orchestration-'));
+    tempRoots.push(orchestrationRoot);
+    const fileSet = createRunFileSet(orchestrationRoot, 'run-123', new Date('2026-04-26T08:07:30.000Z'));
+    await initializeRunSummary(orchestrationRoot, fileSet, {
       runId: 'run-123',
       status: 'running',
       currentStage: 'review',
@@ -147,7 +149,7 @@ describe('make-pr job', () => {
       latestHandoffRecord: null,
       stages: {},
     });
-    const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(workspacePath, {
+    const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
       runId: 'run-123',
       fromStage: 'review',
       toStage: 'make-pr',
@@ -212,9 +214,19 @@ describe('make-pr job', () => {
 
     const result = await runMakePrWork(job);
 
-    expect(spawn).toHaveBeenCalledWith('git', ['status', '--porcelain'], {
-      cwd: expect.stringContaining('make-pr-ledger-'),
-    });
+    expect(spawn).toHaveBeenCalledWith(
+      'git',
+      [
+        'status',
+        '--porcelain',
+        '--untracked-files=all',
+        '--',
+        '.',
+        ':(exclude).orchestrator',
+        ':(exclude).orchestrator/**',
+      ],
+      { cwd: expect.stringContaining('make-pr-ledger-') }
+    );
     expect(result).toMatchObject({
       status: 'pull-request-created',
       output: {
@@ -234,9 +246,19 @@ describe('make-pr job', () => {
     await processMakePr(job);
     const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
 
-    expect(mockSpawn).toHaveBeenCalledWith('git', ['status', '--porcelain'], {
-      cwd: expect.stringContaining('make-pr-ledger-'),
-    });
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'git',
+      [
+        'status',
+        '--porcelain',
+        '--untracked-files=all',
+        '--',
+        '.',
+        ':(exclude).orchestrator',
+        ':(exclude).orchestrator/**',
+      ],
+      { cwd: expect.stringContaining('make-pr-ledger-') }
+    );
     expect(records[1]).toMatchObject({
       fromStage: 'make-pr',
       toStage: null,
@@ -263,6 +285,31 @@ describe('make-pr job', () => {
     await runMakePrFlow(job);
     const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
 
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'git',
+      [
+        'status',
+        '--porcelain',
+        '--untracked-files=all',
+        '--',
+        '.',
+        ':(exclude).orchestrator',
+        ':(exclude).orchestrator/**',
+      ],
+      { cwd: expect.stringContaining('make-pr-ledger-') }
+    );
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'git',
+      [
+        'add',
+        '-A',
+        '--',
+        '.',
+        ':(exclude).orchestrator',
+        ':(exclude).orchestrator/**',
+      ],
+      { cwd: expect.stringContaining('make-pr-ledger-') }
+    );
     expect(mockSpawn).toHaveBeenCalledWith(
       'git',
       ['commit', '-m', 'Processed issue #42 via codex: Test Issue'],
@@ -299,6 +346,45 @@ describe('make-pr job', () => {
     }));
     expect(mockJobQueueAdd.mock.calls[0][1]).not.toHaveProperty('pullRequest');
     expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
+  });
+
+  it('treats target workspace .orchestrator changes as non-committable orchestration state', async () => {
+    const mockSpawn = vi.mocked(spawn);
+    mockSpawn.mockImplementation((cmd: string, args: readonly string[]) => {
+      if (
+        cmd === 'git' &&
+        args[0] === 'status' &&
+        args.includes(':(exclude).orchestrator') &&
+        args.includes(':(exclude).orchestrator/**')
+      ) {
+        return createGitMockProcess(0, '');
+      }
+      return createGitMockProcess();
+    });
+    const job = await createJob();
+
+    const result = await runMakePrWork(job);
+
+    expect(result.status).toBe('no-changes');
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'git',
+      [
+        'status',
+        '--porcelain',
+        '--untracked-files=all',
+        '--',
+        '.',
+        ':(exclude).orchestrator',
+        ':(exclude).orchestrator/**',
+      ],
+      { cwd: expect.stringContaining('make-pr-ledger-') }
+    );
+    expect(mockSpawn).not.toHaveBeenCalledWith(
+      'git',
+      expect.arrayContaining(['add']),
+      expect.anything()
+    );
+    expect(mockCreatePullRequest).not.toHaveBeenCalled();
   });
 
   it('fails mismatched repository identity before make-pr side effects', async () => {

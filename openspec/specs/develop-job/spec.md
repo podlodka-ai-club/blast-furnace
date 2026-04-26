@@ -2,19 +2,19 @@
 
 ## Purpose
 Defines the target Develop stage that invokes the configured Codex executor inside the prepared workspace.
-
 ## Requirements
 ### Requirement: Develop Job Module
-The system SHALL provide a `develop` job handled by an isolated Develop module that owns executor invocation but does not own repository or workspace preparation.
+The system SHALL provide a `develop` job handled by an isolated Develop module that reads planned input from the JSONL ledger, owns executor invocation, and appends formal development output without owning repository or workspace preparation.
 
 #### Scenario: Develop receives planned run data
 - **WHEN** a `develop` job runs
-- **THEN** the payload SHALL include `runId`, `stage`, `stageAttempt`, `reworkAttempt`, issue data, repository identity, branch name, workspace path, and plan data
+- **THEN** the payload SHALL include `runId`, `stage`, `stageAttempt`, `reworkAttempt`, and an input handoff record reference
 - **AND** `stage` SHALL be `develop`
+- **AND** Develop SHALL read issue data, repository identity, branch name, workspace path, assessment data, and plan data from the referenced JSONL record chain
 
 #### Scenario: Repository preparation is not repeated
 - **WHEN** Develop starts
-- **THEN** it SHALL use the workspace path prepared by Prepare Run
+- **THEN** it SHALL use the workspace path read from the JSONL ledger and prepared by Prepare Run
 - **AND** SHALL NOT create the workspace
 - **AND** SHALL NOT clone the repository
 - **AND** SHALL NOT create, fetch, check out, or reset the issue branch as repository preparation work
@@ -36,8 +36,8 @@ The system SHALL provide a `develop` job handled by an isolated Develop module t
 
 #### Scenario: Executor succeeds
 - **WHEN** Codex exits successfully
-- **THEN** Develop SHALL enqueue a `quality-gate` job
-- **AND** pass the run, issue, repository, branch, workspace, plan, development result, `stageAttempt`, and `reworkAttempt` data through the queue payload
+- **THEN** Develop SHALL append a formal development output record to the JSONL ledger
+- **AND** enqueue a `quality-gate` job with `runId`, `stage`, `stageAttempt`, `reworkAttempt`, and an input handoff record reference
 - **AND** SHALL NOT commit changes, push changes, create pull requests, transition tracker state, or perform terminal cleanup
 
 #### Scenario: Executor fails
@@ -50,3 +50,4 @@ The system SHALL provide a `develop` job handled by an isolated Develop module t
 - **WHEN** Develop behavior is implemented
 - **THEN** Develop-specific code SHALL live in its own job module
 - **AND** worker routing SHALL call that module for `develop` jobs
+

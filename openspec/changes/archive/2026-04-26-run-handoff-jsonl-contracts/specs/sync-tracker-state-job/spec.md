@@ -30,6 +30,7 @@ The system SHALL provide a `sync-tracker-state` job handled by an isolated Sync 
 - **THEN** it SHALL attempt to clean up that workspace path
 - **AND** refuse to delete paths outside `/tmp`
 - **AND** refuse to delete symbolic links
+- **AND** SHALL NOT delete the run summary or handoff ledger under the Blast Furnace repository's `.orchestrator/runs/...` storage
 
 #### Scenario: Sync Tracker State output is recorded
 - **WHEN** Sync Tracker State finishes tracker synchronization and cleanup work
@@ -40,4 +41,3 @@ The system SHALL provide a `sync-tracker-state` job handled by an isolated Sync 
 - **WHEN** Sync Tracker State behavior is implemented
 - **THEN** Sync Tracker State-specific code SHALL live in its own job module
 - **AND** worker routing SHALL call that module for `sync-tracker-state` jobs
-

@@ -1,15 +1,20 @@
-## ADDED Requirements
+# run-handoff-ledger Specification
 
+## Purpose
+TBD - created by archiving change run-handoff-jsonl-contracts. Update Purpose after archive.
+## Requirements
 ### Requirement: Timestamped Run File Set
 The system SHALL create a timestamped run file set for every accepted run.
 
 #### Scenario: Run file set is initialized
 - **WHEN** Prepare Run initializes a run with `runId`
-- **THEN** the system SHALL create the run directory `.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/`
+- **THEN** the system SHALL create the run directory `.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/` under the Blast Furnace repository root
 - **AND** the timestamp portion SHALL be computed once for the run
 - **AND** the timestamp portion SHALL be reused for all run-scoped file names
 - **AND** the mutable run summary path SHALL be `.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/YYYY-MM-DD_HH.MM_runId_run.json`
 - **AND** the handoff ledger path SHALL be `.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/YYYY-MM-DD_HH.MM_runId_handoff.jsonl`
+- **AND** the system SHALL NOT create `run.log` or another run-level runtime logging file
+- **AND** the cloned target repository workspace SHALL NOT contain `.orchestrator/**` due to run file initialization
 
 #### Scenario: Timestamp metadata is persisted
 - **WHEN** the run file set is initialized

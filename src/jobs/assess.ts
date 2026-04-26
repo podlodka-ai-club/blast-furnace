@@ -6,6 +6,7 @@ import { jobQueue } from './queue.js';
 import {
   appendHandoffRecordAndUpdateSummary,
   readValidatedStageInputRecord,
+  resolveOrchestrationStorageRoot,
   scheduleNextJob,
 } from './orchestration.js';
 import { createForwardStagePayload } from './stage-payloads.js';
@@ -27,7 +28,8 @@ export async function runAssessWork(job: Job<AssessJobData>): Promise<PlanJobDat
     reworkAttempt: job.data.reworkAttempt,
     assessment: STUB_ASSESSMENT,
   }) as AssessOutput;
-  const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(output.workspacePath, {
+  const orchestrationRoot = resolveOrchestrationStorageRoot(job.data.inputRecordRef);
+  const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
     runId: job.data.runId,
     fromStage: 'assess',
     toStage: 'plan',

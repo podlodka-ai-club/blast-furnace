@@ -2,10 +2,9 @@
 
 ## Purpose
 Defines the target Prepare Run stage that initializes run state, prepares the issue branch, and creates the local workspace before assessment.
-
 ## Requirements
 ### Requirement: Prepare Run Job Module
-The system SHALL provide a `prepare-run` job handled by an isolated Prepare Run module that initializes a run and prepares the configured repository workspace before assessment, planning, or development work begins.
+The system SHALL provide a `prepare-run` job handled by an isolated Prepare Run module that initializes a timestamped run file set, prepares the configured repository workspace, writes the first JSONL handoff record, and hands off to Assess.
 
 #### Scenario: Prepare Run payload is created
 - **WHEN** Intake accepts an eligible issue for automation
@@ -14,17 +13,19 @@ The system SHALL provide a `prepare-run` job handled by an isolated Prepare Run 
 - **AND** `stage` SHALL be `prepare-run`
 - **AND** `stageAttempt` SHALL be `1`
 - **AND** `reworkAttempt` SHALL be `0`
-- **AND** the payload SHALL include the issue and configured repository identity needed to prepare the run
+- **AND** the payload SHALL include the issue and configured repository identity needed to initialize the run
 
 #### Scenario: Repository identity is mismatched
 - **WHEN** Prepare Run receives a payload whose repository identity does not match the configured repository
-- **THEN** Prepare Run SHALL fail before creating a branch, creating a workspace, cloning a repository, or enqueueing Assess
+- **THEN** Prepare Run SHALL fail before creating a branch, creating a workspace, cloning a repository, appending a successful handoff record, or enqueueing Assess
 
 #### Scenario: Run metadata is initialized
 - **WHEN** a `prepare-run` job starts
 - **THEN** the Prepare Run module SHALL initialize run metadata for the received `runId`
-- **AND** write the initial `run.json`
-- **AND** establish a run-level log target
+- **AND** create `.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/` under the Blast Furnace repository root
+- **AND** write `<YYYY-MM-DD_HH.MM_runId>_run.json`
+- **AND** create or prepare `<YYYY-MM-DD_HH.MM_runId>_handoff.jsonl`
+- **AND** SHALL NOT create `run.log` or any replacement run-level runtime logging file
 
 #### Scenario: Branch name is prepared
 - **WHEN** Prepare Run receives an issue
@@ -45,16 +46,20 @@ The system SHALL provide a `prepare-run` job handled by an isolated Prepare Run 
 - **AND** clone the configured repository into that workspace
 - **AND** fetch the issue branch
 - **AND** check out and reset the local branch to the remote issue branch
+- **AND** the local workspace SHALL NOT contain `.orchestrator/**` from run metadata or handoff initialization
 
 #### Scenario: Base context is recorded
 - **WHEN** repository preparation succeeds
-- **THEN** Prepare Run SHALL record base run context containing at least the `runId`, issue, configured repository identity, branch name, and workspace path
-- **AND** this record SHALL NOT replace queue-based stage handoff for this change
+- **THEN** Prepare Run SHALL append the first JSONL handoff record containing at least the `runId`, issue, configured repository identity, branch name, workspace path, stage attempt, and rework attempt
+- **AND** the first handoff record SHALL have `fromStage` set to `prepare-run`
+- **AND** the first handoff record SHALL have `toStage` set to `assess`
+- **AND** the first handoff record SHALL have `dependsOn` set to `null`
 
 #### Scenario: Assess is enqueued
-- **WHEN** Prepare Run completes repository preparation
+- **WHEN** Prepare Run completes repository preparation and appends the first handoff record
 - **THEN** it SHALL enqueue an `assess` job
-- **AND** pass the prepared run, issue, configured repository identity, branch, workspace, `stageAttempt`, and `reworkAttempt` data through the queue payload
+- **AND** pass `runId`, `stage`, `stageAttempt`, `reworkAttempt`, and an input handoff record reference through the queue payload
+- **AND** the input handoff record reference SHALL point to the Blast Furnace repository's `.orchestrator/runs/...` paths rather than the local target repository workspace
 
 #### Scenario: Preparation fails before handoff
 - **WHEN** Prepare Run cannot prepare the run before enqueueing Assess
@@ -66,3 +71,4 @@ The system SHALL provide a `prepare-run` job handled by an isolated Prepare Run 
 - **WHEN** Prepare Run behavior is implemented
 - **THEN** Prepare Run-specific code SHALL live in its own job module
 - **AND** worker routing SHALL call that module for `prepare-run` jobs
+

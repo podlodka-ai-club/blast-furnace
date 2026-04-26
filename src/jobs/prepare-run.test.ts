@@ -1,4 +1,6 @@
-import { mkdir, readdir, rm } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
+import { join, relative } from 'node:path';
+import { tmpdir } from 'node:os';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Job } from 'bullmq';
 import type { GitHubIssue, PrepareRunJobData } from '../types/index.js';
@@ -7,6 +9,8 @@ import { createPrepareRunPayload, runPrepareRunFlow, runPrepareRunWork } from '.
 import { readHandoffRecords, readRunSummary } from './orchestration.js';
 
 const TEMP_DIR = '/tmp/prepare-run-abc123';
+let orchestrationRoot: string;
+const originalOrchestrationRoot = process.env['ORCHESTRATION_STORAGE_ROOT'];
 
 const { mockGetRef, mockPushBranch, mockDeleteBranch } = vi.hoisted(() => ({
   mockGetRef: vi.fn(),
@@ -119,9 +123,20 @@ function createGitMockProcess(exitCode = 0, stdout = '', stderr = ''): ReturnTyp
   } as unknown as ReturnType<typeof spawn>;
 }
 
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 describe('prepare-run job', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    orchestrationRoot = await mkdtemp(join(tmpdir(), 'blast-orchestration-root-'));
+    process.env['ORCHESTRATION_STORAGE_ROOT'] = orchestrationRoot;
     mockCreateJobLogger.mockReturnValue({
       info: vi.fn(),
       error: vi.fn(),
@@ -151,6 +166,12 @@ describe('prepare-run job', () => {
 
   afterEach(async () => {
     await rm(TEMP_DIR, { recursive: true, force: true });
+    await rm(orchestrationRoot, { recursive: true, force: true });
+    if (originalOrchestrationRoot === undefined) {
+      delete process.env['ORCHESTRATION_STORAGE_ROOT'];
+    } else {
+      process.env['ORCHESTRATION_STORAGE_ROOT'] = originalOrchestrationRoot;
+    }
   });
 
   it('creates prepare-run payloads with run identity and initial attempt counters', () => {
@@ -181,16 +202,14 @@ describe('prepare-run job', () => {
     });
   });
 
-  it('initializes run metadata and a run-level log target', async () => {
+  it('initializes run metadata in the orchestration root without creating a run log', async () => {
     const job = createJob();
 
     const result = await runPrepareRunWork(job);
     const records = await readHandoffRecords(result.assessJobData.inputRecordRef.handoffPath);
-    const summary = await readRunSummary(TEMP_DIR, 'run-123');
+    const summary = await readRunSummary(orchestrationRoot, 'run-123');
 
-    expect(result.runLogPath).toMatch(
-      /^\/tmp\/prepare-run-abc123\/\.orchestrator\/runs\/\d{4}-\d{2}-\d{2}_\d{2}\.\d{2}_run-123\/run\.log$/
-    );
+    expect(result).not.toHaveProperty('runLogPath');
     expect(result.assessJobData).toMatchObject({
       runId: 'run-123',
       stage: 'assess',
@@ -202,6 +221,10 @@ describe('prepare-run job', () => {
         stage: 'prepare-run',
       },
     });
+    expect(relative(orchestrationRoot, result.assessJobData.inputRecordRef.runDir)).not.toMatch(/^\.\./);
+    expect(relative(orchestrationRoot, result.assessJobData.inputRecordRef.handoffPath)).not.toMatch(/^\.\./);
+    expect(result.assessJobData.inputRecordRef.runDir).not.toContain(TEMP_DIR);
+    expect(result.assessJobData.inputRecordRef.handoffPath).not.toContain(TEMP_DIR);
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({
       fromStage: 'prepare-run',
@@ -224,6 +247,12 @@ describe('prepare-run job', () => {
         recordId: '000001_prepare-run_to_assess',
       },
     });
+    expect(summary?.runDirectory).toBe(result.assessJobData.inputRecordRef.runDir);
+    expect(summary?.handoffLedgerPath).toBe(result.assessJobData.inputRecordRef.handoffPath);
+    expect(summary?.runSummaryPath).toEqual(expect.stringContaining(orchestrationRoot));
+    expect(summary?.runSummaryPath).not.toContain(TEMP_DIR);
+    expect(await pathExists(join(result.assessJobData.inputRecordRef.runDir, 'run.log'))).toBe(false);
+    expect(await pathExists(join(TEMP_DIR, '.orchestrator'))).toBe(false);
   });
 
   it('slugifies and validates the issue branch before creating it when absent', async () => {
@@ -275,7 +304,7 @@ describe('prepare-run job', () => {
     );
   });
 
-  it('clones before writing orchestrator metadata into the workspace', async () => {
+  it('clones into an empty target workspace and keeps orchestrator metadata out of it', async () => {
     mockCreateTempWorkingDir.mockImplementation(async () => {
       await mkdir(TEMP_DIR, { recursive: true });
       return TEMP_DIR;
@@ -291,6 +320,7 @@ describe('prepare-run job', () => {
       TEMP_DIR,
       'https://test-token@github.com/test-owner/test-repo.git'
     );
+    expect(await pathExists(join(TEMP_DIR, '.orchestrator'))).toBe(false);
   });
 
   it('enqueues assess with only transport metadata and an input record reference', async () => {

@@ -5,9 +5,11 @@ The pipeline still uses BullMQ payloads as the practical handoff between stages,
 ## What Changes
 
 - Introduce one append-only handoff JSONL ledger per run as the single durable carrier of all stage output and handoff data, with no duplicate per-stage artifact JSON files.
-- Store each run in a timestamp-prefixed run directory named `.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/`.
+- Store each run in a timestamp-prefixed run directory named `.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/` under the Blast Furnace repository root, not inside the cloned target repository workspace.
 - Name the mutable run summary file with the same timestamp and `runId`, for example `.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/YYYY-MM-DD_HH.MM_runId_run.json`.
 - Store the run's JSONL handoff ledger in the same directory and name it with the same timestamp and `runId`, for example `.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/YYYY-MM-DD_HH.MM_runId_handoff.jsonl`.
+- Do not create a `run.log` file or any replacement runtime logging file as part of run artifact initialization.
+- Keep the target repository workspace clean of `.orchestrator/**`; pull requests against the target repository must include only task changes.
 - Define each JSONL line as the validated JSON object for one pipeline transition and its producing stage output, including the source stage, target stage, attempts, dependency pointer to the previous stage/record, and the complete output data needed by the next stage.
 - Define formal output contracts and validation for `Prepare Run`, `Assess`, `Plan`, `Develop`, `Quality Gate`, `Review`, `Make PR`, and `Sync Tracker State`, including success, failure, blocked, clarify, and rework-needed shapes where applicable.
 - Update the timestamped `run.json` to remain the mutable run status summary while pointing to the active handoff ledger, current stage, stage attempt statuses, `stageAttempt` and `reworkAttempt` counters, and current JSONL record pointers.
@@ -38,6 +40,6 @@ The pipeline still uses BullMQ payloads as the practical handoff between stages,
 ## Impact
 
 - Affected code: `src/jobs/*`, `src/types/index.ts`, shared run-file utilities, queue payload creation and validation, and tests for each stage handler.
-- Affected runtime files: `.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/YYYY-MM-DD_HH.MM_runId_run.json` and `.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/YYYY-MM-DD_HH.MM_runId_handoff.jsonl`.
+- Affected runtime files in the Blast Furnace repository: `.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/YYYY-MM-DD_HH.MM_runId_run.json` and `.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/YYYY-MM-DD_HH.MM_runId_handoff.jsonl`.
 - Affected schemas: new or updated validation schemas for embedded stage outputs, handoff records, queue payloads, and run summary pointers.
 - Operational impact: runs become easier to inspect chronologically by handoff filename and easier to debug by reading the single JSONL handoff ledger for a run.

@@ -22,8 +22,8 @@ function createIssue(): GitHubIssue {
 
 describe('stage payload factories', () => {
   const inputRecordRef: InputRecordRef = {
-    runDir: '/tmp/work/.orchestrator/runs/2026-04-26_08.07_run-123',
-    handoffPath: '/tmp/work/.orchestrator/runs/2026-04-26_08.07_run-123/2026-04-26_08.07_run-123_handoff.jsonl',
+    runDir: '/opt/blast-furnace/.orchestrator/runs/2026-04-26_08.07_run-123',
+    handoffPath: '/opt/blast-furnace/.orchestrator/runs/2026-04-26_08.07_run-123/2026-04-26_08.07_run-123_handoff.jsonl',
     recordId: '000001_prepare-run_to_assess',
     sequence: 1,
     stage: 'prepare-run',
