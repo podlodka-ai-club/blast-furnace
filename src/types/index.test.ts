@@ -17,14 +17,18 @@ import type {
   ServerOptions,
   HealthResponse,
   JobPayload,
-  IssueProcessorJobData,
-  IssueWatcherJobData,
+  WorkflowStage,
+  StageJobPayload,
   RepoWatcherJobData,
-  CodexProviderJobData,
+  IntakeJobData,
+  PrepareRunJobData,
+  AssessJobData,
+  DevelopJobData,
+  QualityGateJobData,
+  SyncTrackerStateJobData,
   PlanJobData,
   ReviewJobData,
   MakePrJobData,
-  CheckPrJobData,
 } from './index.js';
 
 describe('types', () => {
@@ -320,95 +324,318 @@ describe('types', () => {
     });
   });
 
-  describe('IssueProcessorJobData', () => {
-    it('should accept valid issue processor job data', () => {
-      const jobData: IssueProcessorJobData = {
-        taskId: 'task-123',
-        type: 'issue-processor',
-        issue: {
-          id: 1,
-          number: 42,
-          title: 'Test issue',
-          body: 'Issue body',
-          state: 'open',
-          labels: ['enhancement'],
-          assignee: 'user',
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-        },
-      };
-      expect(jobData.taskId).toBe('task-123');
-      expect(jobData.type).toBe('issue-processor');
-      expect(jobData.issue.number).toBe(42);
-    });
+  describe('WorkflowStage', () => {
+    it('should accept all target workflow stage names', () => {
+      const stages: WorkflowStage[] = [
+        'intake',
+        'prepare-run',
+        'assess',
+        'plan',
+        'develop',
+        'quality-gate',
+        'review',
+        'make-pr',
+        'sync-tracker-state',
+      ];
 
-    it('should allow optional payload', () => {
-      const jobData: IssueProcessorJobData = {
-        taskId: 'task-123',
-        type: 'issue-processor',
-        issue: {
-          id: 1,
-          number: 42,
-          title: 'Test issue',
-          body: null,
-          state: 'open',
-          labels: [],
-          assignee: null,
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-        },
-      };
-      expect(jobData.payload).toBeUndefined();
+      expect(stages).toHaveLength(9);
     });
   });
 
-  describe('IssueWatcherJobData', () => {
-    it('should accept valid issue watcher job data', () => {
-      const jobData: IssueWatcherJobData = {
-        taskId: 'task-456',
-        type: 'issue-watcher',
-        lastPollTimestamp: '2024-01-01T00:00:00.000Z',
+  describe('StageJobPayload', () => {
+    it('should require run identity, stage, stage attempt, and rework attempt fields', () => {
+      const payload: StageJobPayload<'plan'> = {
+        taskId: 'task-plan',
+        type: 'plan',
+        runId: 'run-123',
+        stage: 'plan',
+        stageAttempt: 1,
+        reworkAttempt: 0,
       };
-      expect(jobData.taskId).toBe('task-456');
-      expect(jobData.type).toBe('issue-watcher');
-      expect(jobData.lastPollTimestamp).toBe('2024-01-01T00:00:00.000Z');
+
+      expect(payload.runId).toBe('run-123');
+      expect(payload.stage).toBe('plan');
+      expect(payload.stageAttempt).toBe(1);
+      expect(payload.reworkAttempt).toBe(0);
     });
 
-    it('should allow optional lastPollTimestamp', () => {
-      const jobData: IssueWatcherJobData = {
-        taskId: 'task-456',
-        type: 'issue-watcher',
-      };
-      expect(jobData.lastPollTimestamp).toBeUndefined();
-    });
+    it('should include the stage envelope on every target stage job payload type', () => {
+      const payloads: Array<StageJobPayload<WorkflowStage>> = [
+        {
+          taskId: 'task-intake',
+          type: 'intake',
+          runId: 'intake-run',
+          stage: 'intake',
+          stageAttempt: 1,
+          reworkAttempt: 0,
+        } satisfies IntakeJobData,
+        {
+          taskId: 'task-prepare',
+          type: 'prepare-run',
+          runId: 'run-123',
+          stage: 'prepare-run',
+          stageAttempt: 1,
+          reworkAttempt: 0,
+          issue: {
+            id: 1,
+            number: 42,
+            title: 'Test issue',
+            body: null,
+            state: 'open',
+            labels: [],
+            assignee: null,
+            createdAt: '2024-01-01T00:00:00.000Z',
+            updatedAt: '2024-01-01T00:00:00.000Z',
+          },
+          repository: {
+            owner: 'owner',
+            repo: 'repo',
+          },
+        } satisfies PrepareRunJobData,
+        {
+          taskId: 'task-assess',
+          type: 'assess',
+          runId: 'run-123',
+          stage: 'assess',
+          stageAttempt: 1,
+          reworkAttempt: 0,
+          issue: {
+            id: 1,
+            number: 42,
+            title: 'Test issue',
+            body: null,
+            state: 'open',
+            labels: [],
+            assignee: null,
+            createdAt: '2024-01-01T00:00:00.000Z',
+            updatedAt: '2024-01-01T00:00:00.000Z',
+          },
+          repository: {
+            owner: 'owner',
+            repo: 'repo',
+          },
+          branchName: 'issue-42-test-issue',
+          workspacePath: '/tmp/prepare-run-123',
+        } satisfies AssessJobData,
+        {
+          taskId: 'task-plan',
+          type: 'plan',
+          runId: 'run-123',
+          stage: 'plan',
+          stageAttempt: 1,
+          reworkAttempt: 0,
+          issue: {
+            id: 1,
+            number: 42,
+            title: 'Test issue',
+            body: null,
+            state: 'open',
+            labels: [],
+            assignee: null,
+            createdAt: '2024-01-01T00:00:00.000Z',
+            updatedAt: '2024-01-01T00:00:00.000Z',
+          },
+          repository: {
+            owner: 'owner',
+            repo: 'repo',
+          },
+          branchName: 'issue-42-test-issue',
+          workspacePath: '/tmp/prepare-run-123',
+          assessment: {
+            status: 'stubbed',
+            summary: 'Assessment deferred.',
+          },
+        } satisfies PlanJobData,
+        {
+          taskId: 'task-develop',
+          type: 'develop',
+          runId: 'run-123',
+          stage: 'develop',
+          stageAttempt: 1,
+          reworkAttempt: 0,
+          issue: {
+            id: 1,
+            number: 42,
+            title: 'Test issue',
+            body: null,
+            state: 'open',
+            labels: [],
+            assignee: null,
+            createdAt: '2024-01-01T00:00:00.000Z',
+            updatedAt: '2024-01-01T00:00:00.000Z',
+          },
+          repository: {
+            owner: 'owner',
+            repo: 'repo',
+          },
+          branchName: 'issue-42-test-issue',
+          workspacePath: '/tmp/prepare-run-123',
+          assessment: {
+            status: 'stubbed',
+            summary: 'Assessment deferred.',
+          },
+          plan: {
+            status: 'stubbed',
+            summary: 'Planning deferred.',
+          },
+        } satisfies DevelopJobData,
+        {
+          taskId: 'task-quality',
+          type: 'quality-gate',
+          runId: 'run-123',
+          stage: 'quality-gate',
+          stageAttempt: 1,
+          reworkAttempt: 0,
+          issue: {
+            id: 1,
+            number: 42,
+            title: 'Test issue',
+            body: null,
+            state: 'open',
+            labels: [],
+            assignee: null,
+            createdAt: '2024-01-01T00:00:00.000Z',
+            updatedAt: '2024-01-01T00:00:00.000Z',
+          },
+          repository: {
+            owner: 'owner',
+            repo: 'repo',
+          },
+          branchName: 'issue-42-test-issue',
+          workspacePath: '/tmp/prepare-run-123',
+          assessment: {
+            status: 'stubbed',
+            summary: 'Assessment deferred.',
+          },
+          plan: {
+            status: 'stubbed',
+            summary: 'Planning deferred.',
+          },
+          development: {
+            status: 'completed',
+            summary: 'Codex completed successfully.',
+          },
+        } satisfies QualityGateJobData,
+        {
+          taskId: 'task-review',
+          type: 'review',
+          runId: 'run-123',
+          stage: 'review',
+          stageAttempt: 1,
+          reworkAttempt: 0,
+          issue: {
+            id: 1,
+            number: 42,
+            title: 'Test issue',
+            body: null,
+            state: 'open',
+            labels: [],
+            assignee: null,
+            createdAt: '2024-01-01T00:00:00.000Z',
+            updatedAt: '2024-01-01T00:00:00.000Z',
+          },
+          repository: {
+            owner: 'owner',
+            repo: 'repo',
+          },
+          branchName: 'issue-42-test-issue',
+          workspacePath: '/tmp/prepare-run-123',
+          assessment: {
+            status: 'stubbed',
+            summary: 'Assessment deferred.',
+          },
+          plan: {
+            status: 'stubbed',
+            summary: 'Planning deferred.',
+          },
+          development: {
+            status: 'completed',
+            summary: 'Codex completed successfully.',
+          },
+          quality: {
+            status: 'passed',
+            summary: 'Quality gate deferred.',
+          },
+        } satisfies ReviewJobData,
+        {
+          taskId: 'task-make-pr',
+          type: 'make-pr',
+          runId: 'run-123',
+          stage: 'make-pr',
+          stageAttempt: 1,
+          reworkAttempt: 0,
+          issue: {
+            id: 1,
+            number: 42,
+            title: 'Test issue',
+            body: null,
+            state: 'open',
+            labels: [],
+            assignee: null,
+            createdAt: '2024-01-01T00:00:00.000Z',
+            updatedAt: '2024-01-01T00:00:00.000Z',
+          },
+          repository: {
+            owner: 'owner',
+            repo: 'repo',
+          },
+          branchName: 'issue-42-test-issue',
+          workspacePath: '/tmp/prepare-run-123',
+          development: {
+            status: 'completed',
+            summary: 'Codex completed successfully.',
+          },
+          quality: {
+            status: 'passed',
+            summary: 'Quality gate deferred.',
+          },
+          review: {
+            status: 'stubbed',
+            summary: 'Review deferred.',
+          },
+        } satisfies MakePrJobData,
+        {
+          taskId: 'task-sync',
+          type: 'sync-tracker-state',
+          runId: 'run-123',
+          stage: 'sync-tracker-state',
+          stageAttempt: 1,
+          reworkAttempt: 0,
+          issue: {
+            id: 1,
+            number: 42,
+            title: 'Test issue',
+            body: null,
+            state: 'open',
+            labels: [],
+            assignee: null,
+            createdAt: '2024-01-01T00:00:00.000Z',
+            updatedAt: '2024-01-01T00:00:00.000Z',
+          },
+          repository: {
+            owner: 'owner',
+            repo: 'repo',
+          },
+          branchName: 'issue-42-test-issue',
+          workspacePath: '/tmp/prepare-run-123',
+          pullRequest: {
+            number: 7,
+            htmlUrl: 'https://github.com/owner/repo/pull/7',
+          },
+        } satisfies SyncTrackerStateJobData,
+      ];
 
-    it('should accept optional owner and repo for targeted polling', () => {
-      const jobData: IssueWatcherJobData = {
-        taskId: 'task-456',
-        type: 'issue-watcher',
-        owner: 'my-org',
-        repo: 'my-repo',
-      };
-      expect(jobData.owner).toBe('my-org');
-      expect(jobData.repo).toBe('my-repo');
-    });
-
-    it('should allow owner without repo and vice versa', () => {
-      const jobDataWithOwner: IssueWatcherJobData = {
-        taskId: 'task-456',
-        type: 'issue-watcher',
-        owner: 'my-org',
-      };
-      expect(jobDataWithOwner.owner).toBe('my-org');
-      expect(jobDataWithOwner.repo).toBeUndefined();
-
-      const jobDataWithRepo: IssueWatcherJobData = {
-        taskId: 'task-456',
-        type: 'issue-watcher',
-        repo: 'my-repo',
-      };
-      expect(jobDataWithRepo.owner).toBeUndefined();
-      expect(jobDataWithRepo.repo).toBe('my-repo');
+      expect(payloads.map((payload) => payload.stage)).toEqual([
+        'intake',
+        'prepare-run',
+        'assess',
+        'plan',
+        'develop',
+        'quality-gate',
+        'review',
+        'make-pr',
+        'sync-tracker-state',
+      ]);
     });
   });
 
@@ -429,166 +656,6 @@ describe('types', () => {
         payload: { key: 'value' },
       };
       expect(jobData.payload).toEqual({ key: 'value' });
-    });
-  });
-
-  describe('CodexProviderJobData', () => {
-    it('should accept valid codex provider job data', () => {
-      const jobData: CodexProviderJobData = {
-        taskId: 'task-789',
-        type: 'codex-provider',
-        issue: {
-          id: 1,
-          number: 42,
-          title: 'Test issue',
-          body: 'Issue body',
-          state: 'open',
-          labels: ['enhancement'],
-          assignee: 'user',
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-        },
-        branchName: 'feature/codex-42',
-      };
-      expect(jobData.taskId).toBe('task-789');
-      expect(jobData.type).toBe('codex-provider');
-      expect(jobData.issue.number).toBe(42);
-      expect(jobData.branchName).toBe('feature/codex-42');
-    });
-
-    it('should allow optional payload', () => {
-      const jobData: CodexProviderJobData = {
-        taskId: 'task-789',
-        type: 'codex-provider',
-        issue: {
-          id: 1,
-          number: 42,
-          title: 'Test issue',
-          body: null,
-          state: 'open',
-          labels: [],
-          assignee: null,
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-        },
-        branchName: 'feature/codex-42',
-      };
-      expect(jobData.payload).toBeUndefined();
-    });
-  });
-
-  describe('PlanJobData', () => {
-    it('should accept valid plan job data', () => {
-      const jobData: PlanJobData = {
-        taskId: 'task-plan',
-        type: 'plan',
-        issue: {
-          id: 1,
-          number: 42,
-          title: 'Test issue',
-          body: 'Issue body',
-          state: 'open',
-          labels: ['enhancement'],
-          assignee: 'user',
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-        },
-        branchName: 'issue-42-test-issue',
-      };
-
-      expect(jobData.taskId).toBe('task-plan');
-      expect(jobData.type).toBe('plan');
-      expect(jobData.issue.number).toBe(42);
-      expect(jobData.branchName).toBe('issue-42-test-issue');
-    });
-  });
-
-  describe('ReviewJobData', () => {
-    it('should accept valid review job data', () => {
-      const jobData: ReviewJobData = {
-        taskId: 'task-review',
-        type: 'review',
-        issue: {
-          id: 1,
-          number: 42,
-          title: 'Test issue',
-          body: 'Issue body',
-          state: 'open',
-          labels: ['enhancement'],
-          assignee: 'user',
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-        },
-        branchName: 'issue-42-test-issue',
-        repoPath: '/tmp/codex-abc123',
-      };
-
-      expect(jobData.taskId).toBe('task-review');
-      expect(jobData.type).toBe('review');
-      expect(jobData.issue.number).toBe(42);
-      expect(jobData.branchName).toBe('issue-42-test-issue');
-      expect(jobData.repoPath).toBe('/tmp/codex-abc123');
-    });
-  });
-
-  describe('MakePrJobData', () => {
-    it('should accept valid make-pr job data', () => {
-      const jobData: MakePrJobData = {
-        taskId: 'task-make-pr',
-        type: 'make-pr',
-        issue: {
-          id: 1,
-          number: 42,
-          title: 'Test issue',
-          body: 'Issue body',
-          state: 'open',
-          labels: ['enhancement'],
-          assignee: 'user',
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-        },
-        branchName: 'issue-42-test-issue',
-        repoPath: '/tmp/codex-abc123',
-      };
-
-      expect(jobData.taskId).toBe('task-make-pr');
-      expect(jobData.type).toBe('make-pr');
-      expect(jobData.issue.number).toBe(42);
-      expect(jobData.branchName).toBe('issue-42-test-issue');
-      expect(jobData.repoPath).toBe('/tmp/codex-abc123');
-    });
-  });
-
-  describe('CheckPrJobData', () => {
-    it('should accept valid check-pr job data with pull request metadata', () => {
-      const jobData: CheckPrJobData = {
-        taskId: 'task-check-pr',
-        type: 'check-pr',
-        issue: {
-          id: 1,
-          number: 42,
-          title: 'Test issue',
-          body: 'Issue body',
-          state: 'open',
-          labels: ['enhancement'],
-          assignee: 'user',
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-        },
-        branchName: 'issue-42-test-issue',
-        repoPath: '/tmp/codex-abc123',
-        pullRequest: {
-          number: 7,
-          htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
-        },
-      };
-
-      expect(jobData.taskId).toBe('task-check-pr');
-      expect(jobData.type).toBe('check-pr');
-      expect(jobData.issue.number).toBe(42);
-      expect(jobData.branchName).toBe('issue-42-test-issue');
-      expect(jobData.repoPath).toBe('/tmp/codex-abc123');
-      expect(jobData.pullRequest?.number).toBe(7);
     });
   });
 });

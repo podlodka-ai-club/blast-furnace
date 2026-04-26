@@ -10,7 +10,7 @@ The system SHALL use polling as the only supported strategy for receiving GitHub
 
 #### Scenario: Application startup initializes intake
 - **WHEN** the application starts
-- **THEN** application startup SHALL schedule the repeatable issue watcher job
+- **THEN** application startup SHALL schedule the repeatable `intake` job
 - **AND** startup SHALL NOT depend on a runtime issue strategy selection
 
 #### Scenario: Legacy strategy environment variable is present
@@ -20,13 +20,13 @@ The system SHALL use polling as the only supported strategy for receiving GitHub
 - **AND** the system SHALL NOT emit a compatibility warning for that variable
 
 ### Requirement: Polling Watcher
-The system SHALL poll GitHub for open issues labeled `ready`.
+The system SHALL poll GitHub for open issues labeled `ready` as the Intake stage.
 
 #### Scenario: Watcher is started
 - **WHEN** intake is initialized
-- **THEN** the system SHALL add a repeatable `issue-watcher` job
+- **THEN** the system SHALL add a repeatable `intake` job
 - **AND** the repeat interval SHALL be `GITHUB_POLL_INTERVAL_MS`
-- **AND** the repeatable job id SHALL be `issue-watcher-repeatable`
+- **AND** the repeatable job id SHALL be `intake-repeatable`
 
 #### Scenario: Polling state exists
 - **WHEN** Redis contains a valid last poll timestamp
@@ -46,6 +46,7 @@ The system SHALL poll GitHub for open issues labeled `ready`.
 
 #### Scenario: Issues are found
 - **WHEN** polling returns matching issues
-- **THEN** the watcher SHALL enqueue one `issue-processor` job per issue
-- **AND** each job SHALL include the mapped `GitHubIssue`
+- **THEN** the watcher SHALL enqueue one `prepare-run` job per issue
+- **AND** each job SHALL include the mapped `GitHubIssue`, target repository identity, `runId`, `stage`, `stageAttempt`, and `reworkAttempt`
+- **AND** each job SHALL have `stage` set to `prepare-run`
 - **AND** the watcher SHALL store the current timestamp in Redis after processing

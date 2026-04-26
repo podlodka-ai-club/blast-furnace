@@ -8,6 +8,7 @@ import {
   resolveStageAttemptDirectory,
   resolveArtifactPath,
   resolveEventPath,
+  resolveRunLogPath,
   resolveRunSummaryPath,
   writeArtifactFile,
   writeEventFile,
@@ -50,6 +51,7 @@ describe('job orchestration infrastructure', () => {
       join(root, '.orchestrator', 'runs', 'run-123', 'events', '0001-plan-started.json')
     );
     expect(resolveRunSummaryPath(root, 'run-123')).toBe(join(root, '.orchestrator', 'runs', 'run-123', 'run.json'));
+    expect(resolveRunLogPath(root, 'run-123')).toBe(join(root, '.orchestrator', 'runs', 'run-123', 'run.log'));
   });
 
   it('writes artifact and event files append-only and fails rather than overwrite existing files', async () => {
@@ -112,6 +114,10 @@ describe('job orchestration infrastructure', () => {
     const data: PlanJobData = {
       taskId: 'task-1',
       type: 'plan',
+      runId: 'run-123',
+      stage: 'plan',
+      stageAttempt: 1,
+      reworkAttempt: 0,
       issue: {
         id: 1,
         number: 42,
@@ -123,7 +129,16 @@ describe('job orchestration infrastructure', () => {
         createdAt: '2026-04-22T00:00:00Z',
         updatedAt: '2026-04-22T00:00:00Z',
       },
+      repository: {
+        owner: 'owner',
+        repo: 'repo',
+      },
       branchName: 'issue-42-issue',
+      workspacePath: '/tmp/prepare-run-abc123',
+      assessment: {
+        status: 'stubbed',
+        summary: 'Assessment deferred for this iteration.',
+      },
     };
 
     await scheduleNextJob(queue, 'plan', data);

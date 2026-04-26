@@ -34,6 +34,10 @@ export function resolveRunSummaryPath(root: string, runId: RunId): string {
   return join(resolveRunDirectory(root, runId), 'run.json');
 }
 
+export function resolveRunLogPath(root: string, runId: RunId): string {
+  return join(resolveRunDirectory(root, runId), 'run.log');
+}
+
 async function writeJson(path: string, data: unknown, flag: 'w' | 'wx'): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, JSON.stringify(data, null, 2), { encoding: 'utf8', flag });

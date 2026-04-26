@@ -1,6 +1,6 @@
 import Redis from 'ioredis';
 import { config } from '../../config/index.js';
-import { REPO_LIST_KEY } from '../../jobs/issue-watcher.js';
+import { REPO_LIST_KEY } from '../../jobs/intake.js';
 let redisClient = null;
 function getRedisClient() {
     if (!redisClient) {

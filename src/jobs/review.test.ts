@@ -37,9 +37,33 @@ function createJob(issue = createIssue()): Job<ReviewJobData> {
     data: {
       taskId: 'task-review',
       type: 'review',
+      runId: 'run-123',
+      stage: 'review',
+      stageAttempt: 1,
+      reworkAttempt: 0,
       issue,
+      repository: {
+        owner: 'test-owner',
+        repo: 'test-repo',
+      },
       branchName: 'issue-42-test-issue',
-      repoPath: '/tmp/codex-abc123',
+      workspacePath: '/tmp/prepare-run-abc123',
+      assessment: {
+        status: 'stubbed',
+        summary: 'Assessment deferred for this iteration.',
+      },
+      plan: {
+        status: 'stubbed',
+        summary: 'Planning deferred for this iteration.',
+      },
+      development: {
+        status: 'completed',
+        summary: 'Codex completed successfully.',
+      },
+      quality: {
+        status: 'passed',
+        summary: 'Quality gate deferred for this iteration.',
+      },
     },
   } as unknown as Job<ReviewJobData>;
 }
@@ -56,22 +80,7 @@ describe('review job', () => {
     mockJobQueueAdd.mockResolvedValue(undefined);
   });
 
-  it('should enqueue make-pr with received data unchanged', async () => {
-    const { processReview } = await import('./review.js');
-    const job = createJob();
-
-    await processReview(job);
-
-    expect(mockJobQueueAdd).toHaveBeenCalledWith('make-pr', {
-      taskId: 'task-review',
-      type: 'make-pr',
-      issue: job.data.issue,
-      branchName: 'issue-42-test-issue',
-      repoPath: '/tmp/codex-abc123',
-    });
-  });
-
-  it('should expose work that returns make-pr data without enqueueing', async () => {
+  it('should preserve quality gate data and produce stub review data', async () => {
     const { runReviewWork } = await import('./review.js');
     const job = createJob();
 
@@ -80,14 +89,24 @@ describe('review job', () => {
     expect(result).toEqual({
       taskId: 'task-review',
       type: 'make-pr',
+      runId: 'run-123',
+      stage: 'make-pr',
+      stageAttempt: 1,
+      reworkAttempt: 0,
       issue: job.data.issue,
+      repository: job.data.repository,
       branchName: 'issue-42-test-issue',
-      repoPath: '/tmp/codex-abc123',
+      workspacePath: '/tmp/prepare-run-abc123',
+      development: job.data.development,
+      quality: job.data.quality,
+      review: {
+        status: 'stubbed',
+        summary: 'Review deferred for this iteration.',
+      },
     });
-    expect(mockJobQueueAdd).not.toHaveBeenCalled();
   });
 
-  it('should expose flow that schedules the make-pr transition', async () => {
+  it('should enqueue make-pr with review output', async () => {
     const { runReviewFlow } = await import('./review.js');
     const job = createJob();
 
@@ -96,9 +115,20 @@ describe('review job', () => {
     expect(mockJobQueueAdd).toHaveBeenCalledWith('make-pr', {
       taskId: 'task-review',
       type: 'make-pr',
+      runId: 'run-123',
+      stage: 'make-pr',
+      stageAttempt: 1,
+      reworkAttempt: 0,
       issue: job.data.issue,
+      repository: job.data.repository,
       branchName: 'issue-42-test-issue',
-      repoPath: '/tmp/codex-abc123',
+      workspacePath: '/tmp/prepare-run-abc123',
+      development: job.data.development,
+      quality: job.data.quality,
+      review: {
+        status: 'stubbed',
+        summary: 'Review deferred for this iteration.',
+      },
     });
   });
 

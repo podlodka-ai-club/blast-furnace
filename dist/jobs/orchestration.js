@@ -15,6 +15,9 @@ export function resolveEventPath(root, runId, eventName) {
 export function resolveRunSummaryPath(root, runId) {
     return join(resolveRunDirectory(root, runId), 'run.json');
 }
+export function resolveRunLogPath(root, runId) {
+    return join(resolveRunDirectory(root, runId), 'run.log');
+}
 async function writeJson(path, data, flag) {
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, JSON.stringify(data, null, 2), { encoding: 'utf8', flag });

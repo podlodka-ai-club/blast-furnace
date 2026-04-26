@@ -12,6 +12,7 @@ export {
   resolveArtifactPath,
   resolveEventPath,
   resolveRunSummaryPath,
+  resolveRunLogPath,
   writeArtifactFile,
   writeEventFile,
   readRunSummary,

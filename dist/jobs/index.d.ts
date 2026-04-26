@@ -6,5 +6,5 @@ export { createJobLogger } from './logger.js';
 export type { JobLogger } from './logger.js';
 export type { JobPayload } from '../types/index.js';
 export { closeQueue } from './queue.js';
-export { resolveRunDirectory, resolveStageAttemptDirectory, resolveArtifactPath, resolveEventPath, resolveRunSummaryPath, writeArtifactFile, writeEventFile, readRunSummary, writeRunSummary, updateRunSummary, scheduleNextJob, } from './orchestration.js';
+export { resolveRunDirectory, resolveStageAttemptDirectory, resolveArtifactPath, resolveEventPath, resolveRunSummaryPath, resolveRunLogPath, writeArtifactFile, writeEventFile, readRunSummary, writeRunSummary, updateRunSummary, scheduleNextJob, } from './orchestration.js';
 export type { QueueLike } from './orchestration.js';

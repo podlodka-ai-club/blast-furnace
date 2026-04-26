@@ -71,9 +71,29 @@ function createJob(issue = createIssue()): Job<MakePrJobData> {
     data: {
       taskId: 'task-make-pr',
       type: 'make-pr',
+      runId: 'run-123',
+      stage: 'make-pr',
+      stageAttempt: 1,
+      reworkAttempt: 0,
       issue,
+      repository: {
+        owner: 'test-owner',
+        repo: 'test-repo',
+      },
       branchName: 'issue-42-test-issue',
-      repoPath: '/tmp/codex-abc123',
+      workspacePath: '/tmp/prepare-run-abc123',
+      development: {
+        status: 'completed',
+        summary: 'Codex completed successfully.',
+      },
+      quality: {
+        status: 'passed',
+        summary: 'Quality gate deferred for this iteration.',
+      },
+      review: {
+        status: 'stubbed',
+        summary: 'Review deferred for this iteration.',
+      },
     },
   } as unknown as Job<MakePrJobData>;
 }
@@ -115,70 +135,9 @@ describe('make-pr job', () => {
     mockJobQueueAdd.mockResolvedValue(undefined);
   });
 
-  it('should commit, push, create a pull request, transition labels, and enqueue check-pr when changes exist', async () => {
+  it('should finalize reviewed target-stage data from the received workspace path', async () => {
     const mockSpawn = vi.mocked(spawn);
-    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
-      if (cmd === 'git' && args[0] === 'status') {
-        return createGitMockProcess(0, 'M modified-file.txt');
-      }
-      return createGitMockProcess();
-    });
-    const job = createJob();
-
-    await processMakePr(job);
-
-    expect(mockSpawn).toHaveBeenCalledWith('git', ['status', '--porcelain'], { cwd: '/tmp/codex-abc123' });
-    expect(mockSpawn).toHaveBeenCalledWith('git', ['add', '-A'], { cwd: '/tmp/codex-abc123' });
-    expect(mockSpawn).toHaveBeenCalledWith(
-      'git',
-      ['commit', '-m', 'Processed issue #42 via codex: Test Issue'],
-      { cwd: '/tmp/codex-abc123' }
-    );
-    expect(mockSpawn).toHaveBeenCalledWith(
-      'git',
-      ['push', 'https://test-token@github.com/test-owner/test-repo.git', 'issue-42-test-issue'],
-      { cwd: '/tmp/codex-abc123' }
-    );
-    expect(mockCreatePullRequest).toHaveBeenCalledWith({
-      title: 'Process issue #42: Test Issue',
-      head: 'issue-42-test-issue',
-      base: 'main',
-      body: 'Closes #42',
-    });
-    expect(mockMoveIssueToInReview).toHaveBeenCalledWith(42);
-    expect(mockJobQueueAdd).toHaveBeenCalledWith('check-pr', {
-      taskId: 'task-make-pr',
-      type: 'check-pr',
-      issue: job.data.issue,
-      branchName: 'issue-42-test-issue',
-      repoPath: '/tmp/codex-abc123',
-      pullRequest: {
-        number: 7,
-        htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
-      },
-    });
-    expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
-  });
-
-  it('should skip finalization, clean up directly, and not enqueue check-pr when no changes exist', async () => {
-    const mockSpawn = vi.mocked(spawn);
-    mockSpawn.mockReturnValue(createGitMockProcess(0, ''));
-    const job = createJob();
-
-    await processMakePr(job);
-
-    expect(mockSpawn).toHaveBeenCalledWith('git', ['status', '--porcelain'], { cwd: '/tmp/codex-abc123' });
-    expect(mockSpawn.mock.calls.filter(([, args]) => args[0] === 'add')).toHaveLength(0);
-    expect(mockSpawn.mock.calls.filter(([, args]) => args[0] === 'push')).toHaveLength(0);
-    expect(mockCreatePullRequest).not.toHaveBeenCalled();
-    expect(mockMoveIssueToInReview).not.toHaveBeenCalled();
-    expect(mockJobQueueAdd).not.toHaveBeenCalled();
-    expect(mockCleanupWorkingDir).toHaveBeenCalledWith('/tmp/codex-abc123');
-  });
-
-  it('should expose work that creates pull request data without enqueueing check-pr', async () => {
-    const mockSpawn = vi.mocked(spawn);
-    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
+    mockSpawn.mockImplementation((cmd: string, args: readonly string[]) => {
       if (cmd === 'git' && args[0] === 'status') {
         return createGitMockProcess(0, 'M modified-file.txt');
       }
@@ -188,6 +147,7 @@ describe('make-pr job', () => {
 
     const result = await runMakePrWork(job);
 
+    expect(spawn).toHaveBeenCalledWith('git', ['status', '--porcelain'], { cwd: '/tmp/prepare-run-abc123' });
     expect(result).toEqual({
       status: 'pull-request-created',
       pullRequest: {
@@ -195,13 +155,25 @@ describe('make-pr job', () => {
         htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
       },
     });
-    expect(mockJobQueueAdd).not.toHaveBeenCalled();
-    expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
   });
 
-  it('should expose flow that schedules check-pr with unchanged data after pull request creation', async () => {
+  it('should skip finalization, clean up directly, and not enqueue sync-tracker-state when no changes exist', async () => {
     const mockSpawn = vi.mocked(spawn);
-    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
+    mockSpawn.mockReturnValue(createGitMockProcess(0, ''));
+    const job = createJob();
+
+    await processMakePr(job);
+
+    expect(mockSpawn).toHaveBeenCalledWith('git', ['status', '--porcelain'], { cwd: '/tmp/prepare-run-abc123' });
+    expect(mockCreatePullRequest).not.toHaveBeenCalled();
+    expect(mockMoveIssueToInReview).not.toHaveBeenCalled();
+    expect(mockJobQueueAdd).not.toHaveBeenCalled();
+    expect(mockCleanupWorkingDir).toHaveBeenCalledWith('/tmp/prepare-run-abc123');
+  });
+
+  it('should commit, push, create a pull request, and enqueue sync-tracker-state when changes exist', async () => {
+    const mockSpawn = vi.mocked(spawn);
+    mockSpawn.mockImplementation((cmd: string, args: readonly string[]) => {
       if (cmd === 'git' && args[0] === 'status') {
         return createGitMockProcess(0, 'M modified-file.txt');
       }
@@ -211,22 +183,45 @@ describe('make-pr job', () => {
 
     await runMakePrFlow(job);
 
-    expect(mockJobQueueAdd).toHaveBeenCalledWith('check-pr', {
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'git',
+      ['commit', '-m', 'Processed issue #42 via codex: Test Issue'],
+      { cwd: '/tmp/prepare-run-abc123' }
+    );
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'git',
+      ['push', 'https://test-token@github.com/test-owner/test-repo.git', 'issue-42-test-issue'],
+      { cwd: '/tmp/prepare-run-abc123' }
+    );
+    expect(mockCreatePullRequest).toHaveBeenCalledWith({
+      title: 'Process issue #42: Test Issue',
+      head: 'issue-42-test-issue',
+      base: 'main',
+      body: 'Closes #42',
+    });
+    expect(mockMoveIssueToInReview).not.toHaveBeenCalled();
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('sync-tracker-state', {
       taskId: 'task-make-pr',
-      type: 'check-pr',
+      type: 'sync-tracker-state',
+      runId: 'run-123',
+      stage: 'sync-tracker-state',
+      stageAttempt: 1,
+      reworkAttempt: 0,
       issue: job.data.issue,
+      repository: job.data.repository,
       branchName: 'issue-42-test-issue',
-      repoPath: '/tmp/codex-abc123',
+      workspacePath: '/tmp/prepare-run-abc123',
       pullRequest: {
         number: 7,
         htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
       },
     });
+    expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
   });
 
-  it('should fail without enqueueing check-pr when push fails', async () => {
+  it('should fail without enqueueing sync-tracker-state when push fails', async () => {
     const mockSpawn = vi.mocked(spawn);
-    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
+    mockSpawn.mockImplementation((cmd: string, args: readonly string[]) => {
       if (cmd === 'git' && args[0] === 'status') {
         return createGitMockProcess(0, 'M modified-file.txt');
       }
@@ -241,36 +236,6 @@ describe('make-pr job', () => {
 
     expect(mockCreatePullRequest).not.toHaveBeenCalled();
     expect(mockJobQueueAdd).not.toHaveBeenCalled();
-    expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
-  });
-
-  it('should warn without failing when label transition fails', async () => {
-    const mockSpawn = vi.mocked(spawn);
-    const mockLogger = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() };
-    mockCreateJobLogger.mockReturnValue(mockLogger);
-    mockSpawn.mockImplementation((cmd: string, args: string[]) => {
-      if (cmd === 'git' && args[0] === 'status') {
-        return createGitMockProcess(0, 'M modified-file.txt');
-      }
-      return createGitMockProcess();
-    });
-    mockMoveIssueToInReview.mockRejectedValue(new Error('label update failed'));
-    const job = createJob();
-
-    await processMakePr(job);
-
-    expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('Failed to update labels'));
-    expect(mockJobQueueAdd).toHaveBeenCalledWith('check-pr', {
-      taskId: 'task-make-pr',
-      type: 'check-pr',
-      issue: job.data.issue,
-      branchName: 'issue-42-test-issue',
-      repoPath: '/tmp/codex-abc123',
-      pullRequest: {
-        number: 7,
-        htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
-      },
-    });
     expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
   });
 

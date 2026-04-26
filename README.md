@@ -85,15 +85,16 @@ Current high-level flow:
 
 ```text
 GitHub polling intake
-  -> issue-watcher job
+  -> intake job
       -> BullMQ queue
-          -> issue-processor job
+          -> prepare-run job
               -> BullMQ queue
-                  -> codex-provider job
-                      -> commit/push/PR steps
+                  -> assess -> plan -> develop -> quality-gate -> review
+                      -> make-pr
+                          -> sync-tracker-state when a PR is created
 ```
 
-For example, `issue-processor` receives a `GitHubIssue`, creates or verifies `issue-{number}-{slugified-title}`, then enqueues `codex-provider` with the same issue plus `branchName`. If a worker is available, BullMQ may run the next job almost immediately; otherwise it remains queued until worker capacity is available.
+Every workflow stage payload includes `runId`, `stage`, `stageAttempt`, and `reworkAttempt`. For example, `prepare-run` receives a `GitHubIssue`, creates or verifies `issue-{number}-{slugified-title}`, prepares a local workspace, then enqueues `assess` with the same run, issue, repository, branch, workspace, and attempt data. If a worker is available, BullMQ may run the next job almost immediately; otherwise it remains queued until worker capacity is available.
 
 ### HTTP Framework
 
@@ -101,7 +102,7 @@ Fastify v5 is used as the HTTP framework due to its performance and TypeScript c
 
 ### Intake
 
-Issues are received through polling. A repeatable `issue-watcher` job periodically fetches open GitHub issues labeled `ready`, using registered repositories from Redis or the configured `GITHUB_OWNER` and `GITHUB_REPO` fallback.
+Issues are received through polling. A repeatable `intake` job periodically fetches open GitHub issues labeled `ready`, using registered repositories from Redis or the configured `GITHUB_OWNER` and `GITHUB_REPO` fallback.
 
 ### Background Job Processing
 
@@ -114,9 +115,14 @@ BullMQ v5 with Redis provides the background job infrastructure:
 The current job flow is:
 
 1. Intake
-2. Job queue
-3. Issue processor: logs issue details, creates or reuses `issue-{number}-{slugified-title}`, then enqueues Codex
-4. Codex provider: clones the repo into a temp directory, checks out the issue branch, runs Codex CLI, commits and pushes changes if present, opens a PR, then attempts to update labels
+2. Prepare Run: creates the run identity, creates or reuses `issue-{number}-{slugified-title}`, prepares the local workspace, then enqueues Assess
+3. Assess: currently produces stub assessment data and enqueues Plan
+4. Plan: currently produces stub plan data and enqueues Develop
+5. Develop: runs Codex CLI in the prepared workspace and enqueues Quality Gate
+6. Quality Gate: currently produces a stub passing quality result and enqueues Review
+7. Review: currently produces stub review data and enqueues Make PR
+8. Make PR: commits, pushes, and opens a PR when changes exist; no-change runs clean up and finish here
+9. Sync Tracker State: after a PR is created, attempts to move labels from `ready` to `in review` and performs terminal workspace cleanup
 
 ## Features
 
@@ -132,10 +138,11 @@ When an issue is queued:
 
 1. The issue is logged
 2. A branch is created or reused: `issue-{number}-{slugified-title}`
-3. A `codex-provider` job is enqueued
-4. Codex CLI is run with the issue title and body as the prompt
-5. If Codex changes files, the job commits, pushes, creates a PR with body `Closes #{number}`, and attempts to replace `ready` with `in review`
-6. If Codex makes no changes, commit, push, and PR creation are skipped
+3. The prepared workspace flows through Assess and Plan into Develop
+4. Codex CLI is run with the issue title, body, and available plan context as the prompt
+5. If Codex changes files, Make PR commits, pushes, and creates a PR with body `Closes #{number}`
+6. If Codex makes no changes, Make PR skips commit, push, PR creation, and tracker synchronization
+7. When a PR is created, Sync Tracker State attempts to replace `ready` with `in review`
 
 ### API Endpoints
 
@@ -187,12 +194,14 @@ A single worker handles multiple job types via a switch statement in `src/index.
 ```typescript
 export async function multiHandler(job: Job<JobPayload>): Promise<void> {
   switch (job.data.type) {
-    case 'issue-processor':
-      return issueProcessorHandler(job as Job<IssueProcessorJobData>);
-    case 'issue-watcher':
-      return issueWatcherHandler(job as Job<IssueWatcherJobData>);
-    case 'codex-provider':
-      return codexProviderHandler(job as Job<CodexProviderJobData>);
+    case 'intake':
+      return intakeHandler(job as Job<IntakeJobData>);
+    case 'prepare-run':
+      return prepareRunHandler(job as Job<PrepareRunJobData>);
+    case 'develop':
+      return developHandler(job as Job<DevelopJobData>);
+    case 'sync-tracker-state':
+      return syncTrackerStateHandler(job as Job<SyncTrackerStateJobData>);
     default:
       throw new Error(`Unknown job type: ${job.data.type}`);
   }
@@ -201,9 +210,9 @@ export async function multiHandler(job: Job<JobPayload>): Promise<void> {
 
 ### Repeatable Jobs and Redis Timestamp Storage
 
-BullMQ repeatable jobs have static job data. To track dynamic state (last poll time), the issue watcher stores the timestamp in Redis:
+BullMQ repeatable jobs have static job data. To track dynamic state (last poll time), Intake stores the timestamp in Redis:
 ```typescript
-const LAST_POLL_KEY = 'github:issue-watcher:last-poll';
+const LAST_POLL_KEY = 'github:intake:last-poll';
 // Store after fetching
 await redisClient.set(LAST_POLL_KEY, new Date().toISOString());
 // Read before fetching
@@ -326,8 +335,15 @@ src/
     queue.ts               - BullMQ Queue and QueueEvents configuration
     worker.ts              - BullMQ Worker factory with logging middleware
     logger.ts              - Job-specific logging helper
-    issue-watcher.ts        - Polling-based GitHub issue watcher (repeatable job)
-    issue-processor.ts      - Issue processing job (logs issue, creates branch and PR)
+    intake.ts              - Polling-based GitHub issue intake (repeatable job)
+    prepare-run.ts         - Run bootstrap, branch setup, and workspace preparation
+    assess.ts              - Stub-safe assessment stage
+    plan.ts                - Stub-safe planning stage
+    develop.ts             - Codex CLI executor stage
+    quality-gate.ts        - Stub-safe quality gate stage
+    review.ts              - Stub-safe review stage
+    make-pr.ts             - Commit, push, and pull request creation
+    sync-tracker-state.ts  - Post-PR tracker synchronization and cleanup
   github/
     index.ts               - GitHub API client exports
     types.ts               - GitHub-specific TypeScript types

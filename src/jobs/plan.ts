@@ -1,30 +1,28 @@
 import type { Job } from 'bullmq';
-import type { CodexProviderJobData, PlanJobData } from '../types/index.js';
+import type { DevelopJobData, PlanJobData } from '../types/index.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
 import { scheduleNextJob } from './orchestration.js';
+import { createForwardStagePayload } from './stage-payloads.js';
 
-export async function runPlanWork(job: Job<PlanJobData>): Promise<CodexProviderJobData> {
-  const { issue, branchName } = job.data;
+const STUB_PLAN = {
+  status: 'stubbed',
+  summary: 'Planning deferred for this iteration.',
+} as const;
 
-  return {
-    taskId: job.data.taskId,
-    type: 'codex-provider',
-    issue,
-    branchName,
-  };
+export async function runPlanWork(job: Job<PlanJobData>): Promise<DevelopJobData> {
+  return createForwardStagePayload(job.data, 'develop', {
+    plan: STUB_PLAN,
+  }) as DevelopJobData;
 }
 
 export async function runPlanFlow(job: Job<PlanJobData>): Promise<void> {
   const logger = createJobLogger(job);
-  const { issue, branchName } = job.data;
+  logger.info(`Planning issue #${job.data.issue.number} on branch ${job.data.branchName}`);
 
-  logger.info(`Planning issue #${issue.number} on branch ${branchName}`);
-
-  const codexJobData = await runPlanWork(job);
-
-  await scheduleNextJob(jobQueue, 'codex-provider', codexJobData);
-  logger.info(`Codex provider job enqueued for branch: ${branchName}`);
+  const developJobData = await runPlanWork(job);
+  await scheduleNextJob(jobQueue, 'develop', developJobData);
+  logger.info(`Develop job enqueued for branch: ${developJobData.branchName}`);
 }
 
 export const processPlan = runPlanFlow;

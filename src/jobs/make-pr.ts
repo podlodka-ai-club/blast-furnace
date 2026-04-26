@@ -1,8 +1,7 @@
 import { spawn } from 'child_process';
 import type { Job } from 'bullmq';
-import type { CheckPrJobData, MakePrJobData } from '../types/index.js';
+import type { MakePrJobData, SyncTrackerStateJobData } from '../types/index.js';
 import { createPullRequest } from '../github/pullRequests.js';
-import { moveIssueToInReview } from '../github/issue-labels.js';
 import { cleanupWorkingDir, getRepoRemoteUrl } from '../utils/working-dir.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
@@ -56,7 +55,7 @@ async function pushWithRetry(
 
 export type MakePrWorkResult =
   | { status: 'no-changes' }
-  | { status: 'pull-request-created'; pullRequest: CheckPrJobData['pullRequest'] };
+  | { status: 'pull-request-created'; pullRequest: SyncTrackerStateJobData['pullRequest'] };
 
 function sanitizeForGit(text: string, maxLength = 200): string {
   return text.replace(/[\r\n]/g, ' ').slice(0, maxLength);
@@ -66,29 +65,29 @@ export async function runMakePrWork(
   job: Job<MakePrJobData>,
   logger = createJobLogger(job)
 ): Promise<MakePrWorkResult> {
-  const { issue, branchName, repoPath } = job.data;
+  const { issue, branchName, workspacePath } = job.data;
 
   logger.info(`Finalizing issue #${issue.number} on branch ${branchName}`);
 
-  const status = await execGitCommand(['status', '--porcelain'], repoPath);
+  const status = await execGitCommand(['status', '--porcelain'], workspacePath);
 
   if (!status) {
-    logger.info('No changes detected, skipping commit, push, pull request, and label transition');
+    logger.info('No changes detected, skipping commit, push, pull request, and tracker synchronization');
     return { status: 'no-changes' };
   }
 
   logger.info('Changes detected, committing...');
-  await execGitCommand(['add', '-A'], repoPath);
+  await execGitCommand(['add', '-A'], workspacePath);
 
   const sanitizedTitle = sanitizeForGit(issue.title);
   const commitResult = await execGitCommand(
     ['commit', '-m', `Processed issue #${issue.number} via codex: ${sanitizedTitle}`],
-    repoPath
+    workspacePath
   );
   logger.info(`Changes committed: ${commitResult}`);
 
   logger.info('Pushing changes to remote branch...');
-  await pushWithRetry(getRepoRemoteUrl(), branchName, repoPath, logger);
+  await pushWithRetry(getRepoRemoteUrl(), branchName, workspacePath, logger);
   logger.info(`Changes pushed to ${branchName}`);
 
   logger.info('Creating pull request...');
@@ -100,13 +99,6 @@ export async function runMakePrWork(
   });
   logger.info(`Pull request created: ${prResult.htmlUrl}`);
 
-  try {
-    const updatedLabels = await moveIssueToInReview(issue.number);
-    logger.info(`Issue #${issue.number} labels updated: ${updatedLabels.join(', ')}`);
-  } catch (err) {
-    logger.warn(`Failed to update labels for issue #${issue.number}: ${err}`);
-  }
-
   return {
     status: 'pull-request-created',
     pullRequest: prResult,
@@ -115,26 +107,31 @@ export async function runMakePrWork(
 
 export async function runMakePrFlow(job: Job<MakePrJobData>): Promise<void> {
   const logger = createJobLogger(job);
-  const { issue, branchName, repoPath } = job.data;
+  const { issue, repository, branchName, workspacePath, runId, reworkAttempt } = job.data;
 
   try {
     const result = await runMakePrWork(job, logger);
 
     if (result.status === 'no-changes') {
-      logger.info(`Cleaning up temp working directory: ${repoPath}`);
-      await cleanupWorkingDir(repoPath);
+      logger.info(`Cleaning up temp working directory: ${workspacePath}`);
+      await cleanupWorkingDir(workspacePath);
       return;
     }
 
-    const checkPrJobData: CheckPrJobData = {
+    const syncTrackerStateJobData: SyncTrackerStateJobData = {
       taskId: job.data.taskId,
-      type: 'check-pr',
+      type: 'sync-tracker-state',
+      runId,
+      stage: 'sync-tracker-state',
+      stageAttempt: 1,
+      reworkAttempt,
       issue,
+      repository,
       branchName,
-      repoPath,
+      workspacePath,
       pullRequest: result.pullRequest,
     };
-    await scheduleNextJob(jobQueue, 'check-pr', checkPrJobData);
+    await scheduleNextJob(jobQueue, 'sync-tracker-state', syncTrackerStateJobData);
   } catch (err) {
     logger.error(`Make PR operation failed: ${err}`);
     throw err;

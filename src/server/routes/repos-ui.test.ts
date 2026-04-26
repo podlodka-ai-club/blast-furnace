@@ -13,8 +13,8 @@ vi.mock('../../config/index.js', () => ({
   },
 }));
 
-// Mock REPO_LIST_KEY from issue-watcher
-vi.mock('../../jobs/issue-watcher.js', () => ({
+// Mock REPO_LIST_KEY from intake
+vi.mock('../../jobs/intake.js', () => ({
   REPO_LIST_KEY: 'github:repos',
 }));
 

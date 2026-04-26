@@ -37,8 +37,21 @@ function createJob(issue = createIssue()): Job<PlanJobData> {
     data: {
       taskId: 'task-plan',
       type: 'plan',
+      runId: 'run-123',
+      stage: 'plan',
+      stageAttempt: 1,
+      reworkAttempt: 0,
       issue,
+      repository: {
+        owner: 'test-owner',
+        repo: 'test-repo',
+      },
       branchName: 'issue-42-test-issue',
+      workspacePath: '/tmp/prepare-run-abc123',
+      assessment: {
+        status: 'stubbed',
+        summary: 'Assessment deferred for this iteration.',
+      },
     },
   } as unknown as Job<PlanJobData>;
 }
@@ -55,46 +68,39 @@ describe('plan job', () => {
     mockJobQueueAdd.mockResolvedValue(undefined);
   });
 
-  it('should enqueue codex-provider with received issue and branch data unchanged', async () => {
-    const { processPlan } = await import('./plan.js');
-    const job = createJob();
-
-    await processPlan(job);
-
-    expect(mockJobQueueAdd).toHaveBeenCalledWith('codex-provider', {
-      taskId: 'task-plan',
-      type: 'codex-provider',
-      issue: job.data.issue,
-      branchName: 'issue-42-test-issue',
-    });
-  });
-
-  it('should expose work that returns codex-provider data without enqueueing', async () => {
+  it('should preserve assessed run data and produce stub plan data', async () => {
     const { runPlanWork } = await import('./plan.js');
     const job = createJob();
 
     const result = await runPlanWork(job);
 
     expect(result).toEqual({
-      taskId: 'task-plan',
-      type: 'codex-provider',
-      issue: job.data.issue,
-      branchName: 'issue-42-test-issue',
+      ...job.data,
+      type: 'develop',
+      stage: 'develop',
+      stageAttempt: 1,
+      plan: {
+        status: 'stubbed',
+        summary: 'Planning deferred for this iteration.',
+      },
     });
-    expect(mockJobQueueAdd).not.toHaveBeenCalled();
   });
 
-  it('should expose flow that schedules the codex-provider transition', async () => {
+  it('should enqueue develop with plan output', async () => {
     const { runPlanFlow } = await import('./plan.js');
     const job = createJob();
 
     await runPlanFlow(job);
 
-    expect(mockJobQueueAdd).toHaveBeenCalledWith('codex-provider', {
-      taskId: 'task-plan',
-      type: 'codex-provider',
-      issue: job.data.issue,
-      branchName: 'issue-42-test-issue',
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('develop', {
+      ...job.data,
+      type: 'develop',
+      stage: 'develop',
+      stageAttempt: 1,
+      plan: {
+        status: 'stubbed',
+        summary: 'Planning deferred for this iteration.',
+      },
     });
   });
 

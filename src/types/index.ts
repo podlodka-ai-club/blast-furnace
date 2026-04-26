@@ -34,7 +34,19 @@ export interface StageResult {
 
 // Orchestration infrastructure types
 export type RunId = string;
-export type StageName = 'issue-processor' | 'plan' | 'codex-provider' | 'review' | 'make-pr' | 'check-pr' | string;
+export const WORKFLOW_STAGES = [
+  'intake',
+  'prepare-run',
+  'assess',
+  'plan',
+  'develop',
+  'quality-gate',
+  'review',
+  'make-pr',
+  'sync-tracker-state',
+] as const;
+export type WorkflowStage = (typeof WORKFLOW_STAGES)[number];
+export type StageName = WorkflowStage;
 export type AttemptNumber = number;
 
 export interface StageAttemptLocation {
@@ -166,53 +178,105 @@ export interface JobPayload {
   payload?: Record<string, unknown>;
 }
 
-// Job data types for issue processing
-export interface IssueProcessorJobData extends JobPayload {
-  type: 'issue-processor';
-  issue: GitHubIssue;
+export interface StageJobPayload<TStage extends WorkflowStage = WorkflowStage> extends JobPayload {
+  type: TStage;
+  runId: RunId;
+  stage: TStage;
+  stageAttempt: number;
+  reworkAttempt: number;
 }
 
-export interface IssueWatcherJobData extends JobPayload {
-  type: 'issue-watcher';
+export interface RepositoryIdentity {
+  owner: string;
+  repo: string;
+}
+
+export interface AssessmentResult {
+  status: 'stubbed';
+  summary: string;
+}
+
+export interface PlanResult {
+  status: 'stubbed';
+  summary: string;
+}
+
+export interface DevelopmentResult {
+  status: 'completed';
+  summary: string;
+}
+
+export interface QualityGateResult {
+  status: 'passed';
+  summary: string;
+}
+
+export interface ReviewResult {
+  status: 'stubbed';
+  summary: string;
+}
+
+// Job data types for the target workflow stages
+export interface IntakeJobData extends StageJobPayload<'intake'> {
   lastPollTimestamp?: string;
   owner?: string;
   repo?: string;
 }
 
+export interface PrepareRunJobData extends StageJobPayload<'prepare-run'> {
+  issue: GitHubIssue;
+  repository: RepositoryIdentity;
+}
+
+export interface PreparedRunFields {
+  issue: GitHubIssue;
+  repository: RepositoryIdentity;
+  branchName: string;
+  workspacePath: string;
+}
+
+export interface AssessJobData extends StageJobPayload<'assess'>, PreparedRunFields {}
+
+export interface PlanJobData extends StageJobPayload<'plan'>, PreparedRunFields {
+  assessment: AssessmentResult;
+}
+
+export interface DevelopJobData extends StageJobPayload<'develop'>, PreparedRunFields {
+  assessment: AssessmentResult;
+  plan: PlanResult;
+}
+
+export interface QualityGateJobData extends StageJobPayload<'quality-gate'>, PreparedRunFields {
+  assessment: AssessmentResult;
+  plan: PlanResult;
+  development: DevelopmentResult;
+}
+
+export interface ReviewJobData extends StageJobPayload<'review'>, PreparedRunFields {
+  assessment: AssessmentResult;
+  plan: PlanResult;
+  development: DevelopmentResult;
+  quality: QualityGateResult;
+}
+
+export interface MakePrJobData extends StageJobPayload<'make-pr'> {
+  issue: GitHubIssue;
+  repository: RepositoryIdentity;
+  branchName: string;
+  workspacePath: string;
+  development: DevelopmentResult;
+  quality: QualityGateResult;
+  review: ReviewResult;
+}
+
+export interface SyncTrackerStateJobData extends StageJobPayload<'sync-tracker-state'> {
+  issue: GitHubIssue;
+  repository: RepositoryIdentity;
+  branchName: string;
+  workspacePath: string;
+  pullRequest: PullRequestResponse;
+}
+
 export interface RepoWatcherJobData extends JobPayload {
   type: 'repo-watcher';
-}
-
-export interface CodexProviderJobData extends JobPayload {
-  type: 'codex-provider';
-  issue: GitHubIssue;
-  branchName: string;
-}
-
-export interface PlanJobData extends JobPayload {
-  type: 'plan';
-  issue: GitHubIssue;
-  branchName: string;
-}
-
-export interface ReviewJobData extends JobPayload {
-  type: 'review';
-  issue: GitHubIssue;
-  branchName: string;
-  repoPath: string;
-}
-
-export interface MakePrJobData extends JobPayload {
-  type: 'make-pr';
-  issue: GitHubIssue;
-  branchName: string;
-  repoPath: string;
-}
-
-export interface CheckPrJobData extends JobPayload {
-  type: 'check-pr';
-  issue: GitHubIssue;
-  branchName: string;
-  repoPath: string;
-  pullRequest: PullRequestResponse;
 }

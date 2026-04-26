@@ -42,9 +42,15 @@ src/
     queue.ts         - BullMQ Queue and QueueEvents configuration
     worker.ts        - BullMQ Worker factory with logging middleware
     logger.ts        - Job-specific logging helper
-    issue-watcher.ts - Polling-based GitHub issue watcher (repeatable job)
-    issue-processor.ts - Shared issue processing job (logs issue, enqueues codex provider)
-    codex-provider.ts - AI-assisted codex-cli job handler
+    intake.ts - Polling-based GitHub issue intake (repeatable job)
+    prepare-run.ts - Run bootstrap, branch setup, and workspace preparation
+    assess.ts - Stub-safe assessment stage
+    plan.ts - Stub-safe planning stage
+    develop.ts - Codex CLI executor stage
+    quality-gate.ts - Stub-safe quality gate stage
+    review.ts - Stub-safe review stage
+    make-pr.ts - Commit, push, and pull request creation
+    sync-tracker-state.ts - Post-PR tracker synchronization and cleanup
   github/
     index.ts         - GitHub API client exports
     types.ts         - GitHub-specific TypeScript types
@@ -64,7 +70,7 @@ Defined in `src/types/index.ts`:
 - `GitHubIssue`, `GitHubComment`, `GitHubRepo`
 - `AppConfig`, `RedisConfig`, `GitHubConfig`
 - `JobPayload`
-- `IssueProcessorJobData`, `IssueWatcherJobData`, `RepoWatcherJobData`, `CodexProviderJobData` (job data types)
+- `WorkflowStage`, `StageJobPayload`, `IntakeJobData`, `PrepareRunJobData`, `AssessJobData`, `PlanJobData`, `DevelopJobData`, `QualityGateJobData`, `ReviewJobData`, `MakePrJobData`, `SyncTrackerStateJobData` (job data types)
 - `RepoListResponse` (API response type)
 
 ## Configuration
@@ -100,6 +106,8 @@ The project uses Docker Compose to run Redis locally. See `docs/docker.md` for d
 - `./scripts/stop.sh` - Stop Redis and the dev server
 - `docker-compose up -d` - Start Redis only
 - `docker-compose down` - Stop Redis only
+
+Runtime note for Codex: `./scripts/start.sh` needs Docker socket access and local server networking. When asked to run the server through this script, request escalated execution immediately instead of first trying the sandboxed command. Health checks against `http://127.0.0.1:3000/health` may also need escalated execution if sandbox networking cannot see the local port.
 
 ## Conventions
 

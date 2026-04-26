@@ -1,32 +1,38 @@
 import { buildServer, startServer } from './server/index.js';
 import { config } from './config/index.js';
 import { closeQueue, closeWorker, createWorker } from './jobs/index.js';
-import { issueProcessorHandler } from './jobs/issue-processor.js';
-import { codexProviderHandler } from './jobs/codex-provider.js';
-import { makePrHandler } from './jobs/make-pr.js';
-import { checkPrHandler } from './jobs/check-pr.js';
+import { intakeHandler, startIntake, closeIntakeRedis } from './jobs/intake.js';
+import { prepareRunHandler } from './jobs/prepare-run.js';
+import { assessHandler } from './jobs/assess.js';
 import { planHandler } from './jobs/plan.js';
+import { developHandler } from './jobs/develop.js';
+import { qualityGateHandler } from './jobs/quality-gate.js';
 import { reviewHandler } from './jobs/review.js';
-import { closeIssueWatcherRedis, issueWatcherHandler, startIssueWatcher } from './jobs/issue-watcher.js';
+import { makePrHandler } from './jobs/make-pr.js';
+import { syncTrackerStateHandler } from './jobs/sync-tracker-state.js';
 let server;
 let worker;
 let isShuttingDown = false;
 export async function multiHandler(job) {
     switch (job.data.type) {
-        case 'issue-processor':
-            return issueProcessorHandler(job);
-        case 'issue-watcher':
-            return issueWatcherHandler(job);
+        case 'intake':
+            return intakeHandler(job);
+        case 'prepare-run':
+            return prepareRunHandler(job);
+        case 'assess':
+            return assessHandler(job);
         case 'plan':
             return planHandler(job);
-        case 'codex-provider':
-            return codexProviderHandler(job);
+        case 'develop':
+            return developHandler(job);
+        case 'quality-gate':
+            return qualityGateHandler(job);
         case 'review':
             return reviewHandler(job);
         case 'make-pr':
             return makePrHandler(job);
-        case 'check-pr':
-            return checkPrHandler(job);
+        case 'sync-tracker-state':
+            return syncTrackerStateHandler(job);
         default:
             throw new Error(`Unknown job type: ${job.data.type}`);
     }
@@ -43,7 +49,7 @@ async function main() {
     }
     server = await buildServer({ logger: true });
     await startServer(server, config.port);
-    await startIssueWatcher();
+    await startIntake();
     worker = createWorker(multiHandler);
 }
 async function shutdown(signal) {
@@ -84,11 +90,11 @@ async function shutdown(signal) {
         console.error('Error closing queue:', shutdownError);
     }
     try {
-        await closeIssueWatcherRedis();
+        await closeIntakeRedis();
     }
     catch (err) {
         shutdownError = err instanceof Error ? err : new Error(String(err));
-        console.error('Error closing issue watcher Redis:', shutdownError);
+        console.error('Error closing intake Redis:', shutdownError);
     }
     clearTimeout(timeout);
     process.exit(shutdownError ? 1 : 0);

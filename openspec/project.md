@@ -69,11 +69,11 @@ Longer-term product direction is an agent development pipeline with deterministi
 ## Domain Context
 - The domain is agent-assisted software development orchestration.
 - GitHub Issues are the primary task intake mechanism.
-- A task arrives through polling by the repeatable `issue-watcher` job.
+- A task arrives through polling by the repeatable `intake` job.
 - Repository polling can be configured through Redis-backed repository CRUD endpoints and the `/repos/manage` HTML UI.
-- The current processing flow is issue intake, queueing, issue processor, Codex provider, optional commit/push/PR, then label transition.
-- Important job payload types are `IssueWatcherJobData`, `IssueProcessorJobData`, `RepoWatcherJobData`, and `CodexProviderJobData`.
-- The future pipeline direction is `Intake -> Assess -> Plan -> Develop -> Quality gate -> Review -> Draft PR -> Move to in review`.
+- The current processing flow is `Intake -> Prepare Run -> Assess -> Plan -> Develop -> Quality Gate -> Review -> Make PR -> Sync Tracker State`.
+- Important job payload types are `StageJobPayload`, `IntakeJobData`, `PrepareRunJobData`, `AssessJobData`, `PlanJobData`, `DevelopJobData`, `QualityGateJobData`, `ReviewJobData`, `MakePrJobData`, and `SyncTrackerStateJobData`.
+- The future pipeline direction builds on this sequence with durable artifact handoff, substantive assessment/planning/quality/review behavior, and rework loops.
 - Future pipeline handoffs should be represented by durable artifacts rather than in-memory process state.
 - When an issue is under-specified, the preferred future behavior is to comment with specific questions and stop rather than fabricate a low-confidence PR.
 
