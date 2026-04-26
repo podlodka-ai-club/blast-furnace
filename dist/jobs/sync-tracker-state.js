@@ -1,8 +1,10 @@
 import { moveIssueToInReview } from '../github/issue-labels.js';
+import { assertConfiguredRepository } from '../github/repository.js';
 import { cleanupWorkingDir } from '../utils/working-dir.js';
 import { createJobLogger } from './logger.js';
 export async function runSyncTrackerStateWork(job, logger = createJobLogger(job)) {
-    const { issue, branchName, pullRequest } = job.data;
+    const { issue, repository, branchName, pullRequest } = job.data;
+    assertConfiguredRepository(repository);
     logger.info(`Synchronizing tracker state for PR #${pullRequest.number} on branch ${branchName}`);
     try {
         const updatedLabels = await moveIssueToInReview(issue.number);

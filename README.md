@@ -4,7 +4,7 @@ Agent Orchestrator server that receives GitHub Issues through polling and proces
 
 ## Overview
 
-Blast Furnace is a continuous-running server that watches GitHub repositories for new issues using polling intake. When an issue is discovered, it is queued for processing, which logs the issue details, creates a new branch based on the issue, and opens a pull request.
+Blast Furnace is a continuous-running server that watches one configured GitHub repository for new issues using polling intake. When an issue is discovered, it is queued for processing, which logs the issue details, creates a new branch based on the issue, and opens a pull request.
 
 ## Prerequisites
 
@@ -79,7 +79,7 @@ The orchestrator is built as a queue-driven pipeline. Each major stage runs as a
 
 Redis is the shared persistence layer behind this model:
 - BullMQ stores queued jobs, retry state, and stage payloads in Redis
-- The application stores supporting state in Redis, such as the last poll timestamp and registered repositories
+- The application stores supporting state in Redis, such as the last poll timestamp
 
 Current high-level flow:
 
@@ -102,7 +102,7 @@ Fastify v5 is used as the HTTP framework due to its performance and TypeScript c
 
 ### Intake
 
-Issues are received through polling. A repeatable `intake` job periodically fetches open GitHub issues labeled `ready`, using registered repositories from Redis or the configured `GITHUB_OWNER` and `GITHUB_REPO` fallback.
+Issues are received through polling. A repeatable `intake` job periodically fetches open GitHub issues labeled `ready` from the repository configured by `GITHUB_OWNER` and `GITHUB_REPO`.
 
 ### Background Job Processing
 
@@ -150,26 +150,6 @@ When an issue is queued:
 
 - Returns server health status with timestamp and uptime in seconds
 - Response: `{ "status": "ok", "timestamp": "2026-04-22T00:00:00.000Z", "uptime": 1234 }`
-
-**GET /repos**
-
-- Lists repositories registered for polling
-- Response: `{ "repos": [...], "total": 1 }`
-
-**POST /repos**
-
-- Adds a repository to the Redis-backed polling list
-- Request body: `{ "owner": "octocat", "repo": "hello-world" }`
-- Returns 201 on success, 409 when already registered
-
-**DELETE /repos/:owner/:repo**
-
-- Removes a repository from the polling list
-- Returns 200 on success, 404 when the repository is not registered
-
-**GET /repos/manage**
-
-- Serves a small HTML UI for adding, listing, and removing repositories in the polling list
 
 ## Implementation Details
 
@@ -327,8 +307,6 @@ src/
     index.test.ts          - Server tests
     routes/
       health.ts            - GET /health endpoint
-      repos.ts             - Redis-backed repository management API
-      repos-ui.ts          - HTML repository management UI
   jobs/
     index.ts               - Job infrastructure exports
     index.test.ts          - Job tests

@@ -123,8 +123,6 @@ describe('intake job', () => {
       await intakeHandler(mockJob);
 
       expect(mockFetchIssues).toHaveBeenCalledWith({
-        owner: 'test-owner',
-        repo: 'test-repo',
         labels: 'ready',
         state: 'open',
         since: undefined,
@@ -141,8 +139,6 @@ describe('intake job', () => {
       await intakeHandler(mockJob);
 
       expect(mockFetchIssues).toHaveBeenCalledWith({
-        owner: 'test-owner',
-        repo: 'test-repo',
         labels: 'ready',
         state: 'open',
         since: '2024-01-01T00:00:00.000Z',
@@ -161,8 +157,6 @@ describe('intake job', () => {
       await intakeHandler(mockJob);
 
       expect(mockFetchIssues).toHaveBeenCalledWith({
-        owner: 'test-owner',
-        repo: 'test-repo',
         labels: 'ready',
         state: 'open',
         since: '2024-01-01T00:00:00.000Z',
@@ -317,15 +311,13 @@ describe('intake job', () => {
       await intakeHandler(mockJob);
 
       expect(mockFetchIssues).toHaveBeenCalledWith({
-        owner: 'test-owner',
-        repo: 'test-repo',
         labels: 'ready',
         state: 'open',
         since: undefined,
       });
     });
 
-    it('should fetch issues for each registered repo', async () => {
+    it('should ignore Redis repository registry entries and poll only the configured repository', async () => {
       const { intakeHandler } = await import('./intake.js');
 
       const registeredRepos = [
@@ -340,24 +332,16 @@ describe('intake job', () => {
       const mockJob = createMockJob(undefined);
       await intakeHandler(mockJob);
 
-      expect(mockFetchIssues).toHaveBeenCalledTimes(2);
-      expect(mockFetchIssues).toHaveBeenNthCalledWith(1, {
-        owner: 'owner1',
-        repo: 'repo1',
-        labels: 'ready',
-        state: 'open',
-        since: undefined,
-      });
-      expect(mockFetchIssues).toHaveBeenNthCalledWith(2, {
-        owner: 'owner2',
-        repo: 'repo2',
+      expect(mockRedisClient.smembers).not.toHaveBeenCalled();
+      expect(mockFetchIssues).toHaveBeenCalledTimes(1);
+      expect(mockFetchIssues).toHaveBeenCalledWith({
         labels: 'ready',
         state: 'open',
         since: undefined,
       });
     });
 
-    it('should process issues from all registered repos', async () => {
+    it('should enqueue prepare-run payloads with configured repository identity when registry entries exist', async () => {
       const { intakeHandler } = await import('./intake.js');
 
       const registeredRepos = [
@@ -365,7 +349,7 @@ describe('intake job', () => {
         JSON.stringify({ owner: 'owner2', repo: 'repo2', addedAt: '2024-01-01T00:00:00Z' }),
       ];
 
-      const mockIssues1 = [
+      const mockIssues = [
         {
           id: 1,
           number: 42,
@@ -379,58 +363,30 @@ describe('intake job', () => {
         },
       ];
 
-      const mockIssues2 = [
-        {
-          id: 2,
-          number: 43,
-          title: 'Issue 2',
-          body: 'Body 2',
-          state: 'open' as const,
-          labels: [],
-          assignee: null,
-          createdAt: '2024-01-02T00:00:00Z',
-          updatedAt: '2024-01-02T00:00:00Z',
-        },
-      ];
-
-      mockFetchIssues
-        .mockResolvedValueOnce(mockIssues1)
-        .mockResolvedValueOnce(mockIssues2);
+      mockFetchIssues.mockResolvedValue(mockIssues);
       mockRedisClient.get.mockResolvedValue(null);
       mockRedisClient.smembers.mockResolvedValue(registeredRepos);
 
       const mockJob = createMockJob(undefined);
       await intakeHandler(mockJob);
 
-      // Should have added 2 prepare-run jobs (one from each repo)
-      expect(mockJobQueueAdd).toHaveBeenCalledTimes(2);
-      expect(mockJobQueueAdd).toHaveBeenNthCalledWith(
-        1,
+      expect(mockRedisClient.smembers).not.toHaveBeenCalled();
+      expect(mockFetchIssues).toHaveBeenCalledTimes(1);
+      expect(mockJobQueueAdd).toHaveBeenCalledTimes(1);
+      expect(mockJobQueueAdd).toHaveBeenCalledWith(
         'prepare-run',
         expect.objectContaining({
           type: 'prepare-run',
-          issue: mockIssues1[0],
+          issue: mockIssues[0],
           repository: {
-            owner: 'owner1',
-            repo: 'repo1',
-          },
-        })
-      );
-      expect(mockJobQueueAdd).toHaveBeenNthCalledWith(
-        2,
-        'prepare-run',
-        expect.objectContaining({
-          type: 'prepare-run',
-          issue: mockIssues2[0],
-          repository: {
-            owner: 'owner2',
-            repo: 'repo2',
+            owner: 'test-owner',
+            repo: 'test-repo',
           },
         })
       );
     });
 
-    it('should skip invalid JSON members in repo list', async () => {
+    it('should not read Redis repository registry data even when it contains invalid members', async () => {
       const { intakeHandler } = await import('./intake.js');
 
       const registeredRepos = [
@@ -446,11 +402,9 @@ describe('intake job', () => {
       const mockJob = createMockJob(undefined);
       await intakeHandler(mockJob);
 
-      // Should only call fetchIssues once for the valid repo
+      expect(mockRedisClient.smembers).not.toHaveBeenCalled();
       expect(mockFetchIssues).toHaveBeenCalledTimes(1);
       expect(mockFetchIssues).toHaveBeenCalledWith({
-        owner: 'valid-owner',
-        repo: 'valid-repo',
         labels: 'ready',
         state: 'open',
         since: undefined,

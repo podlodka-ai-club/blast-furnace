@@ -1,23 +1,4 @@
-# Issue Intake Specification
-
-## Purpose
-Defines the current polling mechanism that receives GitHub issues and enqueues them for processing.
-
-## Requirements
-
-### Requirement: Intake Strategy Selection
-The system SHALL use polling as the only supported strategy for receiving GitHub issues.
-
-#### Scenario: Application startup initializes intake
-- **WHEN** the application starts
-- **THEN** application startup SHALL schedule the repeatable `intake` job
-- **AND** startup SHALL NOT depend on a runtime issue strategy selection
-
-#### Scenario: Legacy strategy environment variable is present
-- **WHEN** `GITHUB_ISSUE_STRATEGY` is present in the environment
-- **THEN** the system SHALL ignore it for intake selection
-- **AND** the system SHALL use polling intake
-- **AND** the system SHALL NOT emit a compatibility warning for that variable
+## MODIFIED Requirements
 
 ### Requirement: Polling Watcher
 The system SHALL poll the configured GitHub repository for open issues labeled `ready` as the Intake stage.

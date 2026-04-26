@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import type { Job } from 'bullmq';
 import type { MakePrJobData, SyncTrackerStateJobData } from '../types/index.js';
 import { createPullRequest } from '../github/pullRequests.js';
+import { assertConfiguredRepository } from '../github/repository.js';
 import { cleanupWorkingDir, getRepoRemoteUrl } from '../utils/working-dir.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
@@ -65,7 +66,8 @@ export async function runMakePrWork(
   job: Job<MakePrJobData>,
   logger = createJobLogger(job)
 ): Promise<MakePrWorkResult> {
-  const { issue, branchName, workspacePath } = job.data;
+  const { issue, repository, branchName, workspacePath } = job.data;
+  assertConfiguredRepository(repository);
 
   logger.info(`Finalizing issue #${issue.number} on branch ${branchName}`);
 

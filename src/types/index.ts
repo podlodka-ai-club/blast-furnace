@@ -121,17 +121,6 @@ export interface GitHubComment {
   createdAt: string;
 }
 
-export interface GitHubRepo {
-  owner: string;
-  repo: string;
-  addedAt: string;
-}
-
-export interface RepoListResponse {
-  repos: GitHubRepo[];
-  total: number;
-}
-
 // Config types
 export interface RedisConfig {
   host: string;
@@ -275,8 +264,4 @@ export interface SyncTrackerStateJobData extends StageJobPayload<'sync-tracker-s
   branchName: string;
   workspacePath: string;
   pullRequest: PullRequestResponse;
-}
-
-export interface RepoWatcherJobData extends JobPayload {
-  type: 'repo-watcher';
 }

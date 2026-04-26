@@ -1,8 +1,6 @@
 import Fastify, { FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import { healthRoute } from './routes/health.js';
-import { reposRoute } from './routes/repos.js';
-import { reposUIRoute } from './routes/repos-ui.js';
 import type { ServerOptions } from '../types/index.js';
 
 export type { ServerOptions };
@@ -33,13 +31,6 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
   // Register health check route with server start time for accurate uptime
   const startTime = Date.now();
   await server.register(healthRoute, { startTime });
-
-  // Register repository management routes
-  await server.register(reposRoute);
-  // Register UI at /repos/manage to avoid conflict with repos JSON API at /repos
-  await server.register(async (instance) => {
-    await instance.register(reposUIRoute);
-  }, { prefix: '/repos/manage' });
 
   return server;
 }

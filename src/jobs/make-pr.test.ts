@@ -51,6 +51,15 @@ vi.mock('./queue.js', () => ({
   },
 }));
 
+vi.mock('../config/index.js', () => ({
+  config: {
+    github: {
+      owner: 'test-owner',
+      repo: 'test-repo',
+    },
+  },
+}));
+
 function createIssue(title = 'Test Issue'): GitHubIssue {
   return {
     id: 1,
@@ -65,7 +74,10 @@ function createIssue(title = 'Test Issue'): GitHubIssue {
   };
 }
 
-function createJob(issue = createIssue()): Job<MakePrJobData> {
+function createJob(
+  issue = createIssue(),
+  overrides: Partial<MakePrJobData> = {}
+): Job<MakePrJobData> {
   return {
     id: 'job-make-pr',
     data: {
@@ -94,6 +106,7 @@ function createJob(issue = createIssue()): Job<MakePrJobData> {
         status: 'stubbed',
         summary: 'Review deferred for this iteration.',
       },
+      ...overrides,
     },
   } as unknown as Job<MakePrJobData>;
 }
@@ -216,6 +229,22 @@ describe('make-pr job', () => {
         htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
       },
     });
+    expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
+  });
+
+  it('should fail mismatched repository identity before make-pr side effects', async () => {
+    const job = createJob(createIssue(), {
+      repository: {
+        owner: 'other-owner',
+        repo: 'other-repo',
+      },
+    });
+
+    await expect(runMakePrFlow(job)).rejects.toThrow('Repository identity mismatch');
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(mockCreatePullRequest).not.toHaveBeenCalled();
+    expect(mockJobQueueAdd).not.toHaveBeenCalled();
     expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
   });
 

@@ -1,5 +1,6 @@
 import { spawn } from 'child_process';
 import { createPullRequest } from '../github/pullRequests.js';
+import { assertConfiguredRepository } from '../github/repository.js';
 import { cleanupWorkingDir, getRepoRemoteUrl } from '../utils/working-dir.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
@@ -45,7 +46,8 @@ function sanitizeForGit(text, maxLength = 200) {
     return text.replace(/[\r\n]/g, ' ').slice(0, maxLength);
 }
 export async function runMakePrWork(job, logger = createJobLogger(job)) {
-    const { issue, branchName, workspacePath } = job.data;
+    const { issue, repository, branchName, workspacePath } = job.data;
+    assertConfiguredRepository(repository);
     logger.info(`Finalizing issue #${issue.number} on branch ${branchName}`);
     const status = await execGitCommand(['status', '--porcelain'], workspacePath);
     if (!status) {

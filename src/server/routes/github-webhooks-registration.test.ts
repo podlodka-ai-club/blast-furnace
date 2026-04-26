@@ -31,10 +31,6 @@ vi.mock('../../jobs/queue.js', () => ({
   closeQueue: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../jobs/intake.js', () => ({
-  REPO_LIST_KEY: 'github:repos',
-}));
-
 // Import buildServer after mocks are set up
 import { buildServer } from '../index.js';
 

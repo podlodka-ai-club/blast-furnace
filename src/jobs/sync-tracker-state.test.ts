@@ -26,6 +26,15 @@ vi.mock('./logger.js', () => ({
   createJobLogger: mockCreateJobLogger,
 }));
 
+vi.mock('../config/index.js', () => ({
+  config: {
+    github: {
+      owner: 'test-owner',
+      repo: 'test-repo',
+    },
+  },
+}));
+
 function createIssue(): GitHubIssue {
   return {
     id: 1,
@@ -118,6 +127,21 @@ describe('sync-tracker-state job', () => {
 
     await runSyncTrackerStateFlow(job);
 
+    expect(mockCleanupWorkingDir).toHaveBeenCalledWith('/tmp/prepare-run-abc123');
+  });
+
+  it('should fail mismatched repository identity before tracker side effects and still clean up', async () => {
+    const { runSyncTrackerStateFlow } = await import('./sync-tracker-state.js');
+    const job = createJob({
+      repository: {
+        owner: 'other-owner',
+        repo: 'other-repo',
+      },
+    });
+
+    await expect(runSyncTrackerStateFlow(job)).rejects.toThrow('Repository identity mismatch');
+
+    expect(mockMoveIssueToInReview).not.toHaveBeenCalled();
     expect(mockCleanupWorkingDir).toHaveBeenCalledWith('/tmp/prepare-run-abc123');
   });
 

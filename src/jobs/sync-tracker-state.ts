@@ -1,6 +1,7 @@
 import type { Job } from 'bullmq';
 import type { SyncTrackerStateJobData } from '../types/index.js';
 import { moveIssueToInReview } from '../github/issue-labels.js';
+import { assertConfiguredRepository } from '../github/repository.js';
 import { cleanupWorkingDir } from '../utils/working-dir.js';
 import { createJobLogger } from './logger.js';
 
@@ -8,7 +9,8 @@ export async function runSyncTrackerStateWork(
   job: Job<SyncTrackerStateJobData>,
   logger = createJobLogger(job)
 ): Promise<SyncTrackerStateJobData['pullRequest']> {
-  const { issue, branchName, pullRequest } = job.data;
+  const { issue, repository, branchName, pullRequest } = job.data;
+  assertConfiguredRepository(repository);
 
   logger.info(`Synchronizing tracker state for PR #${pullRequest.number} on branch ${branchName}`);
   try {

@@ -1,16 +1,4 @@
-# GitHub Integration Specification
-
-## Purpose
-Defines the current GitHub REST integration for issues, branch refs, pull requests, and issue label transitions.
-
-## Requirements
-
-### Requirement: GitHub Client
-The system SHALL create a GitHub REST client authenticated with `GITHUB_TOKEN`.
-
-#### Scenario: Client is created
-- **WHEN** GitHub helper functions are used
-- **THEN** they SHALL use an Octokit REST client configured with the loaded GitHub token
+## MODIFIED Requirements
 
 ### Requirement: Issue Fetching
 The system SHALL fetch GitHub issues from the configured repository only.

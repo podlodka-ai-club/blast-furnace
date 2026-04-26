@@ -51,6 +51,15 @@ vi.mock('./queue.js', () => ({
   },
 }));
 
+vi.mock('../config/index.js', () => ({
+  config: {
+    github: {
+      owner: 'test-owner',
+      repo: 'test-repo',
+    },
+  },
+}));
+
 function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
   return {
     id: 1,
@@ -66,7 +75,10 @@ function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
   };
 }
 
-function createJob(issue = createIssue()): Job<PrepareRunJobData> {
+function createJob(
+  issue = createIssue(),
+  overrides: Partial<PrepareRunJobData> = {}
+): Job<PrepareRunJobData> {
   return {
     id: 'job-prepare',
     data: {
@@ -81,6 +93,7 @@ function createJob(issue = createIssue()): Job<PrepareRunJobData> {
         owner: 'test-owner',
         repo: 'test-repo',
       },
+      ...overrides,
     },
     updateProgress: vi.fn().mockResolvedValue(undefined),
   } as unknown as Job<PrepareRunJobData>;
@@ -250,6 +263,24 @@ describe('prepare-run job', () => {
       branchName: 'issue-42-test-issue',
       workspacePath: TEMP_DIR,
     });
+  });
+
+  it('fails mismatched repository identity before prepare-run side effects', async () => {
+    const job = createJob(createIssue(), {
+      repository: {
+        owner: 'other-owner',
+        repo: 'other-repo',
+      },
+    });
+
+    await expect(runPrepareRunFlow(job)).rejects.toThrow('Repository identity mismatch');
+
+    expect(mockGetRef).not.toHaveBeenCalled();
+    expect(mockPushBranch).not.toHaveBeenCalled();
+    expect(mockCreateTempWorkingDir).not.toHaveBeenCalled();
+    expect(mockCloneRepoInto).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
+    expect(mockJobQueueAdd).not.toHaveBeenCalled();
   });
 
   it('cleans up the workspace and created branch when preparation fails before assess handoff', async () => {

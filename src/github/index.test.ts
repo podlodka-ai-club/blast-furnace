@@ -70,6 +70,12 @@ describe('GitHub module exports', () => {
       expect(github.READY_LABEL).toBe('ready');
       expect(github.IN_REVIEW_LABEL).toBe('in review');
     });
+
+    it('should export repository identity helpers', () => {
+      expect(typeof github.getConfiguredRepository).toBe('function');
+      expect(typeof github.isConfiguredRepository).toBe('function');
+      expect(typeof github.assertConfiguredRepository).toBe('function');
+    });
   });
 
   describe('branches exports', () => {

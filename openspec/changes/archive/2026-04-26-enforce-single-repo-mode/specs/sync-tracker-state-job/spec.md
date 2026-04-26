@@ -1,9 +1,5 @@
-# sync-tracker-state-job Specification
+## MODIFIED Requirements
 
-## Purpose
-Defines the target Sync Tracker State stage that owns post-PR tracker synchronization and terminal workspace cleanup.
-
-## Requirements
 ### Requirement: Sync Tracker State Job Module
 The system SHALL provide a `sync-tracker-state` job handled by an isolated Sync Tracker State module that owns post-pull-request tracker synchronization in the configured repository and terminal cleanup for pull-request-created paths.
 

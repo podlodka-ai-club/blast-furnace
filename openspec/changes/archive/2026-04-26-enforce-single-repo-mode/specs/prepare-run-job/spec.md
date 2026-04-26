@@ -1,9 +1,5 @@
-# prepare-run-job Specification
+## MODIFIED Requirements
 
-## Purpose
-Defines the target Prepare Run stage that initializes run state, prepares the issue branch, and creates the local workspace before assessment.
-
-## Requirements
 ### Requirement: Prepare Run Job Module
 The system SHALL provide a `prepare-run` job handled by an isolated Prepare Run module that initializes a run and prepares the configured repository workspace before assessment, planning, or development work begins.
 

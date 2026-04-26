@@ -9,8 +9,6 @@ import type {
   AgentResult,
   GitHubIssue,
   GitHubComment,
-  GitHubRepo,
-  RepoListResponse,
   AppConfig,
   RedisConfig,
   GitHubConfig,
@@ -19,7 +17,6 @@ import type {
   JobPayload,
   WorkflowStage,
   StageJobPayload,
-  RepoWatcherJobData,
   IntakeJobData,
   PrepareRunJobData,
   AssessJobData,
@@ -177,60 +174,6 @@ describe('types', () => {
     });
   });
 
-  describe('GitHubRepo', () => {
-    it('should accept valid GitHub repo', () => {
-      const repo: GitHubRepo = {
-        owner: 'owner',
-        repo: 'repo',
-        addedAt: '2024-01-01T00:00:00.000Z',
-      };
-      expect(repo.owner).toBe('owner');
-      expect(repo.repo).toBe('repo');
-      expect(repo.addedAt).toBe('2024-01-01T00:00:00.000Z');
-    });
-
-    it('should store repo with all required fields', () => {
-      const repo: GitHubRepo = {
-        owner: 'my-org',
-        repo: 'my-repo',
-        addedAt: '2024-06-15T10:30:00.000Z',
-      };
-      expect(repo.owner).toBe('my-org');
-      expect(repo.repo).toBe('my-repo');
-    });
-  });
-
-  describe('RepoListResponse', () => {
-    it('should accept valid repo list response', () => {
-      const response: RepoListResponse = {
-        repos: [
-          {
-            owner: 'owner1',
-            repo: 'repo1',
-            addedAt: '2024-01-01T00:00:00.000Z',
-          },
-          {
-            owner: 'owner2',
-            repo: 'repo2',
-            addedAt: '2024-01-02T00:00:00.000Z',
-          },
-        ],
-        total: 2,
-      };
-      expect(response.repos).toHaveLength(2);
-      expect(response.total).toBe(2);
-    });
-
-    it('should allow empty repos list', () => {
-      const response: RepoListResponse = {
-        repos: [],
-        total: 0,
-      };
-      expect(response.repos).toHaveLength(0);
-      expect(response.total).toBe(0);
-    });
-  });
-
   describe('AppConfig', () => {
     it('should accept valid app config', () => {
       const config: AppConfig = {
@@ -242,8 +185,8 @@ describe('types', () => {
         },
         github: {
           token: 'ghp_token',
-          owner: 'owner',
-          repo: 'repo',
+          owner: 'test-owner',
+          repo: 'test-repo',
           pollIntervalMs: 60000,
         },
         codex: {
@@ -275,8 +218,8 @@ describe('types', () => {
     it('should accept valid github config', () => {
       const config: GitHubConfig = {
         token: 'token',
-        owner: 'owner',
-        repo: 'repo',
+        owner: 'test-owner',
+        repo: 'test-repo',
         pollIntervalMs: 60000,
       };
       expect(config.token).toBe('token');
@@ -388,8 +331,8 @@ describe('types', () => {
             updatedAt: '2024-01-01T00:00:00.000Z',
           },
           repository: {
-            owner: 'owner',
-            repo: 'repo',
+            owner: 'test-owner',
+            repo: 'test-repo',
           },
         } satisfies PrepareRunJobData,
         {
@@ -411,8 +354,8 @@ describe('types', () => {
             updatedAt: '2024-01-01T00:00:00.000Z',
           },
           repository: {
-            owner: 'owner',
-            repo: 'repo',
+            owner: 'test-owner',
+            repo: 'test-repo',
           },
           branchName: 'issue-42-test-issue',
           workspacePath: '/tmp/prepare-run-123',
@@ -436,8 +379,8 @@ describe('types', () => {
             updatedAt: '2024-01-01T00:00:00.000Z',
           },
           repository: {
-            owner: 'owner',
-            repo: 'repo',
+            owner: 'test-owner',
+            repo: 'test-repo',
           },
           branchName: 'issue-42-test-issue',
           workspacePath: '/tmp/prepare-run-123',
@@ -465,8 +408,8 @@ describe('types', () => {
             updatedAt: '2024-01-01T00:00:00.000Z',
           },
           repository: {
-            owner: 'owner',
-            repo: 'repo',
+            owner: 'test-owner',
+            repo: 'test-repo',
           },
           branchName: 'issue-42-test-issue',
           workspacePath: '/tmp/prepare-run-123',
@@ -498,8 +441,8 @@ describe('types', () => {
             updatedAt: '2024-01-01T00:00:00.000Z',
           },
           repository: {
-            owner: 'owner',
-            repo: 'repo',
+            owner: 'test-owner',
+            repo: 'test-repo',
           },
           branchName: 'issue-42-test-issue',
           workspacePath: '/tmp/prepare-run-123',
@@ -535,8 +478,8 @@ describe('types', () => {
             updatedAt: '2024-01-01T00:00:00.000Z',
           },
           repository: {
-            owner: 'owner',
-            repo: 'repo',
+            owner: 'test-owner',
+            repo: 'test-repo',
           },
           branchName: 'issue-42-test-issue',
           workspacePath: '/tmp/prepare-run-123',
@@ -576,8 +519,8 @@ describe('types', () => {
             updatedAt: '2024-01-01T00:00:00.000Z',
           },
           repository: {
-            owner: 'owner',
-            repo: 'repo',
+            owner: 'test-owner',
+            repo: 'test-repo',
           },
           branchName: 'issue-42-test-issue',
           workspacePath: '/tmp/prepare-run-123',
@@ -613,14 +556,14 @@ describe('types', () => {
             updatedAt: '2024-01-01T00:00:00.000Z',
           },
           repository: {
-            owner: 'owner',
-            repo: 'repo',
+            owner: 'test-owner',
+            repo: 'test-repo',
           },
           branchName: 'issue-42-test-issue',
           workspacePath: '/tmp/prepare-run-123',
           pullRequest: {
             number: 7,
-            htmlUrl: 'https://github.com/owner/repo/pull/7',
+            htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
           },
         } satisfies SyncTrackerStateJobData,
       ];
@@ -636,26 +579,6 @@ describe('types', () => {
         'make-pr',
         'sync-tracker-state',
       ]);
-    });
-  });
-
-  describe('RepoWatcherJobData', () => {
-    it('should accept valid repo watcher job data', () => {
-      const jobData: RepoWatcherJobData = {
-        taskId: 'task-789',
-        type: 'repo-watcher',
-      };
-      expect(jobData.taskId).toBe('task-789');
-      expect(jobData.type).toBe('repo-watcher');
-    });
-
-    it('should allow optional payload', () => {
-      const jobData: RepoWatcherJobData = {
-        taskId: 'task-789',
-        type: 'repo-watcher',
-        payload: { key: 'value' },
-      };
-      expect(jobData.payload).toEqual({ key: 'value' });
     });
   });
 });

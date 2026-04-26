@@ -3,6 +3,7 @@ import { spawn } from 'child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { getRef, pushBranch, deleteBranch } from '../github/branches.js';
+import { assertConfiguredRepository } from '../github/repository.js';
 import { cloneRepoInto, cleanupWorkingDir, createTempWorkingDir, getRepoRemoteUrl } from '../utils/working-dir.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
@@ -126,6 +127,7 @@ export async function runPrepareRunWork(job, logger = createJobLogger(job), stat
     cleaned: false,
 }) {
     const { issue, repository, runId, stageAttempt } = job.data;
+    assertConfiguredRepository(repository);
     const branchName = prepareIssueBranchName(issue);
     state.branchName = branchName;
     logger.info(`Preparing run ${runId} for issue #${issue.number} on branch ${branchName}`);

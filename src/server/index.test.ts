@@ -33,10 +33,6 @@ vi.mock('../jobs/queue.js', () => ({
   closeQueue: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../jobs/intake.js', () => ({
-  REPO_LIST_KEY: 'github:repos',
-}));
-
 describe('server', () => {
   let server: FastifyInstance;
 
@@ -141,18 +137,39 @@ describe('buildServer', () => {
     await server.close();
   });
 
-  it('rejects invalid JSON with the normal Fastify parser', async () => {
+  it('does not register repository management API or UI routes', async () => {
     const server = await buildServer({ logger: false });
-    const response = await server.inject({
+
+    const getRepos = await server.inject({
+      method: 'GET',
+      url: '/repos',
+    });
+    const postRepos = await server.inject({
       method: 'POST',
       url: '/repos',
       headers: {
         'content-type': 'application/json',
       },
-      payload: '{',
+      payload: {
+        owner: 'test-owner',
+        repo: 'test-repo',
+      },
+    });
+    const deleteRepo = await server.inject({
+      method: 'DELETE',
+      url: '/repos/test-owner/test-repo',
+    });
+    const manageRepos = await server.inject({
+      method: 'GET',
+      url: '/repos/manage',
     });
 
-    expect(response.statusCode).toBe(400);
+    expect(getRepos.statusCode).toBe(404);
+    expect(postRepos.statusCode).toBe(404);
+    expect(deleteRepo.statusCode).toBe(404);
+    expect(JSON.parse(deleteRepo.body).message).toContain('Route DELETE:/repos/test-owner/test-repo not found');
+    expect(manageRepos.statusCode).toBe(404);
+
     await server.close();
   });
 });

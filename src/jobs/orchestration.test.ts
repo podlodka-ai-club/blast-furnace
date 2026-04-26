@@ -130,8 +130,8 @@ describe('job orchestration infrastructure', () => {
         updatedAt: '2026-04-22T00:00:00Z',
       },
       repository: {
-        owner: 'owner',
-        repo: 'repo',
+        owner: 'test-owner',
+        repo: 'test-repo',
       },
       branchName: 'issue-42-issue',
       workspacePath: '/tmp/prepare-run-abc123',

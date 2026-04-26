@@ -5,6 +5,7 @@ import { dirname } from 'node:path';
 import type { Job } from 'bullmq';
 import type { AssessJobData, GitHubIssue, PrepareRunJobData, RepositoryIdentity } from '../types/index.js';
 import { getRef, pushBranch, deleteBranch } from '../github/branches.js';
+import { assertConfiguredRepository } from '../github/repository.js';
 import { cloneRepoInto, cleanupWorkingDir, createTempWorkingDir, getRepoRemoteUrl } from '../utils/working-dir.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
@@ -182,6 +183,8 @@ export async function runPrepareRunWork(
   }
 ): Promise<PrepareRunWorkResult> {
   const { issue, repository, runId, stageAttempt } = job.data;
+  assertConfiguredRepository(repository);
+
   const branchName = prepareIssueBranchName(issue);
   state.branchName = branchName;
 

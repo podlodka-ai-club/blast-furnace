@@ -4,11 +4,11 @@
 Defines the product-level behavior of Blast Furnace as an agent orchestrator that turns eligible GitHub Issues into pull requests through an asynchronous, queue-driven pipeline.
 ## Requirements
 ### Requirement: Eligible Issue Intake
-The system SHALL accept GitHub Issues as automation tasks from configured GitHub repositories through polling intake.
+The system SHALL accept GitHub Issues as automation tasks only from the configured GitHub repository through polling intake.
 
 #### Scenario: Intake discovers eligible issues
 - **WHEN** polling intake runs
-- **THEN** the system SHALL look for open GitHub Issues labeled `ready`
+- **THEN** the system SHALL look for open GitHub Issues labeled `ready` in the configured repository
 - **AND** treat each matching issue as a task to automate
 
 #### Scenario: Intake acknowledges work without doing it synchronously
@@ -39,19 +39,22 @@ The system SHALL process automation tasks as discrete asynchronous stages connec
 - **THEN** the system SHALL process stages in this order: `Intake`, `Prepare Run`, `Assess`, `Plan`, `Develop`, `Quality Gate`, `Review`, `Make PR`, `Sync Tracker State`
 
 ### Requirement: Repository Selection
-The system SHALL support automation for one configured repository by default and multiple registered repositories through polling intake.
+The system SHALL support automation for exactly one configured repository.
 
-#### Scenario: No repositories are registered
-- **WHEN** intake runs without registered repositories
-- **THEN** the system SHALL use the configured `GITHUB_OWNER` and `GITHUB_REPO` as the target repository
+#### Scenario: Intake runs
+- **WHEN** intake runs
+- **THEN** the system SHALL use `GITHUB_OWNER` and `GITHUB_REPO` as the target repository
+- **AND** SHALL NOT read or honor repository registry data from Redis for target selection
 
-#### Scenario: Repositories are registered
-- **WHEN** one or more repositories are registered for intake
-- **THEN** the system SHALL check each registered repository for eligible issues
+#### Scenario: Repository registry entries exist
+- **WHEN** Redis contains one or more entries in `github:repos`
+- **THEN** the system SHALL ignore those entries for production intake
+- **AND** SHALL continue polling only the configured repository
 
-#### Scenario: Operator manages intake repositories
-- **WHEN** an operator uses the repository API or management page
-- **THEN** the system SHALL allow repositories to be added, listed, and removed from the polling registry
+#### Scenario: Downstream stage receives repository identity
+- **WHEN** a stage payload includes repository identity
+- **THEN** that identity SHALL match the configured repository
+- **AND** the stage SHALL NOT use payload repository identity to route GitHub or git operations to another repository
 
 ### Requirement: Automated Implementation Attempt
 The system SHALL attempt to implement each accepted issue using the configured local Codex CLI executor through the target workflow stages.
