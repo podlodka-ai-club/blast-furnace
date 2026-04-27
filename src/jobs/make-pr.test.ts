@@ -179,7 +179,11 @@ describe('make-pr job', () => {
         },
         quality: {
           status: 'passed',
-          summary: 'Quality gate deferred for this iteration.',
+          command: 'npm test',
+          exitCode: 0,
+          attempts: 1,
+          durationMs: 25,
+          summary: 'Quality gate passed.',
         },
         review: {
           status: 'stubbed',

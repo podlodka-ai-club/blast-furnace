@@ -40,7 +40,6 @@ export const WORKFLOW_STAGES = [
   'assess',
   'plan',
   'develop',
-  'quality-gate',
   'review',
   'make-pr',
   'sync-tracker-state',
@@ -189,12 +188,18 @@ export interface CodexConfig {
   timeoutMs: number;
 }
 
+export interface QualityGateConfig {
+  testCommand?: string;
+  testTimeoutMs: number;
+}
+
 export interface AppConfig {
   env: string;
   port: number;
   redis: RedisConfig;
   github: GitHubConfig;
   codex: CodexConfig;
+  qualityGate: QualityGateConfig;
 }
 
 // Server types
@@ -248,9 +253,16 @@ export interface DevelopmentResult {
   summary: string;
 }
 
+export type QualityGateStatus = 'passed' | 'failed' | 'misconfigured' | 'timed-out';
+
 export interface QualityGateResult {
-  status: 'passed';
+  status: QualityGateStatus;
+  command: string;
+  exitCode?: number;
+  attempts: number;
+  durationMs: number;
   summary: string;
+  outputPath?: string;
 }
 
 export interface ReviewResult {
@@ -283,17 +295,7 @@ export interface PlanOutput extends PreparedRunFields {
 }
 
 export interface DevelopOutput extends PreparedRunFields {
-  status: 'success';
-  runId: RunId;
-  stageAttempt: number;
-  reworkAttempt: number;
-  assessment: AssessmentResult;
-  plan: PlanResult;
-  development: DevelopmentResult;
-}
-
-export interface QualityGateOutput extends PreparedRunFields {
-  status: 'success';
+  status: 'success' | 'quality-failed' | 'quality-timed-out' | 'quality-misconfigured';
   runId: RunId;
   stageAttempt: number;
   reworkAttempt: number;
@@ -371,8 +373,6 @@ export type AssessJobData = StageHandoffJobPayload<'assess'>;
 export type PlanJobData = StageHandoffJobPayload<'plan'>;
 
 export type DevelopJobData = StageHandoffJobPayload<'develop'>;
-
-export type QualityGateJobData = StageHandoffJobPayload<'quality-gate'>;
 
 export type ReviewJobData = StageHandoffJobPayload<'review'>;
 

@@ -47,6 +47,7 @@ describe('working-dir utilities', () => {
     mockSpawn.mockReset();
     mockSpawn.mockImplementation(() => ({
       stderr: { on: vi.fn() },
+      kill: vi.fn(),
       on: vi.fn((event: string, cb: (code: number) => void) => {
         if (event === 'close') setTimeout(() => cb(0), 0);
       }),
@@ -119,15 +120,23 @@ describe('working-dir utilities', () => {
   });
 
   describe('cloneRepoInto', () => {
-    it('should call git clone with correct args', async () => {
+    it('should call git clone with a token-free remote URL and non-interactive auth env', async () => {
       const workingDir = '/tmp/codex-test';
-      const remoteUrl = 'https://token@github.com/owner/repo.git';
+      const remoteUrl = 'https://github.com/owner/repo.git';
 
       await cloneRepoInto(workingDir, remoteUrl);
 
       expect(mockSpawn).toHaveBeenCalledWith('git', ['clone', remoteUrl, '.'], {
         cwd: workingDir,
+        env: expect.objectContaining({
+          GIT_TERMINAL_PROMPT: '0',
+          GIT_CONFIG_COUNT: '1',
+          GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader',
+          GIT_CONFIG_VALUE_0: expect.stringContaining('AUTHORIZATION: basic '),
+        }),
       });
+      const spawnArgs = mockSpawn.mock.calls[0][1] as string[];
+      expect(spawnArgs.join(' ')).not.toContain('test-token');
     });
 
     it('should throw error when git clone fails', async () => {
@@ -146,12 +155,32 @@ describe('working-dir utilities', () => {
 
       await expect(cloneRepoInto(workingDir, remoteUrl)).rejects.toThrow('git clone failed');
     });
+
+    it('kills git clone and fails when it exceeds the command timeout', async () => {
+      vi.useFakeTimers();
+      const workingDir = '/tmp/codex-test';
+      const remoteUrl = 'https://github.com/owner/repo.git';
+      const kill = vi.fn();
+      mockSpawn.mockImplementation(() => ({
+        stderr: { on: vi.fn() },
+        kill,
+        on: vi.fn(),
+      }));
+
+      const clone = cloneRepoInto(workingDir, remoteUrl, 100);
+      const assertion = expect(clone).rejects.toThrow('git clone failed: git command timed out after 100ms');
+      await vi.advanceTimersByTimeAsync(100);
+
+      await assertion;
+      expect(kill).toHaveBeenCalledWith('SIGTERM');
+      vi.useRealTimers();
+    });
   });
 
   describe('getRepoRemoteUrl', () => {
-    it('should return the HTTPS GitHub remote URL with token auth', () => {
+    it('should return the HTTPS GitHub remote URL without token auth in argv', () => {
       const url = getRepoRemoteUrl();
-      expect(url).toBe('https://test-token@github.com/test-owner/test-repo.git');
+      expect(url).toBe('https://github.com/test-owner/test-repo.git');
     });
   });
 });

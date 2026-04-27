@@ -21,7 +21,7 @@ export interface StageResult {
     durationMs?: number;
 }
 export type RunId = string;
-export declare const WORKFLOW_STAGES: readonly ["intake", "prepare-run", "assess", "plan", "develop", "quality-gate", "review", "make-pr", "sync-tracker-state"];
+export declare const WORKFLOW_STAGES: readonly ["intake", "prepare-run", "assess", "plan", "develop", "review", "make-pr", "sync-tracker-state"];
 export type WorkflowStage = (typeof WORKFLOW_STAGES)[number];
 export type StageName = WorkflowStage;
 export type AttemptNumber = number;
@@ -144,12 +144,17 @@ export interface CodexConfig {
     model: string;
     timeoutMs: number;
 }
+export interface QualityGateConfig {
+    testCommand?: string;
+    testTimeoutMs: number;
+}
 export interface AppConfig {
     env: string;
     port: number;
     redis: RedisConfig;
     github: GitHubConfig;
     codex: CodexConfig;
+    qualityGate: QualityGateConfig;
 }
 export interface ServerOptions {
     logger?: boolean;
@@ -190,9 +195,15 @@ export interface DevelopmentResult {
     status: 'completed';
     summary: string;
 }
+export type QualityGateStatus = 'passed' | 'failed' | 'misconfigured' | 'timed-out';
 export interface QualityGateResult {
-    status: 'passed';
+    status: QualityGateStatus;
+    command: string;
+    exitCode?: number;
+    attempts: number;
+    durationMs: number;
     summary: string;
+    outputPath?: string;
 }
 export interface ReviewResult {
     status: 'stubbed';
@@ -220,16 +231,7 @@ export interface PlanOutput extends PreparedRunFields {
     plan: PlanResult;
 }
 export interface DevelopOutput extends PreparedRunFields {
-    status: 'success';
-    runId: RunId;
-    stageAttempt: number;
-    reworkAttempt: number;
-    assessment: AssessmentResult;
-    plan: PlanResult;
-    development: DevelopmentResult;
-}
-export interface QualityGateOutput extends PreparedRunFields {
-    status: 'success';
+    status: 'success' | 'quality-failed' | 'quality-timed-out' | 'quality-misconfigured';
     runId: RunId;
     stageAttempt: number;
     reworkAttempt: number;
@@ -295,7 +297,6 @@ export interface PreparedRunFields {
 export type AssessJobData = StageHandoffJobPayload<'assess'>;
 export type PlanJobData = StageHandoffJobPayload<'plan'>;
 export type DevelopJobData = StageHandoffJobPayload<'develop'>;
-export type QualityGateJobData = StageHandoffJobPayload<'quality-gate'>;
 export type ReviewJobData = StageHandoffJobPayload<'review'>;
 export type MakePrJobData = StageHandoffJobPayload<'make-pr'>;
 export type SyncTrackerStateJobData = StageHandoffJobPayload<'sync-tracker-state'>;

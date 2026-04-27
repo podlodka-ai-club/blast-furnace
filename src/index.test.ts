@@ -49,10 +49,6 @@ vi.mock('./jobs/develop.js', () => ({
   developHandler: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('./jobs/quality-gate.js', () => ({
-  qualityGateHandler: vi.fn().mockResolvedValue(undefined),
-}));
-
 vi.mock('./jobs/review.js', () => ({
   reviewHandler: vi.fn().mockResolvedValue(undefined),
 }));
@@ -121,7 +117,11 @@ describe('index', () => {
           },
           quality: {
             status: 'passed',
-            summary: 'Quality gate deferred.',
+            command: 'npm test',
+            exitCode: 0,
+            attempts: 1,
+            durationMs: 10,
+            summary: 'Quality gate passed.',
           },
           review: {
             status: 'stubbed',
@@ -141,7 +141,6 @@ describe('index', () => {
       const { assessHandler } = await import('./jobs/assess.js');
       const { planHandler } = await import('./jobs/plan.js');
       const { developHandler } = await import('./jobs/develop.js');
-      const { qualityGateHandler } = await import('./jobs/quality-gate.js');
       const { reviewHandler } = await import('./jobs/review.js');
       const { makePrHandler } = await import('./jobs/make-pr.js');
       const { syncTrackerStateHandler } = await import('./jobs/sync-tracker-state.js');
@@ -153,7 +152,6 @@ describe('index', () => {
         ['assess', assessHandler],
         ['plan', planHandler],
         ['develop', developHandler],
-        ['quality-gate', qualityGateHandler],
         ['review', reviewHandler],
         ['make-pr', makePrHandler],
         ['sync-tracker-state', syncTrackerStateHandler],
@@ -177,6 +175,14 @@ describe('index', () => {
       } as unknown as Job;
 
       await expect(multiHandler(mockJob)).rejects.toThrow('Unknown job type: unknown-type');
+    });
+
+    it('should reject the deprecated quality-gate job type as unknown', async () => {
+      const { multiHandler } = await import('./index.js');
+
+      const mockJob = createTargetJob('quality-gate');
+
+      await expect(multiHandler(mockJob)).rejects.toThrow('Unknown job type: quality-gate');
     });
   });
 });

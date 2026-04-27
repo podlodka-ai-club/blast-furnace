@@ -1,7 +1,7 @@
 import { stageOutputSchemas, stagePayloadSchemas } from './handoff-contracts.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
-import { appendHandoffRecordAndUpdateSummary, readValidatedStageInputRecord, scheduleNextJob, } from './orchestration.js';
+import { appendHandoffRecordAndUpdateSummary, readValidatedStageInputRecord, resolveOrchestrationStorageRoot, scheduleNextJob, } from './orchestration.js';
 import { createForwardStagePayload } from './stage-payloads.js';
 const STUB_PLAN = {
     status: 'stubbed',
@@ -19,7 +19,8 @@ export async function runPlanWork(job) {
         reworkAttempt: job.data.reworkAttempt,
         plan: STUB_PLAN,
     });
-    const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(output.workspacePath, {
+    const orchestrationRoot = resolveOrchestrationStorageRoot(job.data.inputRecordRef);
+    const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
         runId: job.data.runId,
         fromStage: 'plan',
         toStage: 'develop',

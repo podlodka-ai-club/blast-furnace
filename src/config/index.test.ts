@@ -28,6 +28,8 @@ describe('config', () => {
     delete process.env['CODEX_CLI_PATH'];
     delete process.env['CODEX_MODEL'];
     delete process.env['CODEX_TIMEOUT_MS'];
+    delete process.env['QUALITY_GATE_TEST_COMMAND'];
+    delete process.env['QUALITY_GATE_TEST_TIMEOUT_MS'];
 
     // Import fresh module
     vi.resetModules();
@@ -46,6 +48,8 @@ describe('config', () => {
     expect(config.codex.cliPath).toBe('npx @openai/codex');
     expect(config.codex.model).toBe('gpt-5.4');
     expect(config.codex.timeoutMs).toBe(300000);
+    expect(config.qualityGate.testCommand).toBeUndefined();
+    expect(config.qualityGate.testTimeoutMs).toBe(180000);
   });
 
   it('should load config from environment variables', async () => {
@@ -62,6 +66,8 @@ describe('config', () => {
     process.env['CODEX_CLI_PATH'] = '/usr/local/bin/codex';
     process.env['CODEX_MODEL'] = 'gpt-5.4-mini';
     process.env['CODEX_TIMEOUT_MS'] = '600000';
+    process.env['QUALITY_GATE_TEST_COMMAND'] = 'npm test -- --runInBand';
+    process.env['QUALITY_GATE_TEST_TIMEOUT_MS'] = '45000';
 
     // Import fresh module
     vi.resetModules();
@@ -80,6 +86,8 @@ describe('config', () => {
     expect(config.codex.cliPath).toBe('/usr/local/bin/codex');
     expect(config.codex.model).toBe('gpt-5.4-mini');
     expect(config.codex.timeoutMs).toBe(600000);
+    expect(config.qualityGate.testCommand).toBe('npm test -- --runInBand');
+    expect(config.qualityGate.testTimeoutMs).toBe(45000);
   });
 
   it('should ignore legacy issue strategy and webhook secret environment variables', async () => {
@@ -127,5 +135,16 @@ describe('config', () => {
     const { config } = await import('./index.js');
 
     expect(config.codex.timeoutMs).toBe(300000);
+  });
+
+  it('should use default quality gate timeout for invalid or too-small values without requiring a command', async () => {
+    delete process.env['QUALITY_GATE_TEST_COMMAND'];
+    process.env['QUALITY_GATE_TEST_TIMEOUT_MS'] = '0';
+
+    vi.resetModules();
+    const { config } = await import('./index.js');
+
+    expect(config.qualityGate.testCommand).toBeUndefined();
+    expect(config.qualityGate.testTimeoutMs).toBe(180000);
   });
 });

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Job } from 'bullmq';
-import type { DevelopJobData, GitHubIssue } from '../types/index.js';
+import type { DevelopJobData, GitHubIssue, QualityGateResult } from '../types/index.js';
 import { spawn } from 'child_process';
 import * as nodePty from 'node-pty';
 import {
@@ -36,6 +36,12 @@ const { mockEnsureNodePtySpawnHelperExecutable } = vi.hoisted(() => ({
   mockEnsureNodePtySpawnHelperExecutable: vi.fn(),
 }));
 
+const { mockHandleDevelopStopHook, mockPrepareDevelopStopHook, mockReadFinalQualityResult } = vi.hoisted(() => ({
+  mockHandleDevelopStopHook: vi.fn(),
+  mockPrepareDevelopStopHook: vi.fn(),
+  mockReadFinalQualityResult: vi.fn(),
+}));
+
 vi.mock('../config/index.js', () => ({
   config: {
     redis: {
@@ -52,6 +58,10 @@ vi.mock('../config/index.js', () => ({
       cliPath: 'npx @openai/codex',
       model: 'gpt-5.4',
       timeoutMs: 300000,
+    },
+    qualityGate: {
+      testCommand: 'npm test',
+      testTimeoutMs: 180000,
     },
   },
 }));
@@ -80,6 +90,11 @@ vi.mock('../github/issue-labels.js', () => ({
 
 vi.mock('../utils/node-pty.js', () => ({
   ensureNodePtySpawnHelperExecutable: mockEnsureNodePtySpawnHelperExecutable,
+}));
+
+vi.mock('./develop-stop-hook.js', () => ({
+  handleDevelopStopHook: mockHandleDevelopStopHook,
+  prepareDevelopStopHook: mockPrepareDevelopStopHook,
 }));
 
 vi.mock('./logger.js', () => ({
@@ -124,6 +139,9 @@ describe('develop job', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockHandleDevelopStopHook.mockReset();
+    mockPrepareDevelopStopHook.mockReset();
+    mockReadFinalQualityResult.mockReset();
     mockCreateJobLogger.mockReturnValue({
       info: vi.fn(),
       error: vi.fn(),
@@ -137,6 +155,28 @@ describe('develop job', () => {
       htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
     });
     mockMoveIssueToInReview.mockResolvedValue(['in review']);
+    mockHandleDevelopStopHook.mockResolvedValue({ decision: 'allow' });
+    mockReadFinalQualityResult.mockResolvedValue({
+      status: 'passed',
+      command: 'npm test',
+      exitCode: 0,
+      attempts: 1,
+      durationMs: 42,
+      summary: 'Quality Gate passed.',
+      outputPath: '/tmp/run/quality/attempt-1.log',
+    } satisfies QualityGateResult);
+    mockPrepareDevelopStopHook.mockResolvedValue({
+      runDir: '/tmp/run',
+      statePath: '/tmp/run/quality/stop-hook-state.json',
+      scriptPath: '/tmp/run/quality/stop-hook.mjs',
+      env: {
+        BLAST_FURNACE_STOP_HOOK_STATE_PATH: '/tmp/run/quality/stop-hook-state.json',
+        BLAST_FURNACE_STOP_HOOK_SCRIPT_PATH: '/tmp/run/quality/stop-hook.mjs',
+      },
+      hookCommand: 'node "/tmp/run/quality/stop-hook.mjs"',
+      hookTimeoutSeconds: 185,
+      readFinalQualityResult: mockReadFinalQualityResult,
+    });
   });
 
   afterEach(async () => {
@@ -259,23 +299,59 @@ describe('develop job', () => {
     expect(mockEnsureNodePtySpawnHelperExecutable).toHaveBeenCalledTimes(1);
     expect(nodePty.spawn).toHaveBeenCalledWith(
       'npx',
-      [
+      expect.arrayContaining([
         '@openai/codex',
         'exec',
+        '--enable',
+        'codex_hooks',
         '--dangerously-bypass-approvals-and-sandbox',
         '--model',
         'gpt-5.4',
-        expect.stringContaining('Issue #42: Test Issue'),
-      ],
+        '--config',
+      ]),
       expect.objectContaining({ cwd: expect.stringContaining('develop-ledger-') })
     );
+    const args = vi.mocked(nodePty.spawn).mock.calls[0][1];
+    const configArg = args[args.indexOf('--config') + 1];
+    expect(configArg).toContain('hooks.Stop=[{ hooks = [{ type = "command"');
+    expect(configArg).toContain('command = "node \\"/tmp/run/quality/stop-hook.mjs\\""');
+    expect(configArg).not.toContain('{"hooks"');
+    expect(args.at(-1)).toEqual(expect.stringContaining('Issue #42: Test Issue'));
     const prompt = vi.mocked(nodePty.spawn).mock.calls[0][1].at(-1);
     expect(prompt).toContain('Test body');
     expect(prompt).toContain('Planning deferred for this iteration.');
     expect(mockLogger.info).toHaveBeenCalledWith('[codex] codex output');
+    expect(mockPrepareDevelopStopHook).toHaveBeenCalledWith(expect.objectContaining({
+      workspacePath: expect.stringContaining('develop-ledger-'),
+      qualityGateCommand: 'npm test',
+      qualityGateTimeoutMs: 180000,
+    }));
+    expect(nodePty.spawn).toHaveBeenCalledWith(
+      'npx',
+      expect.any(Array),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          BLAST_FURNACE_STOP_HOOK_STATE_PATH: '/tmp/run/quality/stop-hook-state.json',
+        }),
+      })
+    );
   });
 
-  it('appends development output and enqueues quality-gate with an input record reference', async () => {
+  it('does not duplicate codex_hooks when the configured Codex invocation already enables it', async () => {
+    const { buildCodexCliArgs } = await import('./develop.js');
+
+    const args = buildCodexCliArgs(
+      'codex',
+      ['exec', '--enable', 'codex_hooks'],
+      'Do the work',
+      'gpt-5.4'
+    );
+
+    expect(args.filter((arg) => arg === '--enable')).toHaveLength(1);
+    expect(args.filter((arg) => arg === 'codex_hooks')).toHaveLength(1);
+  });
+
+  it('appends development and passed quality output, then enqueues review by input record reference', async () => {
     const { runDevelopFlow } = await import('./develop.js');
     vi.mocked(nodePty.spawn).mockReturnValue(createCodexMockProcess());
     const job = await createJob();
@@ -285,22 +361,165 @@ describe('develop job', () => {
 
     expect(records[1]).toMatchObject({
       fromStage: 'develop',
-      toStage: 'quality-gate',
+      toStage: 'review',
+      status: 'success',
       output: {
+        status: 'success',
         development: {
           status: 'completed',
           summary: 'Codex completed successfully.',
         },
+        quality: {
+          status: 'passed',
+          command: 'npm test',
+          attempts: 1,
+        },
       },
     });
-    expect(mockJobQueueAdd).toHaveBeenCalledWith('quality-gate', expect.objectContaining({
-      type: 'quality-gate',
-      stage: 'quality-gate',
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('review', expect.objectContaining({
+      type: 'review',
+      stage: 'review',
       inputRecordRef: expect.objectContaining({
-        recordId: '000002_develop_to_quality-gate',
+        recordId: '000002_develop_to_review',
+        stage: 'develop',
       }),
     }));
     expect(mockJobQueueAdd.mock.calls[0][1]).not.toHaveProperty('development');
+    expect(mockJobQueueAdd).not.toHaveBeenCalledWith('quality-gate', expect.anything());
+  });
+
+  it('runs the Quality Gate fallback when Codex exits without producing a Stop-hook result', async () => {
+    const { runDevelopFlow } = await import('./develop.js');
+    mockReadFinalQualityResult
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({
+        status: 'passed',
+        command: 'npm test',
+        exitCode: 0,
+        attempts: 1,
+        durationMs: 42,
+        summary: 'Quality Gate passed from fallback.',
+        outputPath: '/tmp/run/quality/attempt-1.log',
+      } satisfies QualityGateResult);
+    vi.mocked(nodePty.spawn).mockReturnValue(createCodexMockProcess());
+    const job = await createJob();
+
+    await runDevelopFlow(job);
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
+
+    expect(mockHandleDevelopStopHook).toHaveBeenCalledWith({
+      statePath: '/tmp/run/quality/stop-hook-state.json',
+      runDir: '/tmp/run',
+      workspacePath: expect.stringContaining('develop-ledger-'),
+      qualityGateCommand: 'npm test',
+      qualityGateTimeoutMs: 180000,
+      hookInput: {},
+    });
+    expect(records[1]).toMatchObject({
+      fromStage: 'develop',
+      toStage: 'review',
+      status: 'success',
+      output: {
+        status: 'success',
+        quality: {
+          status: 'passed',
+          summary: 'Quality Gate passed from fallback.',
+        },
+      },
+    });
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('review', expect.anything());
+  });
+
+  it('appends terminal quality-misconfigured output and does not enqueue downstream jobs', async () => {
+    const { runDevelopFlow } = await import('./develop.js');
+    mockReadFinalQualityResult.mockResolvedValue({
+      status: 'misconfigured',
+      command: '',
+      attempts: 1,
+      durationMs: 0,
+      summary: 'QUALITY_GATE_TEST_COMMAND is not configured.',
+    } satisfies QualityGateResult);
+    vi.mocked(nodePty.spawn).mockReturnValue(createCodexMockProcess());
+    const job = await createJob();
+
+    await runDevelopFlow(job);
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
+
+    expect(records[1]).toMatchObject({
+      fromStage: 'develop',
+      toStage: null,
+      nextInput: null,
+      status: 'blocked',
+      output: {
+        status: 'quality-misconfigured',
+        quality: {
+          status: 'misconfigured',
+          command: '',
+        },
+      },
+    });
+    expect(mockJobQueueAdd).not.toHaveBeenCalled();
+  });
+
+  it('appends terminal failed and timed-out quality output without review, make-pr, or tracker jobs', async () => {
+    const { runDevelopFlow } = await import('./develop.js');
+    mockReadFinalQualityResult.mockResolvedValue({
+      status: 'failed',
+      command: 'npm test',
+      exitCode: 1,
+      attempts: 3,
+      durationMs: 200,
+      summary: 'Tests failed.',
+    } satisfies QualityGateResult);
+    vi.mocked(nodePty.spawn).mockReturnValue(createCodexMockProcess());
+    const job = await createJob();
+
+    await runDevelopFlow(job);
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
+
+    expect(records[1]).toMatchObject({
+      fromStage: 'develop',
+      toStage: null,
+      nextInput: null,
+      status: 'failure',
+      output: {
+        status: 'quality-failed',
+        quality: {
+          status: 'failed',
+          attempts: 3,
+        },
+      },
+    });
+    expect(mockJobQueueAdd).not.toHaveBeenCalledWith('review', expect.anything());
+    expect(mockJobQueueAdd).not.toHaveBeenCalledWith('make-pr', expect.anything());
+    expect(mockJobQueueAdd).not.toHaveBeenCalledWith('sync-tracker-state', expect.anything());
+
+    mockJobQueueAdd.mockClear();
+    mockReadFinalQualityResult.mockResolvedValue({
+      status: 'timed-out',
+      command: 'npm test',
+      attempts: 3,
+      durationMs: 180000,
+      summary: 'Tests timed out.',
+    } satisfies QualityGateResult);
+    const timedOutJob = await createJob(createIssue(43, 'Timeout Issue', 'Timeout body'));
+
+    await runDevelopFlow(timedOutJob);
+    const timedOutRecords = await readHandoffRecords(timedOutJob.data.inputRecordRef.handoffPath);
+
+    expect(timedOutRecords[1]).toMatchObject({
+      fromStage: 'develop',
+      toStage: null,
+      nextInput: null,
+      status: 'failure',
+      output: {
+        status: 'quality-timed-out',
+        quality: {
+          status: 'timed-out',
+        },
+      },
+    });
+    expect(mockJobQueueAdd).not.toHaveBeenCalled();
   });
 
   it('fails when codex exits with a non-zero code', async () => {

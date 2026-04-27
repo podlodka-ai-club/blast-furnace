@@ -43,7 +43,13 @@ vi.mock('../utils/working-dir.js', () => ({
   createTempWorkingDir: mockCreateTempWorkingDir,
   cloneRepoInto: mockCloneRepoInto,
   cleanupWorkingDir: mockCleanupWorkingDir,
-  getRepoRemoteUrl: () => 'https://test-token@github.com/test-owner/test-repo.git',
+  createGitCommandEnv: () => ({
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader',
+    GIT_CONFIG_VALUE_0: 'AUTHORIZATION: basic test-credentials',
+  }),
+  getRepoRemoteUrl: () => 'https://github.com/test-owner/test-repo.git',
 }));
 
 vi.mock('./logger.js', () => ({
@@ -285,22 +291,40 @@ describe('prepare-run job', () => {
     expect(mockCreateTempWorkingDir).toHaveBeenCalledWith('prepare-run');
     expect(mockCloneRepoInto).toHaveBeenCalledWith(
       TEMP_DIR,
-      'https://test-token@github.com/test-owner/test-repo.git'
+      'https://github.com/test-owner/test-repo.git'
     );
     expect(spawn).toHaveBeenCalledWith(
       'git',
-      ['fetch', 'https://test-token@github.com/test-owner/test-repo.git', 'heads/issue-42-test-issue'],
-      { cwd: TEMP_DIR }
+      ['fetch', 'https://github.com/test-owner/test-repo.git', 'heads/issue-42-test-issue'],
+      {
+        cwd: TEMP_DIR,
+        env: expect.objectContaining({
+          GIT_TERMINAL_PROMPT: '0',
+          GIT_CONFIG_VALUE_0: 'AUTHORIZATION: basic test-credentials',
+        }),
+      }
     );
     expect(spawn).toHaveBeenCalledWith(
       'git',
       ['checkout', '-b', 'issue-42-test-issue', '--track', 'origin/issue-42-test-issue'],
-      { cwd: TEMP_DIR }
+      {
+        cwd: TEMP_DIR,
+        env: expect.objectContaining({
+          GIT_TERMINAL_PROMPT: '0',
+          GIT_CONFIG_VALUE_0: 'AUTHORIZATION: basic test-credentials',
+        }),
+      }
     );
     expect(spawn).toHaveBeenCalledWith(
       'git',
       ['reset', '--hard', 'origin/issue-42-test-issue'],
-      { cwd: TEMP_DIR }
+      {
+        cwd: TEMP_DIR,
+        env: expect.objectContaining({
+          GIT_TERMINAL_PROMPT: '0',
+          GIT_CONFIG_VALUE_0: 'AUTHORIZATION: basic test-credentials',
+        }),
+      }
     );
   });
 
@@ -318,7 +342,7 @@ describe('prepare-run job', () => {
 
     expect(mockCloneRepoInto).toHaveBeenCalledWith(
       TEMP_DIR,
-      'https://test-token@github.com/test-owner/test-repo.git'
+      'https://github.com/test-owner/test-repo.git'
     );
     expect(await pathExists(join(TEMP_DIR, '.orchestrator'))).toBe(false);
   });

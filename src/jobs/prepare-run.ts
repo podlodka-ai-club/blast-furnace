@@ -10,7 +10,13 @@ import type {
 } from '../types/index.js';
 import { getRef, pushBranch, deleteBranch } from '../github/branches.js';
 import { assertConfiguredRepository } from '../github/repository.js';
-import { cloneRepoInto, cleanupWorkingDir, createTempWorkingDir, getRepoRemoteUrl } from '../utils/working-dir.js';
+import {
+  cloneRepoInto,
+  cleanupWorkingDir,
+  createGitCommandEnv,
+  createTempWorkingDir,
+  getRepoRemoteUrl,
+} from '../utils/working-dir.js';
 import { stageOutputSchemas } from './handoff-contracts.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
@@ -87,9 +93,22 @@ export function prepareIssueBranchName(issue: PrepareRunJobData['issue']): strin
 
 function execGitCommand(args: string[], cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn('git', args, { cwd });
+    const child = spawn('git', args, { cwd, env: createGitCommandEnv() });
     let stdout = '';
     let stderr = '';
+    let settled = false;
+    const timeoutMs = Number(process.env['GIT_COMMAND_TIMEOUT_MS'] ?? 120000);
+    const commandTimeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 120000;
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM');
+      settle(() => reject(new Error(`git command timed out after ${commandTimeoutMs}ms`)));
+    }, commandTimeoutMs);
 
     child.stdout?.on('data', (data) => {
       stdout += data.toString();
@@ -101,13 +120,15 @@ function execGitCommand(args: string[], cwd: string): Promise<string> {
 
     child.on('close', (code) => {
       if (code === 0) {
-        resolve(stdout.trim());
+        settle(() => resolve(stdout.trim()));
       } else {
-        reject(new Error(`git command failed: ${stderr}`));
+        settle(() => reject(new Error(`git command failed: ${stderr}`)));
       }
     });
 
-    child.on('error', reject);
+    child.on('error', (err) => {
+      settle(() => reject(err));
+    });
   });
 }
 

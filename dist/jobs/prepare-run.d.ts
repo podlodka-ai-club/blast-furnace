@@ -8,7 +8,6 @@ interface PrepareRunState {
 }
 export interface PrepareRunWorkResult {
     assessJobData: AssessJobData;
-    runLogPath: string;
 }
 export interface CreatePrepareRunPayloadInput {
     issue: GitHubIssue;

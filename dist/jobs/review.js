@@ -1,7 +1,7 @@
 import { stageOutputSchemas, stagePayloadSchemas } from './handoff-contracts.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
-import { appendHandoffRecordAndUpdateSummary, readValidatedStageInputRecord, scheduleNextJob, } from './orchestration.js';
+import { appendHandoffRecordAndUpdateSummary, readValidatedStageInputRecord, resolveOrchestrationStorageRoot, scheduleNextJob, } from './orchestration.js';
 import { createForwardStagePayload } from './stage-payloads.js';
 const STUB_REVIEW = {
     status: 'stubbed',
@@ -10,16 +10,23 @@ const STUB_REVIEW = {
 export async function runReviewWork(job) {
     stagePayloadSchemas.review.parse(job.data);
     const inputRecord = await readValidatedStageInputRecord(job.data);
-    const quality = stageOutputSchemas['quality-gate'].parse(inputRecord.output);
+    if (inputRecord.fromStage !== 'develop') {
+        throw new Error(`review input must be produced by develop, got ${inputRecord.fromStage}`);
+    }
+    const developed = stageOutputSchemas.develop.parse(inputRecord.output);
+    if (developed.quality.status !== 'passed') {
+        throw new Error('review input quality.status must be passed');
+    }
     const output = stageOutputSchemas.review.parse({
-        ...quality,
+        ...developed,
         status: 'success',
         runId: job.data.runId,
         stageAttempt: job.data.stageAttempt,
         reworkAttempt: job.data.reworkAttempt,
         review: STUB_REVIEW,
     });
-    const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(output.workspacePath, {
+    const orchestrationRoot = resolveOrchestrationStorageRoot(job.data.inputRecordRef);
+    const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
         runId: job.data.runId,
         fromStage: 'review',
         toStage: 'make-pr',

@@ -3,7 +3,7 @@ import { assertConfiguredRepository } from '../github/repository.js';
 import { cleanupWorkingDir } from '../utils/working-dir.js';
 import { stageOutputSchemas, stagePayloadSchemas } from './handoff-contracts.js';
 import { createJobLogger } from './logger.js';
-import { appendHandoffRecordAndUpdateSummary, readValidatedStageInputRecord, } from './orchestration.js';
+import { appendHandoffRecordAndUpdateSummary, readValidatedStageInputRecord, resolveOrchestrationStorageRoot, } from './orchestration.js';
 async function readSyncTrackerStateInput(job) {
     stagePayloadSchemas['sync-tracker-state'].parse(job.data);
     const inputRecord = await readValidatedStageInputRecord(job.data);
@@ -14,7 +14,7 @@ async function readSyncTrackerStateInput(job) {
     return makePrOutput;
 }
 export async function runSyncTrackerStateWork(job, logger = createJobLogger(job), context) {
-    const { issue, repository, branchName, workspacePath, pullRequest } = context ?? await readSyncTrackerStateInput(job);
+    const { issue, repository, branchName, pullRequest } = context ?? await readSyncTrackerStateInput(job);
     assertConfiguredRepository(repository);
     logger.info(`Synchronizing tracker state for PR #${pullRequest.number} on branch ${branchName}`);
     let trackerLabels = [];
@@ -33,7 +33,8 @@ export async function runSyncTrackerStateWork(job, logger = createJobLogger(job)
         reworkAttempt: job.data.reworkAttempt,
         trackerLabels,
     });
-    await appendHandoffRecordAndUpdateSummary(workspacePath, {
+    const orchestrationRoot = resolveOrchestrationStorageRoot(job.data.inputRecordRef);
+    await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
         runId: job.data.runId,
         fromStage: 'sync-tracker-state',
         toStage: null,

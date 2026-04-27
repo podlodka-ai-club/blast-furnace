@@ -4,7 +4,6 @@ export const WORKFLOW_STAGES = [
     'assess',
     'plan',
     'develop',
-    'quality-gate',
     'review',
     'make-pr',
     'sync-tracker-state',

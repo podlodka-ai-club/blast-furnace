@@ -3,6 +3,7 @@ export interface QueueLike {
     add(name: string, data: JobPayload): Promise<unknown>;
 }
 export declare function resolveRunDirectory(root: string, runId: RunId): string;
+export declare function resolveOrchestrationStorageRoot(ref?: InputRecordRef): string;
 export declare function formatRunTimestamp(date?: Date): string;
 export declare function createRunFileSet(root: string, runId: RunId, date?: Date): RunFileSet;
 export declare function resolveRunFileSet(root: string, runId: RunId, timestampPrefix: string): RunFileSet;
@@ -11,7 +12,6 @@ export declare function resolveStageAttemptDirectory(root: string, location: Sta
 export declare function resolveArtifactPath(root: string, location: ArtifactLocation): string;
 export declare function resolveEventPath(root: string, runId: RunId, eventName: string): string;
 export declare function resolveRunSummaryPath(root: string, runId: RunId): string;
-export declare function resolveRunLogPath(root: string, runId: RunId): string;
 export declare function writeArtifactFile(root: string, location: ArtifactLocation, data: unknown): Promise<ArtifactMetadata>;
 export declare function writeEventFile(root: string, runId: RunId, eventName: string, data: unknown): Promise<EventMetadata>;
 export declare function readRunSummary(root: string, runId: RunId): Promise<RunSummaryData | null>;

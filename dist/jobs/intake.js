@@ -7,11 +7,23 @@ import { jobQueue } from './queue.js';
 import { createPrepareRunPayload } from './prepare-run.js';
 const LAST_POLL_KEY = 'github:intake:last-poll';
 const LEGACY_LAST_POLL_KEY = 'github:issue-watcher:last-poll';
+const PROCESSING_LOCK_TTL_SECONDS = Math.max(Math.ceil((config.codex?.timeoutMs ?? 300000) / 1000) * 2, Math.ceil(config.github.pollIntervalMs / 1000) * 2);
 const redisClient = new Redis({
     host: config.redis.host,
     port: config.redis.port,
     ...(config.redis.password !== undefined && { password: config.redis.password }),
 });
+function processingLockKey(repository, issue) {
+    return `github:intake:processing:${repository.owner}:${repository.repo}:${issue.number}`;
+}
+async function claimIssueForProcessing(repository, issue, runId) {
+    const lockKey = processingLockKey(repository, issue);
+    const result = await redisClient.set(lockKey, runId, 'EX', PROCESSING_LOCK_TTL_SECONDS, 'NX');
+    return {
+        claimed: result === 'OK',
+        lockKey,
+    };
+}
 export async function startIntake() {
     let connectionEstablishedByThisCall = false;
     if (redisClient.status !== 'ready' && redisClient.status !== 'connecting') {
@@ -58,7 +70,18 @@ export async function intakeHandler(_job) {
         since: sinceTimestamp,
     });
     for (const issue of issues) {
-        await jobQueue.add('prepare-run', createPrepareRunPayload({ issue, repository }));
+        const payload = createPrepareRunPayload({ issue, repository });
+        const claim = await claimIssueForProcessing(repository, issue, payload.runId);
+        if (!claim.claimed) {
+            continue;
+        }
+        try {
+            await jobQueue.add('prepare-run', payload);
+        }
+        catch (err) {
+            await redisClient.del(claim.lockKey);
+            throw err;
+        }
     }
     await redisClient.set(LAST_POLL_KEY, new Date().toISOString());
 }
