@@ -5,6 +5,7 @@ import { READY_LABEL } from '../github/issue-labels.js';
 import { getConfiguredRepository } from '../github/repository.js';
 import { jobQueue } from './queue.js';
 import { createPrepareRunPayload } from './prepare-run.js';
+import { createJobLogger } from './logger.js';
 const LAST_POLL_KEY = 'github:intake:last-poll';
 const LEGACY_LAST_POLL_KEY = 'github:issue-watcher:last-poll';
 const PROCESSING_LOCK_TTL_SECONDS = Math.max(Math.ceil((config.codex?.timeoutMs ?? 300000) / 1000) * 2, Math.ceil(config.github.pollIntervalMs / 1000) * 2);
@@ -54,7 +55,8 @@ export async function startIntake() {
         throw err;
     }
 }
-export async function intakeHandler(_job) {
+export async function intakeHandler(job) {
+    const logger = createJobLogger(job);
     const storedTimestamp = await redisClient.get(LAST_POLL_KEY) ?? await redisClient.get(LEGACY_LAST_POLL_KEY);
     let sinceTimestamp;
     if (storedTimestamp) {
@@ -69,12 +71,14 @@ export async function intakeHandler(_job) {
         state: 'open',
         since: sinceTimestamp,
     });
+    let eligibleIssueCount = 0;
     for (const issue of issues) {
         const payload = createPrepareRunPayload({ issue, repository });
         const claim = await claimIssueForProcessing(repository, issue, payload.runId);
         if (!claim.claimed) {
             continue;
         }
+        eligibleIssueCount += 1;
         try {
             await jobQueue.add('prepare-run', payload);
         }
@@ -83,6 +87,7 @@ export async function intakeHandler(_job) {
             throw err;
         }
     }
+    logger.info(`GitHub intake fetched ${issues.length} issue(s); ${eligibleIssueCount} issue(s) eligible for processing`);
     await redisClient.set(LAST_POLL_KEY, new Date().toISOString());
 }
 export async function closeIntakeRedis() {

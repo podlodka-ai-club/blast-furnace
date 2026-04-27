@@ -51,7 +51,11 @@ vi.mock('../github/issue-labels.js', () => ({
 
 vi.mock('../utils/working-dir.js', () => ({
   cleanupWorkingDir: mockCleanupWorkingDir,
-  getRepoRemoteUrl: () => 'https://test-token@github.com/test-owner/test-repo.git',
+  createGitCommandEnv: () => ({
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_CONFIG_VALUE_0: 'AUTHORIZATION: basic test-credentials',
+  }),
+  getRepoRemoteUrl: () => 'https://github.com/test-owner/test-repo.git',
 }));
 
 vi.mock('./queue.js', () => ({
@@ -100,6 +104,16 @@ function createGitMockProcess(exitCode = 0, stdout = '', stderr = ''): ReturnTyp
     }),
     kill: vi.fn(),
   } as unknown as ReturnType<typeof spawn>;
+}
+
+function expectGitSpawnOptions() {
+  return {
+    cwd: expect.stringContaining('make-pr-ledger-'),
+    env: expect.objectContaining({
+      GIT_TERMINAL_PROMPT: '0',
+      GIT_CONFIG_VALUE_0: 'AUTHORIZATION: basic test-credentials',
+    }),
+  };
 }
 
 describe('make-pr job', () => {
@@ -231,7 +245,7 @@ describe('make-pr job', () => {
         ':(exclude).codex',
         ':(exclude).codex/**',
       ],
-      { cwd: expect.stringContaining('make-pr-ledger-') }
+      expectGitSpawnOptions()
     );
     expect(result).toMatchObject({
       status: 'pull-request-created',
@@ -265,7 +279,7 @@ describe('make-pr job', () => {
         ':(exclude).codex',
         ':(exclude).codex/**',
       ],
-      { cwd: expect.stringContaining('make-pr-ledger-') }
+      expectGitSpawnOptions()
     );
     expect(records[1]).toMatchObject({
       fromStage: 'make-pr',
@@ -306,7 +320,7 @@ describe('make-pr job', () => {
         ':(exclude).codex',
         ':(exclude).codex/**',
       ],
-      { cwd: expect.stringContaining('make-pr-ledger-') }
+      expectGitSpawnOptions()
     );
     expect(mockSpawn).toHaveBeenCalledWith(
       'git',
@@ -316,17 +330,17 @@ describe('make-pr job', () => {
         '--',
         'modified-file.txt',
       ],
-      { cwd: expect.stringContaining('make-pr-ledger-') }
+      expectGitSpawnOptions()
     );
     expect(mockSpawn).toHaveBeenCalledWith(
       'git',
       ['commit', '-m', 'Processed issue #42 via codex: Test Issue'],
-      { cwd: expect.stringContaining('make-pr-ledger-') }
+      expectGitSpawnOptions()
     );
     expect(mockSpawn).toHaveBeenCalledWith(
       'git',
-      ['push', 'https://test-token@github.com/test-owner/test-repo.git', 'issue-42-test-issue'],
-      { cwd: expect.stringContaining('make-pr-ledger-') }
+      ['push', 'https://github.com/test-owner/test-repo.git', 'issue-42-test-issue'],
+      expectGitSpawnOptions()
     );
     expect(mockCreatePullRequest).toHaveBeenCalledWith({
       title: 'Process issue #42: Test Issue',
@@ -389,7 +403,7 @@ describe('make-pr job', () => {
         ':(exclude).codex',
         ':(exclude).codex/**',
       ],
-      { cwd: expect.stringContaining('make-pr-ledger-') }
+      expectGitSpawnOptions()
     );
     expect(mockSpawn).not.toHaveBeenCalledWith(
       'git',
