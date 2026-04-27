@@ -307,15 +307,12 @@ describe('develop job', () => {
         '--dangerously-bypass-approvals-and-sandbox',
         '--model',
         'gpt-5.4',
-        '--config',
       ]),
       expect.objectContaining({ cwd: expect.stringContaining('develop-ledger-') })
     );
     const args = vi.mocked(nodePty.spawn).mock.calls[0][1];
-    const configArg = args[args.indexOf('--config') + 1];
-    expect(configArg).toContain('hooks.Stop=[{ hooks = [{ type = "command"');
-    expect(configArg).toContain('command = "node \\"/tmp/run/quality/stop-hook.mjs\\""');
-    expect(configArg).not.toContain('{"hooks"');
+    expect(args).not.toContain('--config');
+    expect(args.some((arg) => arg.includes('hooks.Stop'))).toBe(false);
     expect(args.at(-1)).toEqual(expect.stringContaining('Issue #42: Test Issue'));
     const prompt = vi.mocked(nodePty.spawn).mock.calls[0][1].at(-1);
     expect(prompt).toContain('Test body');

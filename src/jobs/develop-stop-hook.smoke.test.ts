@@ -77,14 +77,9 @@ describe.skipIf(!runSmoke)('Codex Stop-hook smoke', () => {
         'codex_hooks',
         '--model',
         process.env['CODEX_MODEL'] ?? 'gpt-5.4',
-        '--dangerously-bypass-approvals-and-sandbox',
-        '--config',
-        `hooks.Stop=${JSON.stringify([{ hooks: [{
-          type: 'command',
-          command: prepared.hookCommand,
-          timeout: prepared.hookTimeoutSeconds,
-          statusMessage: 'Running Quality Gate',
-        }] }])}`,
+        '--sandbox',
+        'workspace-write',
+        '--skip-git-repo-check',
         'Do not modify files. Finish immediately.',
       ];
 

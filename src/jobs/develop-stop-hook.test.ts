@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -84,6 +84,42 @@ describe('develop stop hook state and adapter', () => {
     });
     expect(prepared.hookCommand).toContain(prepared.scriptPath);
     expect(prepared.hookTimeoutSeconds).toBeGreaterThan(180);
+  });
+
+  it('installs the Codex Stop-hook config in the target workspace and excludes it from git changes', async () => {
+    await mkdir(join(workspacePath, '.git', 'info'), { recursive: true });
+    await writeFile(join(workspacePath, '.git', 'info', 'exclude'), '# local excludes\n', 'utf8');
+
+    const prepared = await prepareDevelopStopHook({
+      runId: 'run-123',
+      runDir,
+      workspacePath,
+      qualityGateCommand: 'npm test',
+      qualityGateTimeoutMs: 180000,
+    });
+
+    const hooksConfig = JSON.parse(await readFile(join(workspacePath, '.codex', 'hooks.json'), 'utf8'));
+    expect(hooksConfig).toEqual({
+      hooks: {
+        Stop: [
+          {
+            hooks: [
+              {
+                type: 'command',
+                command: prepared.hookCommand,
+                timeout: prepared.hookTimeoutSeconds,
+                statusMessage: 'Running Quality Gate',
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const exclude = await readFile(join(workspacePath, '.git', 'info', 'exclude'), 'utf8');
+    expect(exclude).toContain('# local excludes');
+    expect(exclude).toContain('.codex/');
+    expect(exclude).toContain('.codex/hooks.json');
   });
 
   it('blocks the first and second failed quality attempts with bounded feedback', async () => {

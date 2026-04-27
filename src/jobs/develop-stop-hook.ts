@@ -1,7 +1,13 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { QualityGateResult } from '../types/index.js';
 import { runQualityGate } from './quality-gate-runner.js';
+
+const CODEX_HOOKS_CONFIG_PATH = '.codex/hooks.json';
+const CODEX_HOOKS_GIT_EXCLUDES = [
+  '.codex/',
+  CODEX_HOOKS_CONFIG_PATH,
+];
 
 export interface DevelopStopHookState {
   attempts: number;
@@ -23,6 +29,7 @@ export interface PreparedDevelopStopHook {
   runDir: string;
   statePath: string;
   scriptPath: string;
+  hookConfigPath: string;
   hookCommand: string;
   hookTimeoutSeconds: number;
   env: NodeJS.ProcessEnv;
@@ -44,6 +51,10 @@ export type StopHookDecision =
   | { decision: 'allow' }
   | { decision: 'block'; reason: string };
 
+function isErrnoException(err: unknown, code: string): boolean {
+  return typeof err === 'object' && err !== null && 'code' in err && err.code === code;
+}
+
 function emptyState(): DevelopStopHookState {
   return {
     attempts: 0,
@@ -61,7 +72,7 @@ export async function readDevelopStopHookState(statePath: string): Promise<Devel
       ...JSON.parse(raw) as Partial<DevelopStopHookState>,
     };
   } catch (err) {
-    if (typeof err === 'object' && err !== null && 'code' in err && err.code === 'ENOENT') {
+    if (isErrnoException(err, 'ENOENT')) {
       return emptyState();
     }
     throw err;
@@ -166,6 +177,73 @@ else {
 `;
 }
 
+async function pathExists(pathToCheck: string): Promise<boolean> {
+  try {
+    await stat(pathToCheck);
+    return true;
+  } catch (err) {
+    if (isErrnoException(err, 'ENOENT')) {
+      return false;
+    }
+    throw err;
+  }
+}
+
+async function excludeCodexHooksFromWorkspaceGit(workspacePath: string): Promise<void> {
+  const gitDir = join(workspacePath, '.git');
+  if (!await pathExists(gitDir)) {
+    return;
+  }
+
+  const excludePath = join(gitDir, 'info', 'exclude');
+  await mkdir(dirname(excludePath), { recursive: true });
+
+  let existing = '';
+  try {
+    existing = await readFile(excludePath, 'utf8');
+  } catch (err) {
+    if (!isErrnoException(err, 'ENOENT')) {
+      throw err;
+    }
+  }
+
+  const existingEntries = new Set(existing.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+  const additions = CODEX_HOOKS_GIT_EXCLUDES.filter((entry) => !existingEntries.has(entry));
+  if (additions.length === 0) {
+    return;
+  }
+
+  const separator = existing.length === 0 || existing.endsWith('\n') ? '' : '\n';
+  await writeFile(excludePath, `${existing}${separator}${additions.join('\n')}\n`, 'utf8');
+}
+
+async function writeCodexStopHookConfig(
+  workspacePath: string,
+  hookCommand: string,
+  hookTimeoutSeconds: number
+): Promise<string> {
+  const hookConfigPath = join(workspacePath, CODEX_HOOKS_CONFIG_PATH);
+  await mkdir(dirname(hookConfigPath), { recursive: true });
+  await writeFile(hookConfigPath, JSON.stringify({
+    hooks: {
+      Stop: [
+        {
+          hooks: [
+            {
+              type: 'command',
+              command: hookCommand,
+              timeout: hookTimeoutSeconds,
+              statusMessage: 'Running Quality Gate',
+            },
+          ],
+        },
+      ],
+    },
+  }, null, 2), 'utf8');
+  await excludeCodexHooksFromWorkspaceGit(workspacePath);
+  return hookConfigPath;
+}
+
 export async function prepareDevelopStopHook(
   options: PrepareDevelopStopHookOptions
 ): Promise<PreparedDevelopStopHook> {
@@ -177,17 +255,20 @@ export async function prepareDevelopStopHook(
   await writeFile(scriptPath, buildHookScript(), { encoding: 'utf8', mode: 0o755 });
   const hookCommand = `node ${JSON.stringify(scriptPath)}`;
   const hookTimeoutSeconds = Math.max(1, Math.ceil(options.qualityGateTimeoutMs / 1000) + 5);
+  const hookConfigPath = await writeCodexStopHookConfig(options.workspacePath, hookCommand, hookTimeoutSeconds);
 
   return {
     runDir: options.runDir,
     statePath,
     scriptPath,
+    hookConfigPath,
     hookCommand,
     hookTimeoutSeconds,
     env: {
       BLAST_FURNACE_STOP_HOOK_STATE_PATH: statePath,
       BLAST_FURNACE_STOP_HOOK_RUN_DIR: options.runDir,
       BLAST_FURNACE_STOP_HOOK_SCRIPT_PATH: scriptPath,
+      BLAST_FURNACE_STOP_HOOK_CONFIG_PATH: hookConfigPath,
       BLAST_FURNACE_WORKSPACE_PATH: options.workspacePath,
       BLAST_FURNACE_QUALITY_GATE_COMMAND: options.qualityGateCommand ?? '',
       BLAST_FURNACE_QUALITY_GATE_TIMEOUT_MS: String(options.qualityGateTimeoutMs),

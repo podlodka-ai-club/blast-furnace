@@ -70,35 +70,6 @@ function hasCodexHooksEnabled(args: string[]): boolean {
   });
 }
 
-function hasStopHookConfig(args: string[]): boolean {
-  return args.some((arg, index) => arg.startsWith('hooks.Stop=') || (
-    (args[index - 1] === '--config' || args[index - 1] === '-c') &&
-    arg.includes('hooks.Stop')
-  ));
-}
-
-function addStopHookConfigArgs(
-  args: string[],
-  hookCommand: string,
-  hookTimeoutSeconds: number
-): string[] {
-  if (hasStopHookConfig(args)) {
-    return args;
-  }
-  const prompt = args.at(-1);
-  if (prompt === undefined) {
-    return args;
-  }
-  const tomlString = (value: string) => JSON.stringify(value);
-  const stopHookConfig = `[{ hooks = [{ type = "command", command = ${tomlString(hookCommand)}, timeout = ${hookTimeoutSeconds}, statusMessage = "Running Quality Gate" }] }]`;
-  return [
-    ...args.slice(0, -1),
-    '--config',
-    `hooks.Stop=${stopHookConfig}`,
-    prompt,
-  ];
-}
-
 export function buildCodexCliArgs(cliCmd: string, cliArgs: string[], prompt: string, model: string): string[] {
   const invocationArgs = [...cliArgs];
   const hasExplicitSubcommand = invocationArgs.some((arg) => CODEX_SUBCOMMANDS.has(arg));
@@ -181,12 +152,9 @@ export async function runDevelopWork(
     qualityGateTimeoutMs,
   });
   const baseCliArgs = buildCodexCliArgs(cliCmd, cliArgs, prompt, codexModel);
-  const finalCliArgs = appearsToBeCodexCommand(cliCmd, cliArgs)
-    ? addStopHookConfigArgs(baseCliArgs, stopHook.hookCommand, stopHook.hookTimeoutSeconds)
-    : baseCliArgs;
 
   await ensureNodePtySpawnHelperExecutable(logger);
-  const ptyProcess = pty.spawn(cliCmd, finalCliArgs, {
+  const ptyProcess = pty.spawn(cliCmd, baseCliArgs, {
     cwd: workspacePath,
     name: 'xterm-color',
     env: { ...process.env, ...stopHook.env },

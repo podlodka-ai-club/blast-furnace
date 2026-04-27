@@ -228,6 +228,8 @@ describe('make-pr job', () => {
         '.',
         ':(exclude).orchestrator',
         ':(exclude).orchestrator/**',
+        ':(exclude).codex',
+        ':(exclude).codex/**',
       ],
       { cwd: expect.stringContaining('make-pr-ledger-') }
     );
@@ -260,6 +262,8 @@ describe('make-pr job', () => {
         '.',
         ':(exclude).orchestrator',
         ':(exclude).orchestrator/**',
+        ':(exclude).codex',
+        ':(exclude).codex/**',
       ],
       { cwd: expect.stringContaining('make-pr-ledger-') }
     );
@@ -299,6 +303,8 @@ describe('make-pr job', () => {
         '.',
         ':(exclude).orchestrator',
         ':(exclude).orchestrator/**',
+        ':(exclude).codex',
+        ':(exclude).codex/**',
       ],
       { cwd: expect.stringContaining('make-pr-ledger-') }
     );
@@ -308,9 +314,7 @@ describe('make-pr job', () => {
         'add',
         '-A',
         '--',
-        '.',
-        ':(exclude).orchestrator',
-        ':(exclude).orchestrator/**',
+        'modified-file.txt',
       ],
       { cwd: expect.stringContaining('make-pr-ledger-') }
     );
@@ -352,14 +356,16 @@ describe('make-pr job', () => {
     expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
   });
 
-  it('treats target workspace .orchestrator changes as non-committable orchestration state', async () => {
+  it('treats target workspace orchestration and Codex hook files as non-committable state', async () => {
     const mockSpawn = vi.mocked(spawn);
     mockSpawn.mockImplementation((cmd: string, args: readonly string[]) => {
       if (
         cmd === 'git' &&
         args[0] === 'status' &&
         args.includes(':(exclude).orchestrator') &&
-        args.includes(':(exclude).orchestrator/**')
+        args.includes(':(exclude).orchestrator/**') &&
+        args.includes(':(exclude).codex') &&
+        args.includes(':(exclude).codex/**')
       ) {
         return createGitMockProcess(0, '');
       }
@@ -380,6 +386,8 @@ describe('make-pr job', () => {
         '.',
         ':(exclude).orchestrator',
         ':(exclude).orchestrator/**',
+        ':(exclude).codex',
+        ':(exclude).codex/**',
       ],
       { cwd: expect.stringContaining('make-pr-ledger-') }
     );

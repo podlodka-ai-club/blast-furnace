@@ -17,6 +17,7 @@ export interface PreparedDevelopStopHook {
     runDir: string;
     statePath: string;
     scriptPath: string;
+    hookConfigPath: string;
     hookCommand: string;
     hookTimeoutSeconds: number;
     env: NodeJS.ProcessEnv;
