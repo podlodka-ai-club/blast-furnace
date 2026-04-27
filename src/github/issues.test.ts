@@ -51,6 +51,7 @@ describe('issues', () => {
       expect(githubClient.issues.listForRepo).toHaveBeenCalledWith({
         owner: 'test-owner',
         repo: 'test-repo',
+        filter: 'all',
         labels: undefined,
         state: 'open',
         assignee: undefined,
@@ -99,6 +100,7 @@ describe('issues', () => {
       expect(githubClient.issues.listForRepo).toHaveBeenCalledWith({
         owner: 'test-owner',
         repo: 'test-repo',
+        filter: 'all',
         labels: 'bug,help-wanted',
         state: 'all',
         assignee: 'anotheruser',
@@ -120,6 +122,7 @@ describe('issues', () => {
       expect(githubClient.issues.listForRepo).toHaveBeenCalledWith({
         owner: 'test-owner',
         repo: 'test-repo',
+        filter: 'all',
         labels: 'ready',
         state: 'open',
         assignee: undefined,
@@ -137,6 +140,7 @@ describe('issues', () => {
       expect(githubClient.issues.listForRepo).toHaveBeenCalledWith({
         owner: 'test-owner',
         repo: 'test-repo',
+        filter: 'all',
         labels: undefined,
         state: 'open',
         assignee: undefined,
