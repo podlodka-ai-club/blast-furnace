@@ -12,7 +12,7 @@ The system SHALL provide a `plan` job handled by an isolated Plan module in the 
 #### Scenario: Initial Plan prompt is rendered from repository template
 - **WHEN** the Plan module begins a planning run
 - **THEN** Plan SHALL load a hardcoded repository-owned Plan prompt template
-- **AND** render explicit placeholders for assessed issue title, issue description, and available assessment context
+- **AND** render explicit placeholders for assessed issue number, issue title, and issue description
 - **AND** use an explicit fallback value when the issue description is empty
 - **AND** send the rendered prompt as the initial prompt to Codex
 

@@ -54,8 +54,22 @@ function parseAssessOutput(value) {
     return parsed;
 }
 function parsePlanOutput(value) {
-    const parsed = parseAssessOutput(value);
+    const parsed = parsePreparedFields(value, 'plan output');
+    if (!['success', 'validation-failed'].includes(String(parsed.status))) {
+        throw new Error('plan status must be success or validation-failed');
+    }
+    requireObject(parsed, 'assessment');
+    const plan = parsed['plan'];
     requireObject(parsed, 'plan');
+    assertObject(plan, 'plan');
+    if (!['success', 'validation-failed'].includes(String(plan['status']))) {
+        throw new Error('plan.status must be success or validation-failed');
+    }
+    requireString(plan, 'summary');
+    requireString(plan, 'content');
+    if (plan['status'] === 'validation-failed') {
+        requireString(plan, 'failureReason');
+    }
     return parsed;
 }
 function parsePlanFields(value) {

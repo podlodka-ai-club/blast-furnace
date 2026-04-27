@@ -85,8 +85,22 @@ function parseAssessOutput(value: unknown): AssessOutput {
 }
 
 function parsePlanOutput(value: unknown): PlanOutput {
-  const parsed = parseAssessOutput(value) as unknown as PlanOutput;
+  const parsed = parsePreparedFields<Record<string, unknown>>(value, 'plan output') as unknown as PlanOutput;
+  if (!['success', 'validation-failed'].includes(String(parsed.status))) {
+    throw new Error('plan status must be success or validation-failed');
+  }
+  requireObject(parsed as unknown as Record<string, unknown>, 'assessment');
+  const plan = (parsed as unknown as Record<string, unknown>)['plan'];
   requireObject(parsed as unknown as Record<string, unknown>, 'plan');
+  assertObject(plan, 'plan');
+  if (!['success', 'validation-failed'].includes(String(plan['status']))) {
+    throw new Error('plan.status must be success or validation-failed');
+  }
+  requireString(plan, 'summary');
+  requireString(plan, 'content');
+  if (plan['status'] === 'validation-failed') {
+    requireString(plan, 'failureReason');
+  }
   return parsed;
 }
 

@@ -240,8 +240,9 @@ describe('develop job', () => {
           summary: 'Assessment deferred for this iteration.',
         },
         plan: {
-          status: 'stubbed',
-          summary: 'Planning deferred for this iteration.',
+          status: 'success',
+          summary: 'Plan validated successfully.',
+          content: '## Summary\nReady.\n\n## Implementation Plan\nDo it.\n\n## Risks\nNone.',
         },
       },
     });
@@ -316,7 +317,7 @@ describe('develop job', () => {
     expect(args.at(-1)).toEqual(expect.stringContaining('Issue #42: Test Issue'));
     const prompt = vi.mocked(nodePty.spawn).mock.calls[0][1].at(-1);
     expect(prompt).toContain('Test body');
-    expect(prompt).toContain('Planning deferred for this iteration.');
+    expect(prompt).toContain('Plan validated successfully.');
     expect(mockLogger.info).toHaveBeenCalledWith('[codex] codex output');
     expect(mockPrepareDevelopStopHook).toHaveBeenCalledWith(expect.objectContaining({
       workspacePath: expect.stringContaining('develop-ledger-'),

@@ -243,10 +243,20 @@ export interface AssessmentResult {
   summary: string;
 }
 
-export interface PlanResult {
-  status: 'stubbed';
+export interface SuccessfulPlanResult {
+  status: 'success';
   summary: string;
+  content: string;
 }
+
+export interface ValidationFailedPlanResult {
+  status: 'validation-failed';
+  summary: string;
+  content: string;
+  failureReason: string;
+}
+
+export type PlanResult = SuccessfulPlanResult | ValidationFailedPlanResult;
 
 export interface DevelopmentResult {
   status: 'completed';
@@ -286,7 +296,7 @@ export interface AssessOutput extends PreparedRunFields {
 }
 
 export interface PlanOutput extends PreparedRunFields {
-  status: 'success';
+  status: 'success' | 'validation-failed';
   runId: RunId;
   stageAttempt: number;
   reworkAttempt: number;

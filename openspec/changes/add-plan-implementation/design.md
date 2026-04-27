@@ -39,7 +39,7 @@ This change keeps the existing stage boundary model but replaces the stub with a
 
    Add a prompt template file such as `prompts/plan.md` and a validation file such as `config/plan-checks.yaml`, referenced by constants in the Plan implementation. The prompt file is a complete high-quality prompt template, not a preamble that Plan appends task text to afterward. It must contain explicit placeholders for task data, for example `{{issueTitle}}` and `{{issueDescription}}`, and Plan renders those placeholders before invoking Codex.
 
-   The rendered prompt should include the issue number/title, issue body with an explicit empty-description fallback, and optional assessment summary through template placeholders so Codex receives one coherent prompt.
+   The rendered prompt should include the issue number/title and issue body with an explicit empty-description fallback so Codex receives one coherent prompt.
 
    Alternative considered: add environment variables immediately. The user asked for hardcoded paths, and keeping configuration out of the first iteration reduces the number of runtime failure modes.
 
