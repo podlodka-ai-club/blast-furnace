@@ -1,0 +1,100 @@
+# Job Queue Specification
+
+## Purpose
+Defines the current BullMQ queue, worker routing, retry, retention, concurrency, and job logging behavior.
+## Requirements
+### Requirement: Queue Configuration
+The system SHALL use a BullMQ queue named `agent-orchestrator` backed by Redis.
+
+#### Scenario: Queue is created
+- **WHEN** queue infrastructure is initialized
+- **THEN** the queue SHALL connect using `REDIS_HOST`, `REDIS_PORT`, and optional `REDIS_PASSWORD`
+- **AND** default jobs SHALL retry up to 3 attempts
+- **AND** retry backoff SHALL be exponential with a 1000 millisecond initial delay
+
+#### Scenario: Job retention applies
+- **WHEN** jobs complete
+- **THEN** completed jobs SHALL be removed after 100 jobs or 24 hours
+- **WHEN** jobs fail
+- **THEN** failed jobs SHALL be removed after 500 jobs or 7 days
+
+### Requirement: Worker Processing
+The system SHALL process jobs through a BullMQ worker using a type-dispatched job handler.
+
+#### Scenario: Worker is created
+- **WHEN** the worker is created without explicit options
+- **THEN** it SHALL process the `agent-orchestrator` queue
+- **AND** use concurrency `5`
+- **AND** use a stalled interval of 60000 milliseconds
+
+#### Scenario: Known job type is received
+- **WHEN** a job has type `intake`
+- **THEN** the worker SHALL route it to the Intake handler
+- **WHEN** a job has type `prepare-run`
+- **THEN** the worker SHALL route it to the Prepare Run handler
+- **WHEN** a job has type `assess`
+- **THEN** the worker SHALL route it to the Assess handler
+- **WHEN** a job has type `plan`
+- **THEN** the worker SHALL route it to the Plan handler
+- **WHEN** a job has type `develop`
+- **THEN** the worker SHALL route it to the Develop handler
+- **WHEN** a job has type `quality-gate`
+- **THEN** the worker SHALL route it to the Quality Gate handler
+- **WHEN** a job has type `review`
+- **THEN** the worker SHALL route it to the Review handler
+- **WHEN** a job has type `make-pr`
+- **THEN** the worker SHALL route it to the Make PR handler
+- **WHEN** a job has type `sync-tracker-state`
+- **THEN** the worker SHALL route it to the Sync Tracker State handler
+
+#### Scenario: Unknown job type is received
+- **WHEN** a job has an unrecognized type
+- **THEN** the worker SHALL fail the job with an unknown job type error
+
+### Requirement: Job Logging
+The system SHALL log worker lifecycle events with job context.
+
+#### Scenario: Worker events occur
+- **WHEN** a job becomes active
+- **THEN** the system SHALL log that the job started
+- **WHEN** a job completes
+- **THEN** the system SHALL log successful completion
+- **WHEN** a job fails
+- **THEN** the system SHALL log the failure message
+- **WHEN** a job stalls
+- **THEN** the system SHALL log that the job stalled and will be retried
+
+#### Scenario: Progress cannot be serialized
+- **WHEN** job progress logging cannot serialize the progress payload
+- **THEN** the system SHALL log a warning
+- **AND** SHALL NOT crash the worker
+
+### Requirement: Stage Queue Payload
+The system SHALL use a shared transport-only queue payload envelope for workflow stage jobs after Prepare Run has written the initial handoff record.
+
+#### Scenario: Stage payload is enqueued
+- **WHEN** a workflow stage enqueues another workflow stage after a handoff record has been appended
+- **THEN** the payload SHALL include `runId`, `stage`, `stageAttempt`, and `reworkAttempt`
+- **AND** the payload SHALL include an input handoff record reference
+- **AND** the payload SHALL NOT include issue, repository, branch, workspace, plan, development, quality, review, or pull request data as primary handoff fields
+
+#### Scenario: BullMQ retry stays internal
+- **WHEN** BullMQ retries a failed job
+- **THEN** the system SHALL keep BullMQ retry count separate from `stageAttempt`
+- **AND** SHALL NOT derive `stageAttempt` from BullMQ retry metadata
+
+#### Scenario: Stage attempt is carried
+- **WHEN** a stage schedules the next stage in the normal forward path
+- **THEN** the system SHALL carry the current `reworkAttempt`
+- **AND** set the next stage payload `stageAttempt` to the domain attempt value for that next stage
+
+#### Scenario: Initial Prepare Run payload carries bootstrap data
+- **WHEN** Intake enqueues Prepare Run for an eligible issue
+- **THEN** the Prepare Run payload MAY include the issue and configured repository identity needed to initialize the run
+- **AND** Prepare Run SHALL write that bootstrap data into the first validated handoff record before enqueueing Assess
+
+#### Scenario: Downstream payload references handoff record
+- **WHEN** a stage after Prepare Run is enqueued
+- **THEN** its payload SHALL include an input record reference containing the handoff ledger path, record id, sequence, and producing stage
+- **AND** the receiving stage SHALL read business data from the referenced JSONL record chain
+

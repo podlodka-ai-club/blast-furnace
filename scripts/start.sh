@@ -11,7 +11,7 @@ if ! docker info > /dev/null 2>&1; then
   exit 1
 fi
 
-# Change to the project root to find docker-compose.yml and package.json
+# Change to the project root to find docker compose.yml and package.json
 cd "$PROJECT_ROOT"
 
 # Load local environment variables when present.
@@ -23,9 +23,9 @@ if [ -f "$PROJECT_ROOT/.env.local" ]; then
   echo "Loaded environment from .env.local"
 fi
 
-# Start Redis via docker-compose up -d
+# Start Redis via docker compose up -d
 echo "Starting Redis..."
-docker-compose up -d
+docker compose up -d
 
 # Wait for Redis healthcheck to pass
 echo "Waiting for Redis to be healthy..."
@@ -33,7 +33,7 @@ MAX_RETRIES=30
 RETRY_COUNT=0
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-  if docker-compose exec -T redis redis-cli ping 2>/dev/null | grep -q "PONG"; then
+  if docker compose exec -T redis redis-cli ping 2>/dev/null | grep -q "PONG"; then
     echo "Redis is ready!"
     break
   fi
@@ -44,14 +44,14 @@ done
 
 if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
   echo "Error: Redis healthcheck failed after $MAX_RETRIES attempts"
-  docker-compose down
+  docker compose down
   exit 1
 fi
 
 # Cleanup function
 cleanup() {
   echo "Shutting down..."
-  docker-compose down || echo "Warning: docker-compose down failed"
+  docker compose down || echo "Warning: docker compose down failed"
 }
 
 # Trap SIGINT and SIGTERM to cleanup

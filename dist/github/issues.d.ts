@@ -5,7 +5,5 @@ export interface IssueFilters {
     assignee?: string;
     since?: string;
     milestone?: number;
-    owner?: string;
-    repo?: string;
 }
 export declare function fetchIssues(filters?: IssueFilters): Promise<GitHubIssue[]>;

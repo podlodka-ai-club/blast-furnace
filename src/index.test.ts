@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Job } from 'bullmq';
 
-// Mock the config module with different strategies
 const mockConfig = {
   env: 'test',
   port: 3000,
@@ -13,9 +12,7 @@ const mockConfig = {
     token: 'test-token',
     owner: 'test-owner',
     repo: 'test-repo',
-    issueStrategy: 'polling' as const,
     pollIntervalMs: 60000,
-    webhookSecret: undefined,
   },
 };
 
@@ -30,17 +27,42 @@ vi.mock('./jobs/index.js', () => ({
   closeQueue: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('./jobs/issue-processor.js', () => ({
-  issueProcessorHandler: vi.fn().mockResolvedValue(undefined),
+vi.mock('./jobs/intake.js', () => ({
+  intakeHandler: vi.fn().mockResolvedValue(undefined),
+  startIntake: vi.fn().mockResolvedValue(undefined),
+  closeIntakeRedis: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('./jobs/issue-watcher.js', () => ({
-  issueWatcherHandler: vi.fn().mockResolvedValue(undefined),
-  startIssueWatcher: vi.fn().mockResolvedValue(undefined),
+vi.mock('./jobs/prepare-run.js', () => ({
+  prepareRunHandler: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('./jobs/codex-provider.js', () => ({
-  codexProviderHandler: vi.fn().mockResolvedValue(undefined),
+vi.mock('./jobs/assess.js', () => ({
+  assessHandler: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('./jobs/plan.js', () => ({
+  planHandler: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('./jobs/develop.js', () => ({
+  developHandler: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('./jobs/quality-gate.js', () => ({
+  qualityGateHandler: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('./jobs/review.js', () => ({
+  reviewHandler: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('./jobs/make-pr.js', () => ({
+  makePrHandler: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('./jobs/sync-tracker-state.js', () => ({
+  syncTrackerStateHandler: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('./server/index.js', () => ({
@@ -59,14 +81,15 @@ describe('index', () => {
   });
 
   describe('multiHandler', () => {
-    it('should route issue-processor jobs to issueProcessorHandler', async () => {
-      const { issueProcessorHandler } = await import('./jobs/issue-processor.js');
-      const { multiHandler } = await import('./index.js');
-
-      const mockJob = {
+    function createTargetJob(type: string): Job {
+      return {
         data: {
-          taskId: 'task-1',
-          type: 'issue-processor',
+          taskId: `task-${type}`,
+          type,
+          runId: 'run-123',
+          stage: type,
+          stageAttempt: 1,
+          reworkAttempt: 0,
           issue: {
             id: 1,
             number: 42,
@@ -78,57 +101,69 @@ describe('index', () => {
             createdAt: '2024-01-01T00:00:00Z',
             updatedAt: '2024-01-01T00:00:00Z',
           },
-        },
-      } as unknown as Job;
-
-      await multiHandler(mockJob);
-
-      expect(issueProcessorHandler).toHaveBeenCalledWith(mockJob);
-    });
-
-    it('should route issue-watcher jobs to issueWatcherHandler', async () => {
-      const { issueWatcherHandler } = await import('./jobs/issue-watcher.js');
-      const { multiHandler } = await import('./index.js');
-
-      const mockJob = {
-        data: {
-          taskId: 'task-2',
-          type: 'issue-watcher',
-          lastPollTimestamp: '2024-01-01T00:00:00Z',
-        },
-      } as unknown as Job;
-
-      await multiHandler(mockJob);
-
-      expect(issueWatcherHandler).toHaveBeenCalledWith(mockJob);
-    });
-
-    it('should route codex-provider jobs to codexProviderHandler', async () => {
-      const { codexProviderHandler } = await import('./jobs/codex-provider.js');
-      const { multiHandler } = await import('./index.js');
-
-      const mockJob = {
-        data: {
-          taskId: 'task-3',
-          type: 'codex-provider',
-          issue: {
-            id: 1,
-            number: 42,
-            title: 'Test Issue',
-            body: 'Test body',
-            state: 'open' as const,
-            labels: [],
-            assignee: null,
-            createdAt: '2024-01-01T00:00:00Z',
-            updatedAt: '2024-01-01T00:00:00Z',
+          repository: {
+            owner: 'test-owner',
+            repo: 'test-repo',
           },
           branchName: 'issue-42-test-issue',
+          workspacePath: '/tmp/prepare-run-abc123',
+          assessment: {
+            status: 'stubbed',
+            summary: 'Assessment deferred.',
+          },
+          plan: {
+            status: 'stubbed',
+            summary: 'Planning deferred.',
+          },
+          development: {
+            status: 'completed',
+            summary: 'Codex completed successfully.',
+          },
+          quality: {
+            status: 'passed',
+            summary: 'Quality gate deferred.',
+          },
+          review: {
+            status: 'stubbed',
+            summary: 'Review deferred.',
+          },
+          pullRequest: {
+            number: 7,
+            htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+          },
         },
       } as unknown as Job;
+    }
 
-      await multiHandler(mockJob);
+    it('should route every target workflow job type to its handler', async () => {
+      const { intakeHandler } = await import('./jobs/intake.js');
+      const { prepareRunHandler } = await import('./jobs/prepare-run.js');
+      const { assessHandler } = await import('./jobs/assess.js');
+      const { planHandler } = await import('./jobs/plan.js');
+      const { developHandler } = await import('./jobs/develop.js');
+      const { qualityGateHandler } = await import('./jobs/quality-gate.js');
+      const { reviewHandler } = await import('./jobs/review.js');
+      const { makePrHandler } = await import('./jobs/make-pr.js');
+      const { syncTrackerStateHandler } = await import('./jobs/sync-tracker-state.js');
+      const { multiHandler } = await import('./index.js');
 
-      expect(codexProviderHandler).toHaveBeenCalledWith(mockJob);
+      const handlers = [
+        ['intake', intakeHandler],
+        ['prepare-run', prepareRunHandler],
+        ['assess', assessHandler],
+        ['plan', planHandler],
+        ['develop', developHandler],
+        ['quality-gate', qualityGateHandler],
+        ['review', reviewHandler],
+        ['make-pr', makePrHandler],
+        ['sync-tracker-state', syncTrackerStateHandler],
+      ] as const;
+
+      for (const [type, handler] of handlers) {
+        const mockJob = createTargetJob(type);
+        await multiHandler(mockJob);
+        expect(handler).toHaveBeenCalledWith(mockJob);
+      }
     });
 
     it('should throw error for unknown job type', async () => {
@@ -147,8 +182,18 @@ describe('index', () => {
 });
 
 describe('strategy selection', () => {
-  it('should export startIssueWatcher function', async () => {
-    const { startIssueWatcher } = await import('./jobs/issue-watcher.js');
-    expect(typeof startIssueWatcher).toBe('function');
+  it('should export startIntake function', async () => {
+    const { startIntake } = await import('./jobs/intake.js');
+    expect(typeof startIntake).toBe('function');
+  });
+
+  it('starts intake during startup without strategy selection', async () => {
+    const { startIntake } = await import('./jobs/intake.js');
+
+    await import('./index.js');
+
+    await vi.waitFor(() => {
+      expect(startIntake).toHaveBeenCalledTimes(1);
+    });
   });
 });

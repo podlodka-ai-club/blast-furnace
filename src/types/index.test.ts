@@ -9,20 +9,24 @@ import type {
   AgentResult,
   GitHubIssue,
   GitHubComment,
-  GitHubRepo,
-  RepoListResponse,
   AppConfig,
   RedisConfig,
   GitHubConfig,
   ServerOptions,
   HealthResponse,
   JobPayload,
-  GitHubWebhookEvent,
-  GitHubIssueEventPayload,
-  IssueProcessorJobData,
-  IssueWatcherJobData,
-  RepoWatcherJobData,
-  CodexProviderJobData,
+  InputRecordRef,
+  WorkflowStage,
+  StageJobPayload,
+  IntakeJobData,
+  PrepareRunJobData,
+  AssessJobData,
+  DevelopJobData,
+  QualityGateJobData,
+  SyncTrackerStateJobData,
+  PlanJobData,
+  ReviewJobData,
+  MakePrJobData,
 } from './index.js';
 
 describe('types', () => {
@@ -171,60 +175,6 @@ describe('types', () => {
     });
   });
 
-  describe('GitHubRepo', () => {
-    it('should accept valid GitHub repo', () => {
-      const repo: GitHubRepo = {
-        owner: 'owner',
-        repo: 'repo',
-        addedAt: '2024-01-01T00:00:00.000Z',
-      };
-      expect(repo.owner).toBe('owner');
-      expect(repo.repo).toBe('repo');
-      expect(repo.addedAt).toBe('2024-01-01T00:00:00.000Z');
-    });
-
-    it('should store repo with all required fields', () => {
-      const repo: GitHubRepo = {
-        owner: 'my-org',
-        repo: 'my-repo',
-        addedAt: '2024-06-15T10:30:00.000Z',
-      };
-      expect(repo.owner).toBe('my-org');
-      expect(repo.repo).toBe('my-repo');
-    });
-  });
-
-  describe('RepoListResponse', () => {
-    it('should accept valid repo list response', () => {
-      const response: RepoListResponse = {
-        repos: [
-          {
-            owner: 'owner1',
-            repo: 'repo1',
-            addedAt: '2024-01-01T00:00:00.000Z',
-          },
-          {
-            owner: 'owner2',
-            repo: 'repo2',
-            addedAt: '2024-01-02T00:00:00.000Z',
-          },
-        ],
-        total: 2,
-      };
-      expect(response.repos).toHaveLength(2);
-      expect(response.total).toBe(2);
-    });
-
-    it('should allow empty repos list', () => {
-      const response: RepoListResponse = {
-        repos: [],
-        total: 0,
-      };
-      expect(response.repos).toHaveLength(0);
-      expect(response.total).toBe(0);
-    });
-  });
-
   describe('AppConfig', () => {
     it('should accept valid app config', () => {
       const config: AppConfig = {
@@ -236,13 +186,21 @@ describe('types', () => {
         },
         github: {
           token: 'ghp_token',
-          owner: 'owner',
-          repo: 'repo',
+          owner: 'test-owner',
+          repo: 'test-repo',
+          pollIntervalMs: 60000,
+        },
+        codex: {
+          cliPath: 'npx @openai/codex',
+          model: 'gpt-5.4',
+          timeoutMs: 300000,
         },
       };
       expect(config.env).toBe('production');
       expect(config.redis.host).toBe('redis.example.com');
       expect(config.github.token).toBe('ghp_token');
+      expect(config.github).not.toHaveProperty('issueStrategy');
+      expect(config.github).not.toHaveProperty('webhookSecret');
     });
   });
 
@@ -261,10 +219,14 @@ describe('types', () => {
     it('should accept valid github config', () => {
       const config: GitHubConfig = {
         token: 'token',
-        owner: 'owner',
-        repo: 'repo',
+        owner: 'test-owner',
+        repo: 'test-repo',
+        pollIntervalMs: 60000,
       };
       expect(config.token).toBe('token');
+      expect(config.pollIntervalMs).toBe(60000);
+      expect(config).not.toHaveProperty('issueStrategy');
+      expect(config).not.toHaveProperty('webhookSecret');
     });
   });
 
@@ -306,230 +268,187 @@ describe('types', () => {
     });
   });
 
-  describe('GitHubWebhookEvent', () => {
-    it('should accept valid webhook event', () => {
-      const event: GitHubWebhookEvent = {
-        action: 'opened',
-        issue: {
-          id: 1,
-          number: 42,
-          title: 'Test issue',
-          body: 'Issue body',
-          state: 'open',
-          labels: ['bug'],
-          assignee: null,
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-        },
-        repository: {
-          id: 123,
-          name: 'test-repo',
-          fullName: 'owner/test-repo',
-        },
-        sender: {
-          login: 'username',
-        },
-      };
-      expect(event.action).toBe('opened');
-      expect(event.issue.number).toBe(42);
-      expect(event.repository.fullName).toBe('owner/test-repo');
+  describe('WorkflowStage', () => {
+    it('should accept all target workflow stage names', () => {
+      const stages: WorkflowStage[] = [
+        'intake',
+        'prepare-run',
+        'assess',
+        'plan',
+        'develop',
+        'quality-gate',
+        'review',
+        'make-pr',
+        'sync-tracker-state',
+      ];
+
+      expect(stages).toHaveLength(9);
     });
   });
 
-  describe('GitHubIssueEventPayload', () => {
-    it('should accept valid issue event payload', () => {
-      const payload: GitHubIssueEventPayload = {
-        action: 'opened',
-        issue: {
-          id: 1,
-          number: 42,
-          title: 'Test issue',
-          body: 'Issue body',
-          state: 'open',
-          labels: [],
-          assignee: null,
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-        },
+  describe('StageJobPayload', () => {
+    it('should require run identity, stage, stage attempt, and rework attempt fields', () => {
+      const payload: StageJobPayload<'plan'> = {
+        taskId: 'task-plan',
+        type: 'plan',
+        runId: 'run-123',
+        stage: 'plan',
+        stageAttempt: 1,
+        reworkAttempt: 0,
       };
-      expect(payload.action).toBe('opened');
-      expect(payload.issue.title).toBe('Test issue');
+
+      expect(payload.runId).toBe('run-123');
+      expect(payload.stage).toBe('plan');
+      expect(payload.stageAttempt).toBe(1);
+      expect(payload.reworkAttempt).toBe(0);
     });
 
-    it('should accept closed action', () => {
-      const payload: GitHubIssueEventPayload = {
-        action: 'closed',
-        issue: {
-          id: 1,
-          number: 42,
-          title: 'Test issue',
-          body: null,
-          state: 'closed',
-          labels: [],
-          assignee: null,
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-02T00:00:00.000Z',
-        },
+    it('should include the stage envelope on every target stage job payload type', () => {
+      const inputRecordRef: InputRecordRef = {
+        runDir: '/opt/blast-furnace/.orchestrator/runs/2026-04-26_08.07_run-123',
+        handoffPath: '/opt/blast-furnace/.orchestrator/runs/2026-04-26_08.07_run-123/2026-04-26_08.07_run-123_handoff.jsonl',
+        recordId: '000001_prepare-run_to_assess',
+        sequence: 1,
+        stage: 'prepare-run',
       };
-      expect(payload.action).toBe('closed');
-      expect(payload.issue.state).toBe('closed');
-    });
-  });
+      const payloads: Array<StageJobPayload<WorkflowStage>> = [
+        {
+          taskId: 'task-intake',
+          type: 'intake',
+          runId: 'intake-run',
+          stage: 'intake',
+          stageAttempt: 1,
+          reworkAttempt: 0,
+        } satisfies IntakeJobData,
+        {
+          taskId: 'task-prepare',
+          type: 'prepare-run',
+          runId: 'run-123',
+          stage: 'prepare-run',
+          stageAttempt: 1,
+          reworkAttempt: 0,
+          issue: {
+            id: 1,
+            number: 42,
+            title: 'Test issue',
+            body: null,
+            state: 'open',
+            labels: [],
+            assignee: null,
+            createdAt: '2024-01-01T00:00:00.000Z',
+            updatedAt: '2024-01-01T00:00:00.000Z',
+          },
+          repository: {
+            owner: 'test-owner',
+            repo: 'test-repo',
+          },
+        } satisfies PrepareRunJobData,
+        {
+          taskId: 'task-assess',
+          type: 'assess',
+          runId: 'run-123',
+          stage: 'assess',
+          stageAttempt: 1,
+          reworkAttempt: 0,
+          inputRecordRef,
+        } satisfies AssessJobData,
+        {
+          taskId: 'task-plan',
+          type: 'plan',
+          runId: 'run-123',
+          stage: 'plan',
+          stageAttempt: 1,
+          reworkAttempt: 0,
+          inputRecordRef: {
+            ...inputRecordRef,
+            recordId: '000002_assess_to_plan',
+            sequence: 2,
+            stage: 'assess',
+          },
+        } satisfies PlanJobData,
+        {
+          taskId: 'task-develop',
+          type: 'develop',
+          runId: 'run-123',
+          stage: 'develop',
+          stageAttempt: 1,
+          reworkAttempt: 0,
+          inputRecordRef: {
+            ...inputRecordRef,
+            recordId: '000003_plan_to_develop',
+            sequence: 3,
+            stage: 'plan',
+          },
+        } satisfies DevelopJobData,
+        {
+          taskId: 'task-quality',
+          type: 'quality-gate',
+          runId: 'run-123',
+          stage: 'quality-gate',
+          stageAttempt: 1,
+          reworkAttempt: 0,
+          inputRecordRef: {
+            ...inputRecordRef,
+            recordId: '000004_develop_to_quality-gate',
+            sequence: 4,
+            stage: 'develop',
+          },
+        } satisfies QualityGateJobData,
+        {
+          taskId: 'task-review',
+          type: 'review',
+          runId: 'run-123',
+          stage: 'review',
+          stageAttempt: 1,
+          reworkAttempt: 0,
+          inputRecordRef: {
+            ...inputRecordRef,
+            recordId: '000005_quality-gate_to_review',
+            sequence: 5,
+            stage: 'quality-gate',
+          },
+        } satisfies ReviewJobData,
+        {
+          taskId: 'task-make-pr',
+          type: 'make-pr',
+          runId: 'run-123',
+          stage: 'make-pr',
+          stageAttempt: 1,
+          reworkAttempt: 0,
+          inputRecordRef: {
+            ...inputRecordRef,
+            recordId: '000006_review_to_make-pr',
+            sequence: 6,
+            stage: 'review',
+          },
+        } satisfies MakePrJobData,
+        {
+          taskId: 'task-sync',
+          type: 'sync-tracker-state',
+          runId: 'run-123',
+          stage: 'sync-tracker-state',
+          stageAttempt: 1,
+          reworkAttempt: 0,
+          inputRecordRef: {
+            ...inputRecordRef,
+            recordId: '000007_make-pr_to_sync-tracker-state',
+            sequence: 7,
+            stage: 'make-pr',
+          },
+        } satisfies SyncTrackerStateJobData,
+      ];
 
-  describe('IssueProcessorJobData', () => {
-    it('should accept valid issue processor job data', () => {
-      const jobData: IssueProcessorJobData = {
-        taskId: 'task-123',
-        type: 'issue-processor',
-        issue: {
-          id: 1,
-          number: 42,
-          title: 'Test issue',
-          body: 'Issue body',
-          state: 'open',
-          labels: ['enhancement'],
-          assignee: 'user',
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-        },
-      };
-      expect(jobData.taskId).toBe('task-123');
-      expect(jobData.type).toBe('issue-processor');
-      expect(jobData.issue.number).toBe(42);
-    });
-
-    it('should allow optional payload', () => {
-      const jobData: IssueProcessorJobData = {
-        taskId: 'task-123',
-        type: 'issue-processor',
-        issue: {
-          id: 1,
-          number: 42,
-          title: 'Test issue',
-          body: null,
-          state: 'open',
-          labels: [],
-          assignee: null,
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-        },
-      };
-      expect(jobData.payload).toBeUndefined();
-    });
-  });
-
-  describe('IssueWatcherJobData', () => {
-    it('should accept valid issue watcher job data', () => {
-      const jobData: IssueWatcherJobData = {
-        taskId: 'task-456',
-        type: 'issue-watcher',
-        lastPollTimestamp: '2024-01-01T00:00:00.000Z',
-      };
-      expect(jobData.taskId).toBe('task-456');
-      expect(jobData.type).toBe('issue-watcher');
-      expect(jobData.lastPollTimestamp).toBe('2024-01-01T00:00:00.000Z');
-    });
-
-    it('should allow optional lastPollTimestamp', () => {
-      const jobData: IssueWatcherJobData = {
-        taskId: 'task-456',
-        type: 'issue-watcher',
-      };
-      expect(jobData.lastPollTimestamp).toBeUndefined();
-    });
-
-    it('should accept optional owner and repo for targeted polling', () => {
-      const jobData: IssueWatcherJobData = {
-        taskId: 'task-456',
-        type: 'issue-watcher',
-        owner: 'my-org',
-        repo: 'my-repo',
-      };
-      expect(jobData.owner).toBe('my-org');
-      expect(jobData.repo).toBe('my-repo');
-    });
-
-    it('should allow owner without repo and vice versa', () => {
-      const jobDataWithOwner: IssueWatcherJobData = {
-        taskId: 'task-456',
-        type: 'issue-watcher',
-        owner: 'my-org',
-      };
-      expect(jobDataWithOwner.owner).toBe('my-org');
-      expect(jobDataWithOwner.repo).toBeUndefined();
-
-      const jobDataWithRepo: IssueWatcherJobData = {
-        taskId: 'task-456',
-        type: 'issue-watcher',
-        repo: 'my-repo',
-      };
-      expect(jobDataWithRepo.owner).toBeUndefined();
-      expect(jobDataWithRepo.repo).toBe('my-repo');
-    });
-  });
-
-  describe('RepoWatcherJobData', () => {
-    it('should accept valid repo watcher job data', () => {
-      const jobData: RepoWatcherJobData = {
-        taskId: 'task-789',
-        type: 'repo-watcher',
-      };
-      expect(jobData.taskId).toBe('task-789');
-      expect(jobData.type).toBe('repo-watcher');
-    });
-
-    it('should allow optional payload', () => {
-      const jobData: RepoWatcherJobData = {
-        taskId: 'task-789',
-        type: 'repo-watcher',
-        payload: { key: 'value' },
-      };
-      expect(jobData.payload).toEqual({ key: 'value' });
-    });
-  });
-
-  describe('CodexProviderJobData', () => {
-    it('should accept valid codex provider job data', () => {
-      const jobData: CodexProviderJobData = {
-        taskId: 'task-789',
-        type: 'codex-provider',
-        issue: {
-          id: 1,
-          number: 42,
-          title: 'Test issue',
-          body: 'Issue body',
-          state: 'open',
-          labels: ['enhancement'],
-          assignee: 'user',
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-        },
-        branchName: 'feature/codex-42',
-      };
-      expect(jobData.taskId).toBe('task-789');
-      expect(jobData.type).toBe('codex-provider');
-      expect(jobData.issue.number).toBe(42);
-      expect(jobData.branchName).toBe('feature/codex-42');
-    });
-
-    it('should allow optional payload', () => {
-      const jobData: CodexProviderJobData = {
-        taskId: 'task-789',
-        type: 'codex-provider',
-        issue: {
-          id: 1,
-          number: 42,
-          title: 'Test issue',
-          body: null,
-          state: 'open',
-          labels: [],
-          assignee: null,
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-        },
-        branchName: 'feature/codex-42',
-      };
-      expect(jobData.payload).toBeUndefined();
+      expect(payloads.map((payload) => payload.stage)).toEqual([
+        'intake',
+        'prepare-run',
+        'assess',
+        'plan',
+        'develop',
+        'quality-gate',
+        'review',
+        'make-pr',
+        'sync-tracker-state',
+      ]);
     });
   });
 });

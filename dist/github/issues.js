@@ -17,10 +17,10 @@ function isPullRequestIssue(issue) {
     return 'pull_request' in issue && issue.pull_request !== undefined;
 }
 export async function fetchIssues(filters = {}) {
-    const { labels, state, assignee, since, milestone, owner, repo } = filters;
+    const { labels, state, assignee, since, milestone } = filters;
     const response = await githubClient.issues.listForRepo({
-        owner: owner ?? config.github.owner,
-        repo: repo ?? config.github.repo,
+        owner: config.github.owner,
+        repo: config.github.repo,
         labels,
         state: state ?? 'open',
         assignee,

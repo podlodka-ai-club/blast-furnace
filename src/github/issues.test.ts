@@ -107,6 +107,44 @@ describe('issues', () => {
       });
     });
 
+    it('should ignore legacy repository override data and use the configured repository', async () => {
+      const mockListForRepo = vi.fn().mockResolvedValue({ data: [] });
+      vi.mocked(githubClient.issues.listForRepo).mockImplementation(mockListForRepo);
+
+      await fetchIssues({
+        labels: 'ready',
+        owner: 'other-owner',
+        repo: 'other-repo',
+      } as IssueFilters & { owner: string; repo: string });
+
+      expect(githubClient.issues.listForRepo).toHaveBeenCalledWith({
+        owner: 'test-owner',
+        repo: 'test-repo',
+        labels: 'ready',
+        state: 'open',
+        assignee: undefined,
+        since: undefined,
+        milestone: undefined,
+      });
+    });
+
+    it('should omit an invalid since filter', async () => {
+      const mockListForRepo = vi.fn().mockResolvedValue({ data: [] });
+      vi.mocked(githubClient.issues.listForRepo).mockImplementation(mockListForRepo);
+
+      await fetchIssues({ since: 'not-a-date' });
+
+      expect(githubClient.issues.listForRepo).toHaveBeenCalledWith({
+        owner: 'test-owner',
+        repo: 'test-repo',
+        labels: undefined,
+        state: 'open',
+        assignee: undefined,
+        since: undefined,
+        milestone: undefined,
+      });
+    });
+
     it('should map GitHub API labels correctly when labels are strings', async () => {
       const mockIssues = [
         {

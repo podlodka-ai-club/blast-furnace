@@ -1,8 +1,9 @@
+
 # Project Context for Claude Code
 
 ## Project Overview
 
-Blast Furnace is an Agent Orchestrator server that runs continuously, receives GitHub Issues via polling or webhooks (configurable), and processes tasks through a pipeline using background jobs.
+Blast Furnace is an Agent Orchestrator server that runs continuously, receives GitHub Issues through polling intake, and processes tasks through a pipeline using background jobs.
 
 ## Tech Stack
 
@@ -33,7 +34,6 @@ src/
     index.test.ts    - Server tests
     routes/
       health.ts      - GET /health endpoint
-      github-webhooks.ts - POST /webhooks/github for GitHub issue events
       repos.ts       - Repository management (Redis-backed CRUD for GitHub repos)
       repos-ui.ts    - Web UI for repository management (GET /repos/manage)
   jobs/
@@ -42,9 +42,15 @@ src/
     queue.ts         - BullMQ Queue and QueueEvents configuration
     worker.ts        - BullMQ Worker factory with logging middleware
     logger.ts        - Job-specific logging helper
-    issue-watcher.ts - Polling-based GitHub issue watcher (repeatable job)
-    issue-processor.ts - Shared issue processing job (logs issue, enqueues codex provider)
-    codex-provider.ts - AI-assisted codex-cli job handler
+    intake.ts - Polling-based GitHub issue intake (repeatable job)
+    prepare-run.ts - Run bootstrap, branch setup, and workspace preparation
+    assess.ts - Stub-safe assessment stage
+    plan.ts - Stub-safe planning stage
+    develop.ts - Codex CLI executor stage
+    quality-gate.ts - Stub-safe quality gate stage
+    review.ts - Stub-safe review stage
+    make-pr.ts - Commit, push, and pull request creation
+    sync-tracker-state.ts - Post-PR tracker synchronization and cleanup
   github/
     index.ts         - GitHub API client exports
     types.ts         - GitHub-specific TypeScript types
@@ -64,8 +70,7 @@ Defined in `src/types/index.ts`:
 - `GitHubIssue`, `GitHubComment`, `GitHubRepo`
 - `AppConfig`, `RedisConfig`, `GitHubConfig`
 - `JobPayload`
-- `IssueProcessorJobData`, `IssueWatcherJobData`, `RepoWatcherJobData`, `CodexProviderJobData` (job data types)
-- `GitHubWebhookEvent`, `GitHubIssueEventPayload` (webhook types)
+- `WorkflowStage`, `StageJobPayload`, `IntakeJobData`, `PrepareRunJobData`, `AssessJobData`, `PlanJobData`, `DevelopJobData`, `QualityGateJobData`, `ReviewJobData`, `MakePrJobData`, `SyncTrackerStateJobData` (job data types)
 - `RepoListResponse` (API response type)
 
 ## Configuration
@@ -77,10 +82,9 @@ Most configuration is loaded from environment variables in `src/config/index.ts`
 - `REDIS_PORT` (default: 6379)
 - `REDIS_PASSWORD` (optional, no default)
 - `GITHUB_TOKEN`, `GITHUB_OWNER`, `GITHUB_REPO`
-- `GITHUB_ISSUE_STRATEGY` (polling | webhook, default: polling) - how to receive GitHub issues
 - `GITHUB_POLL_INTERVAL_MS` (default: 60000) - polling interval in milliseconds
-- `GITHUB_WEBHOOK_SECRET` (optional) - HMAC secret for webhook signature validation
 - `CODEX_CLI_PATH` (optional, default: npx @openai/codex) - command used to launch codex CLI
+- `CODEX_MODEL` (optional, default: gpt-5.4) - model passed to codex CLI
 - `CODEX_TIMEOUT_MS` (optional, default: 300000 = 5 minutes) - timeout for codex CLI execution
 
 Additional configuration read directly from environment:
@@ -103,12 +107,20 @@ The project uses Docker Compose to run Redis locally. See `docs/docker.md` for d
 - `docker-compose up -d` - Start Redis only
 - `docker-compose down` - Stop Redis only
 
+Runtime note for Codex: `./scripts/start.sh` needs Docker socket access and local server networking. When asked to run the server through this script, request escalated execution immediately instead of first trying the sandboxed command. Health checks against `http://127.0.0.1:3000/health` may also need escalated execution if sandbox networking cannot see the local port.
+
 ## Conventions
 
 - Use ESNext modules (import/export with .js extensions)
 - Strict TypeScript mode enabled
-- Tests must pass before committing
-- All new code requires tests
+- Follow test-driven development for every feature or behavior change:
+  1. Write a focused failing test that captures the requested behavior before changing implementation code.
+  2. Run the relevant test command and confirm the new test fails for the expected reason.
+  3. Implement the smallest change that makes the test pass.
+  4. Run the relevant tests again and confirm they pass before broadening the change.
+- Bug fixes must start with a regression test that fails before the fix.
+- All new code requires tests.
+- Tests must pass before committing.
 - Structured logging via pino
 - Job retry: 3 attempts with exponential backoff
 - Job concurrency: 5 (configurable)

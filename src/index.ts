@@ -1,11 +1,28 @@
 import { buildServer, startServer } from './server/index.js';
 import { config } from './config/index.js';
 import { closeQueue, closeWorker, createWorker } from './jobs/index.js';
-import { issueProcessorHandler } from './jobs/issue-processor.js';
-import { codexProviderHandler } from './jobs/codex-provider.js';
-import { closeIssueWatcherRedis, issueWatcherHandler, startIssueWatcher } from './jobs/issue-watcher.js';
+import { intakeHandler, startIntake, closeIntakeRedis } from './jobs/intake.js';
+import { prepareRunHandler } from './jobs/prepare-run.js';
+import { assessHandler } from './jobs/assess.js';
+import { planHandler } from './jobs/plan.js';
+import { developHandler } from './jobs/develop.js';
+import { qualityGateHandler } from './jobs/quality-gate.js';
+import { reviewHandler } from './jobs/review.js';
+import { makePrHandler } from './jobs/make-pr.js';
+import { syncTrackerStateHandler } from './jobs/sync-tracker-state.js';
 import type { Job, Worker } from 'bullmq';
-import type { CodexProviderJobData, IssueProcessorJobData, IssueWatcherJobData, JobPayload } from './types/index.js';
+import type {
+  AssessJobData,
+  DevelopJobData,
+  IntakeJobData,
+  JobPayload,
+  MakePrJobData,
+  PlanJobData,
+  PrepareRunJobData,
+  QualityGateJobData,
+  ReviewJobData,
+  SyncTrackerStateJobData,
+} from './types/index.js';
 
 let server: Awaited<ReturnType<typeof buildServer>> | undefined;
 let worker: Worker<JobPayload> | undefined;
@@ -16,12 +33,24 @@ let isShuttingDown = false;
  */
 export async function multiHandler(job: Job<JobPayload>): Promise<void> {
   switch (job.data.type) {
-    case 'issue-processor':
-      return issueProcessorHandler(job as Job<IssueProcessorJobData>);
-    case 'issue-watcher':
-      return issueWatcherHandler(job as Job<IssueWatcherJobData>);
-    case 'codex-provider':
-      return codexProviderHandler(job as Job<CodexProviderJobData>);
+    case 'intake':
+      return intakeHandler(job as Job<IntakeJobData>);
+    case 'prepare-run':
+      return prepareRunHandler(job as Job<PrepareRunJobData>);
+    case 'assess':
+      return assessHandler(job as Job<AssessJobData>);
+    case 'plan':
+      return planHandler(job as Job<PlanJobData>);
+    case 'develop':
+      return developHandler(job as Job<DevelopJobData>);
+    case 'quality-gate':
+      return qualityGateHandler(job as Job<QualityGateJobData>);
+    case 'review':
+      return reviewHandler(job as Job<ReviewJobData>);
+    case 'make-pr':
+      return makePrHandler(job as Job<MakePrJobData>);
+    case 'sync-tracker-state':
+      return syncTrackerStateHandler(job as Job<SyncTrackerStateJobData>);
     default:
       throw new Error(`Unknown job type: ${job.data.type}`);
   }
@@ -42,10 +71,7 @@ async function main(): Promise<void> {
   server = await buildServer({ logger: true });
   await startServer(server, config.port);
 
-  // Start polling if configured
-  if (config.github.issueStrategy === 'polling') {
-    await startIssueWatcher();
-  }
+  await startIntake();
 
   // Create worker after server is ready
   worker = createWorker(multiHandler);
@@ -94,11 +120,11 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
     console.error('Error closing queue:', shutdownError);
   }
   try {
-    // Close issue watcher Redis client
-    await closeIssueWatcherRedis();
+    // Close intake Redis client
+    await closeIntakeRedis();
   } catch (err) {
     shutdownError = err instanceof Error ? err : new Error(String(err));
-    console.error('Error closing issue watcher Redis:', shutdownError);
+    console.error('Error closing intake Redis:', shutdownError);
   }
 
   clearTimeout(timeout);
