@@ -1,12 +1,9 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import * as pty from 'node-pty';
 import { parse as parseYaml } from 'yaml';
 import type { Job } from 'bullmq';
 import type { DevelopJobData, GitHubIssue, PlanJobData, PlanOutput } from '../types/index.js';
-import { config } from '../config/index.js';
-import { ensureNodePtySpawnHelperExecutable } from '../utils/node-pty.js';
+import { runCodexSession } from './codex-session.js';
 import { stageOutputSchemas, stagePayloadSchemas } from './handoff-contracts.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
@@ -18,7 +15,6 @@ import {
 } from './orchestration.js';
 import { createForwardStagePayload } from './stage-payloads.js';
 
-const DEFAULT_TIMEOUT_MS = 300000;
 const MAX_PLAN_ATTEMPTS = 3;
 export const PLAN_PROMPT_TEMPLATE_PATH = join(process.cwd(), 'prompts', 'plan.md');
 export const PLAN_CHECKS_PATH = join(process.cwd(), 'config', 'plan-checks.yaml');
@@ -26,26 +22,6 @@ export const PLAN_CONTINUATION_PROMPT = [
   'Rewrite the full implementation plan and include every required Markdown section title.',
   'Return one complete plan response; do not describe the previous failed attempt.',
 ].join('\n');
-
-const CODEX_SUBCOMMANDS = new Set([
-  'exec',
-  'review',
-  'login',
-  'logout',
-  'mcp',
-  'mcp-server',
-  'app-server',
-  'app',
-  'completion',
-  'sandbox',
-  'debug',
-  'apply',
-  'resume',
-  'fork',
-  'cloud',
-  'features',
-  'help',
-]);
 
 export interface PlanChecks {
   requiredTitles: string[];
@@ -80,134 +56,22 @@ export interface PlanWorkResult {
   developJobData?: DevelopJobData;
 }
 
-function hasExplicitModelArg(args: string[]): boolean {
-  return args.some((arg, index) => {
-    if (arg === '-m' || arg === '--model') return true;
-    if (arg.startsWith('--model=')) return true;
-    return arg === '-c' && args[index + 1]?.startsWith('model=');
-  });
-}
-
-function appearsToBeCodexCommand(cliCmd: string, args: string[]): boolean {
-  const basename = cliCmd.split('/').at(-1) ?? cliCmd;
-  return basename === 'codex' || basename === 'codex-cli' || args.some((arg) => arg.includes('codex'));
-}
-
-function hasOutputLastMessageArg(args: string[]): boolean {
-  return args.some((arg, index) => arg === '--output-last-message' || arg === '-o' || args[index - 1] === '-o');
-}
-
-function buildPlanCodexArgs(
-  cliCmd: string,
-  cliArgs: string[],
-  prompt: string,
-  model: string,
-  outputPath: string,
-  resumeLastSession: boolean
-): string[] {
-  const invocationArgs = [...cliArgs];
-  const hasExplicitSubcommand = invocationArgs.some((arg) => CODEX_SUBCOMMANDS.has(arg));
-  const isCodexCommand = appearsToBeCodexCommand(cliCmd, invocationArgs);
-
-  if (isCodexCommand && !hasExplicitSubcommand) {
-    invocationArgs.push('exec');
-  }
-
-  if (isCodexCommand && resumeLastSession && invocationArgs.includes('exec') && !invocationArgs.includes('resume')) {
-    invocationArgs.push('resume', '--last');
-  }
-
-  if (!invocationArgs.includes('--dangerously-bypass-approvals-and-sandbox')) {
-    invocationArgs.push('--dangerously-bypass-approvals-and-sandbox');
-  }
-
-  if (model && !hasExplicitModelArg(invocationArgs)) {
-    invocationArgs.push('--model', model);
-  }
-
-  if (isCodexCommand && !hasOutputLastMessageArg(invocationArgs)) {
-    invocationArgs.push('--output-last-message', outputPath);
-  }
-
-  invocationArgs.push(prompt);
-  return invocationArgs;
-}
-
-function stripAnsi(value: string): string {
-  const ansiPattern = new RegExp(String.raw`\x1B\[[0-9;?]*[ -/]*[@-~]`, 'g');
-  return value.replace(ansiPattern, '').trim();
-}
-
 async function runCodexOnce(
   prompt: string,
   workspacePath: string,
   logger: ReturnType<typeof createJobLogger>,
   resumeLastSession: boolean
 ): Promise<string> {
-  const codexCliPath = process.env['CODEX_CLI_PATH'] ?? config.codex?.cliPath ?? 'npx @openai/codex';
-  const codexModel = process.env['CODEX_MODEL'] ?? config.codex?.model ?? 'gpt-5.4';
-  const timeoutMs = parseInt(
-    process.env['CODEX_TIMEOUT_MS'] ?? String(config.codex?.timeoutMs ?? DEFAULT_TIMEOUT_MS),
-    10
-  );
-  const cliParts = codexCliPath.split(/\s+/).filter(Boolean);
-  if (cliParts.length === 0) {
-    throw new Error('CODEX_CLI_PATH must not be empty');
-  }
-
-  const cliCmd = cliParts[0];
-  const outputDir = await mkdtemp(join(tmpdir(), 'plan-codex-'));
-  const outputPath = join(outputDir, 'last-message.md');
-  const cliArgs = buildPlanCodexArgs(cliCmd, cliParts.slice(1), prompt, codexModel, outputPath, resumeLastSession);
-  await ensureNodePtySpawnHelperExecutable(logger);
-  const ptyProcess = pty.spawn(cliCmd, cliArgs, {
-    cwd: workspacePath,
-    name: 'xterm-color',
-    env: { ...process.env },
+  const result = await runCodexSession({
+    prompt,
+    workspacePath,
+    logger,
+    resumeLastSession,
+    outputLastMessage: true,
+    logPrefix: 'plan-codex',
+    timeoutLabel: 'plan codex process',
   });
-  let captured = '';
-
-  logger.info(`plan codex command: ${cliCmd} ${cliParts.slice(1).join(' ')}`.trim());
-  ptyProcess.onData((data: string) => {
-    captured += data;
-    const line = data.toString().trim();
-    if (line) {
-      logger.info(`[plan-codex] ${line}`);
-    }
-  });
-
-  const exitCode = await new Promise<number>((resolve, reject) => {
-    let settled = false;
-    const settle = (fn: () => void) => {
-      if (!settled) {
-        settled = true;
-        fn();
-      }
-    };
-    const timer = setTimeout(() => {
-      ptyProcess.kill('SIGTERM');
-      settle(() => reject(new Error(`plan codex process timed out after ${timeoutMs}ms`)));
-    }, timeoutMs);
-
-    ptyProcess.onExit(({ exitCode }: { exitCode: number }) => {
-      clearTimeout(timer);
-      settle(() => resolve(exitCode));
-    });
-  });
-
-  if (exitCode !== 0) {
-    await rm(outputDir, { recursive: true, force: true });
-    throw new Error(`plan codex process failed with exit code ${exitCode}`);
-  }
-
-  try {
-    const finalMessage = await readFile(outputPath, 'utf8');
-    return finalMessage.trim() || stripAnsi(captured);
-  } catch {
-    return stripAnsi(captured);
-  } finally {
-    await rm(outputDir, { recursive: true, force: true });
-  }
+  return result.output;
 }
 
 async function createDefaultPlanningSession(input: {

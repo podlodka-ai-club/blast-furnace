@@ -1,78 +1,27 @@
-import * as pty from 'node-pty';
-import path from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { config } from '../config/index.js';
-import { ensureNodePtySpawnHelperExecutable } from '../utils/node-pty.js';
+import { buildCodexSessionArgs, runCodexSession } from './codex-session.js';
 import { handleDevelopStopHook, prepareDevelopStopHook } from './develop-stop-hook.js';
 import { stageOutputSchemas, stagePayloadSchemas } from './handoff-contracts.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
 import { appendHandoffRecordAndUpdateSummary, readValidatedStageInputRecord, resolveOrchestrationStorageRoot, scheduleNextJob, } from './orchestration.js';
 import { createForwardStagePayload } from './stage-payloads.js';
-const DEFAULT_TIMEOUT_MS = 300000;
-const CODEX_SUBCOMMANDS = new Set([
-    'exec',
-    'review',
-    'login',
-    'logout',
-    'mcp',
-    'mcp-server',
-    'app-server',
-    'app',
-    'completion',
-    'sandbox',
-    'debug',
-    'apply',
-    'resume',
-    'fork',
-    'cloud',
-    'features',
-    'help',
-]);
+export const DEVELOP_PROMPT_TEMPLATE_PATH = join(process.cwd(), 'prompts', 'develop.md');
 const DEVELOPMENT_RESULT = {
     status: 'completed',
     summary: 'Codex completed successfully.',
 };
-function hasExplicitModelArg(args) {
-    return args.some((arg, index) => {
-        if (arg === '-m' || arg === '--model')
-            return true;
-        if (arg.startsWith('--model='))
-            return true;
-        return arg === '-c' && args[index + 1]?.startsWith('model=');
-    });
-}
-function appearsToBeCodexCommand(cliCmd, args) {
-    const basename = path.basename(cliCmd);
-    return basename === 'codex' || basename === 'codex-cli' || args.some((arg) => arg.includes('codex'));
-}
-function hasCodexHooksEnabled(args) {
-    return args.some((arg, index) => {
-        if (arg === 'codex_hooks') {
-            return args[index - 1] === '--enable';
-        }
-        if (arg === '--enable=codex_hooks')
-            return true;
-        return arg === '--enable' && args[index + 1] === 'codex_hooks';
-    });
-}
 export function buildCodexCliArgs(cliCmd, cliArgs, prompt, model) {
-    const invocationArgs = [...cliArgs];
-    const hasExplicitSubcommand = invocationArgs.some((arg) => CODEX_SUBCOMMANDS.has(arg));
-    const isCodexCommand = appearsToBeCodexCommand(cliCmd, invocationArgs);
-    if (isCodexCommand && !hasExplicitSubcommand) {
-        invocationArgs.push('exec');
-    }
-    if (isCodexCommand && !hasCodexHooksEnabled(invocationArgs)) {
-        invocationArgs.push('--enable', 'codex_hooks');
-    }
-    if (!invocationArgs.includes('--dangerously-bypass-approvals-and-sandbox')) {
-        invocationArgs.push('--dangerously-bypass-approvals-and-sandbox');
-    }
-    if (model && !hasExplicitModelArg(invocationArgs)) {
-        invocationArgs.push('--model', model);
-    }
-    invocationArgs.push(prompt);
-    return invocationArgs;
+    return buildCodexSessionArgs({
+        cliCmd,
+        cliArgs,
+        prompt,
+        model,
+        enableHooks: true,
+        resumeLastSession: false,
+    });
 }
 function parseMinimumTimeout(value, defaultVal) {
     const parsed = parseInt(value ?? String(defaultVal), 10);
@@ -81,34 +30,24 @@ function parseMinimumTimeout(value, defaultVal) {
     }
     return parsed;
 }
-function buildDevelopPrompt(data) {
-    return [
-        `Issue #${data.issue.number}: ${data.issue.title}`,
-        '',
-        data.issue.body ?? '(No description provided)',
-        '',
-        'Plan context:',
-        JSON.stringify(data.plan, null, 2),
-    ].join('\n');
+export async function renderDevelopPrompt(templatePath, input) {
+    const template = await readFile(templatePath, 'utf8');
+    const replacements = {
+        planContent: input.planContent,
+    };
+    return template.replace(/\{\{([A-Za-z0-9_]+)\}\}/g, (match, key) => replacements[key] ?? match);
 }
 export async function runDevelopWork(job, logger = createJobLogger(job)) {
     stagePayloadSchemas.develop.parse(job.data);
     const inputRecord = await readValidatedStageInputRecord(job.data);
     const planned = stageOutputSchemas.plan.parse(inputRecord.output);
     const { branchName, issue, workspacePath } = planned;
-    const codexCliPath = process.env['CODEX_CLI_PATH'] ?? config.codex?.cliPath ?? 'npx @openai/codex';
-    const codexModel = process.env['CODEX_MODEL'] ?? config.codex?.model ?? 'gpt-5.4';
-    const timeoutMs = parseInt(process.env['CODEX_TIMEOUT_MS'] ?? String(config.codex?.timeoutMs ?? DEFAULT_TIMEOUT_MS), 10);
     const qualityGateCommand = process.env['QUALITY_GATE_TEST_COMMAND'] ?? config.qualityGate?.testCommand;
     const qualityGateTimeoutMs = parseMinimumTimeout(process.env['QUALITY_GATE_TEST_TIMEOUT_MS'], config.qualityGate?.testTimeoutMs ?? 180000);
     logger.info(`Running develop for issue #${issue.number} on branch ${branchName}`);
-    const prompt = buildDevelopPrompt(planned);
-    const cliParts = codexCliPath.split(/\s+/).filter(Boolean);
-    if (cliParts.length === 0) {
-        throw new Error('CODEX_CLI_PATH must not be empty');
-    }
-    const cliCmd = cliParts[0];
-    const cliArgs = cliParts.slice(1);
+    const prompt = await renderDevelopPrompt(DEVELOP_PROMPT_TEMPLATE_PATH, {
+        planContent: planned.plan.content,
+    });
     const stopHook = await prepareDevelopStopHook({
         runId: job.data.runId,
         runDir: job.data.inputRecordRef.runDir,
@@ -116,41 +55,16 @@ export async function runDevelopWork(job, logger = createJobLogger(job)) {
         qualityGateCommand,
         qualityGateTimeoutMs,
     });
-    const baseCliArgs = buildCodexCliArgs(cliCmd, cliArgs, prompt, codexModel);
-    await ensureNodePtySpawnHelperExecutable(logger);
-    const ptyProcess = pty.spawn(cliCmd, baseCliArgs, {
-        cwd: workspacePath,
-        name: 'xterm-color',
-        env: { ...process.env, ...stopHook.env },
+    await runCodexSession({
+        prompt,
+        workspacePath,
+        logger,
+        resumeLastSession: false,
+        enableHooks: true,
+        env: stopHook.env,
+        logPrefix: 'codex',
+        timeoutLabel: 'codex process',
     });
-    logger.info(`codex command: ${cliCmd} ${cliArgs.join(' ')}`.trim());
-    ptyProcess.onData((data) => {
-        const line = data.toString().trim();
-        if (line) {
-            logger.info(`[codex] ${line}`);
-        }
-    });
-    const exitCode = await new Promise((resolve, reject) => {
-        let settled = false;
-        const settle = (fn) => {
-            if (!settled) {
-                settled = true;
-                fn();
-            }
-        };
-        const timer = setTimeout(() => {
-            ptyProcess.kill('SIGTERM');
-            settle(() => reject(new Error(`codex process timed out after ${timeoutMs}ms`)));
-        }, timeoutMs);
-        ptyProcess.onExit(({ exitCode }) => {
-            clearTimeout(timer);
-            settle(() => resolve(exitCode));
-        });
-    });
-    if (exitCode !== 0) {
-        logger.error(`codex process exited with code ${exitCode}`);
-        throw new Error(`codex process failed with exit code ${exitCode}`);
-    }
     logger.info('codex process completed successfully');
     let quality = await stopHook.readFinalQualityResult();
     if (!quality) {

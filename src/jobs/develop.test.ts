@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -261,6 +261,28 @@ describe('develop job', () => {
     } as unknown as Job<DevelopJobData>;
   }
 
+  it('renders the Develop prompt with accepted Plan content only', async () => {
+    const { renderDevelopPrompt } = await import('./develop.js');
+    const root = await mkdtemp(join(tmpdir(), 'develop-prompt-'));
+    tempRoots.push(root);
+    const promptPath = join(root, 'develop.md');
+    await writeFile(promptPath, [
+      'Implement this plan:',
+      '',
+      '{{planContent}}',
+    ].join('\n'));
+
+    const prompt = await renderDevelopPrompt(promptPath, {
+      planContent: '## Summary\nUse the accepted plan.',
+    });
+
+    expect(prompt).toContain('## Summary\nUse the accepted plan.');
+    expect(prompt).not.toContain('{{planContent}}');
+    expect(prompt).not.toContain('Issue #');
+    expect(prompt).not.toContain('Test Issue');
+    expect(prompt).not.toContain('Test body');
+  });
+
   it('uses the prepared workspace from the ledger and does not prepare the repository again', async () => {
     const { runDevelopFlow } = await import('./develop.js');
     vi.mocked(nodePty.spawn).mockReturnValue(createCodexMockProcess());
@@ -278,7 +300,7 @@ describe('develop job', () => {
     );
   });
 
-  it('builds the codex command with issue and plan context and streams PTY output', async () => {
+  it('builds the codex command with accepted Plan content only and streams PTY output', async () => {
     const { runDevelopWork } = await import('./develop.js');
     const dataHandlers: Array<(data: string) => void> = [];
     const mockLogger = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() };
@@ -313,11 +335,16 @@ describe('develop job', () => {
     );
     const args = vi.mocked(nodePty.spawn).mock.calls[0][1];
     expect(args).not.toContain('--config');
+    expect(args).not.toContain('resume');
+    expect(args).not.toContain('--last');
     expect(args.some((arg) => arg.includes('hooks.Stop'))).toBe(false);
-    expect(args.at(-1)).toEqual(expect.stringContaining('Issue #42: Test Issue'));
     const prompt = vi.mocked(nodePty.spawn).mock.calls[0][1].at(-1);
-    expect(prompt).toContain('Test body');
-    expect(prompt).toContain('Plan validated successfully.');
+    expect(prompt).toContain('## Summary\nReady.');
+    expect(prompt).toContain('## Implementation Plan\nDo it.');
+    expect(prompt).not.toContain('Issue #42: Test Issue');
+    expect(prompt).not.toContain('Test body');
+    expect(prompt).not.toContain('Plan validated successfully.');
+    expect(prompt).not.toContain('"status"');
     expect(mockLogger.info).toHaveBeenCalledWith('[codex] codex output');
     expect(mockPrepareDevelopStopHook).toHaveBeenCalledWith(expect.objectContaining({
       workspacePath: expect.stringContaining('develop-ledger-'),
