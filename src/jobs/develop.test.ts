@@ -499,6 +499,48 @@ describe('develop job', () => {
     expect(mockJobQueueAdd).toHaveBeenCalledWith('review', expect.anything());
   });
 
+  it('keeps running fallback Quality Gate until a terminal quality result is available', async () => {
+    const { runDevelopFlow } = await import('./develop.js');
+    mockReadFinalQualityResult
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({
+        status: 'failed',
+        command: 'npm test',
+        exitCode: 1,
+        attempts: 3,
+        durationMs: 200,
+        summary: 'Tests failed after retry budget.',
+        outputPath: '/tmp/run/quality/attempt-3.log',
+      } satisfies QualityGateResult);
+    mockHandleDevelopStopHook
+      .mockResolvedValueOnce({ decision: 'block', reason: 'first failure' })
+      .mockResolvedValueOnce({ decision: 'block', reason: 'second failure' })
+      .mockResolvedValueOnce({ decision: 'allow' });
+    vi.mocked(nodePty.spawn).mockReturnValue(createCodexMockProcess());
+    const job = await createJob();
+
+    await runDevelopFlow(job);
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
+
+    expect(mockHandleDevelopStopHook).toHaveBeenCalledTimes(3);
+    expect(records[1]).toMatchObject({
+      fromStage: 'develop',
+      toStage: null,
+      status: 'failure',
+      output: {
+        status: 'quality-failed',
+        quality: {
+          status: 'failed',
+          attempts: 3,
+          summary: 'Tests failed after retry budget.',
+        },
+      },
+    });
+    expect(mockJobQueueAdd).not.toHaveBeenCalled();
+  });
+
   it('appends terminal quality-misconfigured output and does not enqueue downstream jobs', async () => {
     const { runDevelopFlow } = await import('./develop.js');
     mockReadFinalQualityResult.mockResolvedValue({

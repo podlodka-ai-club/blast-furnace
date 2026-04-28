@@ -107,15 +107,20 @@ export async function runDevelopWork(
   let quality = await stopHook.readFinalQualityResult();
   if (!quality) {
     logger.warn('Quality Gate did not produce a Stop-hook result before Codex stopped; running fallback Quality Gate');
-    await handleDevelopStopHook({
-      statePath: stopHook.statePath,
-      runDir: stopHook.runDir,
-      workspacePath,
-      qualityGateCommand,
-      qualityGateTimeoutMs,
-      hookInput: {},
-    });
-    quality = await stopHook.readFinalQualityResult();
+    for (let fallbackAttempt = 0; fallbackAttempt < 3 && !quality; fallbackAttempt += 1) {
+      const decision = await handleDevelopStopHook({
+        statePath: stopHook.statePath,
+        runDir: stopHook.runDir,
+        workspacePath,
+        qualityGateCommand,
+        qualityGateTimeoutMs,
+        hookInput: {},
+      });
+      quality = await stopHook.readFinalQualityResult();
+      if (decision.decision === 'allow' && !quality) {
+        break;
+      }
+    }
     if (!quality) {
       if (!qualityGateCommand?.trim()) {
         throw new Error('Quality Gate did not record misconfiguration before Codex stopped');

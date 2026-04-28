@@ -93,9 +93,15 @@ The system SHALL provide a `develop` job handled by an isolated Develop module t
 - **AND** Develop SHALL NOT enqueue `review`, `make-pr`, or `sync-tracker-state`
 
 #### Scenario: Stop hook avoids recursive blocking
-- **WHEN** the Stop hook is invoked while run-scoped hook state or the hook input indicates `stop_hook_active`
+- **WHEN** the Stop hook is invoked while run-scoped hook state indicates an active Quality Gate
 - **THEN** the Stop hook SHALL NOT start another Quality Gate command recursively
 - **AND** SHALL use the persisted hook state to avoid an unbounded stop-block loop
+
+#### Scenario: Stop hook retries after remediation
+- **WHEN** the Stop hook is invoked after a previous Quality Gate failure blocked Codex stop
+- **AND** run-scoped hook state is not active
+- **THEN** the Stop hook SHALL run the next Quality Gate attempt even when the hook input includes `stop_hook_active`
+- **AND** Develop SHALL NOT treat a blocked failed or timed-out Quality Gate attempt as a final Develop result
 
 #### Scenario: Executor fails
 - **WHEN** Codex exits with a non-zero code before a Develop handoff is produced
@@ -128,4 +134,3 @@ The Develop module SHALL render its executor prompt from a repository-owned Deve
 - **THEN** Develop SHALL start a new Codex session for Development
 - **AND** SHALL NOT resume or continue the Codex session used by Plan
 - **AND** SHALL rely on the accepted Plan content from the handoff ledger as the cross-stage context
-
