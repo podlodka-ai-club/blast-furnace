@@ -56,6 +56,7 @@ The system SHALL use one append-only JSONL handoff ledger per run as the durable
 - **AND** the record's `status` SHALL be `success`
 - **AND** the record output SHALL include `development` and `quality`
 - **AND** `quality.status` SHALL be `passed`
+- **AND** the record output SHALL NOT include `quality.outputPath`
 
 #### Scenario: Develop terminal handoff includes failed quality
 - **WHEN** Develop appends a terminal handoff for `failed`, `timed-out`, or `misconfigured` quality
@@ -64,6 +65,7 @@ The system SHALL use one append-only JSONL handoff ledger per run as the durable
 - **AND** the record's `nextInput` SHALL be `null`
 - **AND** the record output SHALL include `development` and `quality`
 - **AND** the record output SHALL include a non-success Develop status that distinguishes the quality outcome
+- **AND** the record output SHALL include `quality.outputPath` when a failed or timed-out Quality Gate attempt produced a full output artifact
 
 ### Requirement: Handoff Schema Validation
 The system SHALL validate transport payloads, input handoff records, stage outputs, and appended handoff records before crossing a stage boundary.
@@ -91,6 +93,7 @@ The system SHALL validate transport payloads, input handoff records, stage outpu
 - **AND** SHALL require `quality.status` to be one of `passed`, `failed`, `misconfigured`, or `timed-out`
 - **AND** SHALL require `quality.command`, `quality.attempts`, `quality.durationMs`, and `quality.summary`
 - **AND** SHALL allow `quality.exitCode` and `quality.outputPath` when available
+- **AND** SHALL reject stale successful quality artifact references by requiring passed Quality Gate handoffs to omit `quality.outputPath`
 
 #### Scenario: Review input quality schema is validated
 - **WHEN** Review receives a handoff record reference

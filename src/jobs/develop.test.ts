@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -92,10 +92,14 @@ vi.mock('../utils/node-pty.js', () => ({
   ensureNodePtySpawnHelperExecutable: mockEnsureNodePtySpawnHelperExecutable,
 }));
 
-vi.mock('./develop-stop-hook.js', () => ({
-  handleDevelopStopHook: mockHandleDevelopStopHook,
-  prepareDevelopStopHook: mockPrepareDevelopStopHook,
-}));
+vi.mock('./develop-stop-hook.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./develop-stop-hook.js')>();
+  return {
+    ...actual,
+    handleDevelopStopHook: mockHandleDevelopStopHook,
+    prepareDevelopStopHook: mockPrepareDevelopStopHook,
+  };
+});
 
 vi.mock('./logger.js', () => ({
   createJobLogger: mockCreateJobLogger,
@@ -165,18 +169,21 @@ describe('develop job', () => {
       summary: 'Quality Gate passed.',
       outputPath: '/tmp/run/quality/attempt-1.log',
     } satisfies QualityGateResult);
-    mockPrepareDevelopStopHook.mockResolvedValue({
-      runDir: '/tmp/run',
-      statePath: '/tmp/run/quality/stop-hook-state.json',
-      scriptPath: '/tmp/run/quality/stop-hook.mjs',
+    mockPrepareDevelopStopHook.mockImplementation(async (options: {
+      runDir: string;
+      qualityGateTimeoutMs: number;
+    }) => ({
+      runDir: options.runDir,
+      statePath: join(options.runDir, 'quality', 'stop-hook-state.json'),
+      scriptPath: '/stable/develop-stop-hook-runner.js',
       env: {
-        BLAST_FURNACE_STOP_HOOK_STATE_PATH: '/tmp/run/quality/stop-hook-state.json',
-        BLAST_FURNACE_STOP_HOOK_SCRIPT_PATH: '/tmp/run/quality/stop-hook.mjs',
+        BLAST_FURNACE_STOP_HOOK_STATE_PATH: join(options.runDir, 'quality', 'stop-hook-state.json'),
+        BLAST_FURNACE_STOP_HOOK_SCRIPT_PATH: '/stable/develop-stop-hook-runner.js',
       },
-      hookCommand: 'node "/tmp/run/quality/stop-hook.mjs"',
+      hookCommand: 'node "/stable/develop-stop-hook-runner.js"',
       hookTimeoutSeconds: 185,
       readFinalQualityResult: mockReadFinalQualityResult,
-    });
+    }));
   });
 
   afterEach(async () => {
@@ -356,7 +363,7 @@ describe('develop job', () => {
       expect.any(Array),
       expect.objectContaining({
         env: expect.objectContaining({
-          BLAST_FURNACE_STOP_HOOK_STATE_PATH: '/tmp/run/quality/stop-hook-state.json',
+          BLAST_FURNACE_STOP_HOOK_STATE_PATH: expect.stringContaining('/quality/stop-hook-state.json'),
         }),
       })
     );
@@ -413,6 +420,43 @@ describe('develop job', () => {
     expect(mockJobQueueAdd).not.toHaveBeenCalledWith('quality-gate', expect.anything());
   });
 
+  it('cleans successful quality artifacts after handoff and does not keep stale output paths', async () => {
+    const { runDevelopFlow } = await import('./develop.js');
+    vi.mocked(nodePty.spawn).mockReturnValue(createCodexMockProcess());
+    const job = await createJob();
+    const qualityDir = join(job.data.inputRecordRef.runDir, 'quality');
+    const outputPath = join(qualityDir, 'attempt-1.log');
+    await mkdir(qualityDir, { recursive: true });
+    await writeFile(outputPath, 'passing output', 'utf8');
+    await writeFile(join(qualityDir, 'stop-hook-state.json'), '{}', 'utf8');
+    mockReadFinalQualityResult.mockResolvedValue({
+      status: 'passed',
+      command: 'npm test',
+      exitCode: 0,
+      attempts: 1,
+      durationMs: 42,
+      summary: 'Quality Gate passed.',
+      outputPath,
+    } satisfies QualityGateResult);
+
+    await runDevelopFlow(job);
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
+
+    expect(records[1].output).toMatchObject({
+      status: 'success',
+      quality: {
+        status: 'passed',
+        command: 'npm test',
+      },
+    });
+    expect(records[1].output).toEqual(expect.objectContaining({
+      quality: expect.not.objectContaining({
+        outputPath: expect.any(String),
+      }),
+    }));
+    await expect(access(qualityDir)).rejects.toThrow();
+  });
+
   it('runs the Quality Gate fallback when Codex exits without producing a Stop-hook result', async () => {
     const { runDevelopFlow } = await import('./develop.js');
     mockReadFinalQualityResult
@@ -433,8 +477,8 @@ describe('develop job', () => {
     const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
 
     expect(mockHandleDevelopStopHook).toHaveBeenCalledWith({
-      statePath: '/tmp/run/quality/stop-hook-state.json',
-      runDir: '/tmp/run',
+      statePath: expect.stringContaining('/quality/stop-hook-state.json'),
+      runDir: expect.stringContaining('/.orchestrator/runs/'),
       workspacePath: expect.stringContaining('develop-ledger-'),
       qualityGateCommand: 'npm test',
       qualityGateTimeoutMs: 180000,
@@ -545,6 +589,37 @@ describe('develop job', () => {
       },
     });
     expect(mockJobQueueAdd).not.toHaveBeenCalled();
+  });
+
+  it('keeps failed quality artifacts and preserves their output path in the terminal handoff', async () => {
+    const { runDevelopFlow } = await import('./develop.js');
+    vi.mocked(nodePty.spawn).mockReturnValue(createCodexMockProcess());
+    const job = await createJob();
+    const qualityDir = join(job.data.inputRecordRef.runDir, 'quality');
+    const outputPath = join(qualityDir, 'attempt-3.log');
+    await mkdir(qualityDir, { recursive: true });
+    await writeFile(outputPath, 'failing output', 'utf8');
+    mockReadFinalQualityResult.mockResolvedValue({
+      status: 'failed',
+      command: 'npm test',
+      exitCode: 1,
+      attempts: 3,
+      durationMs: 200,
+      summary: 'Tests failed.',
+      outputPath,
+    } satisfies QualityGateResult);
+
+    await runDevelopFlow(job);
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
+
+    expect(records[1].output).toMatchObject({
+      status: 'quality-failed',
+      quality: {
+        status: 'failed',
+        outputPath,
+      },
+    });
+    await expect(access(outputPath)).resolves.toBeUndefined();
   });
 
   it('fails when codex exits with a non-zero code', async () => {

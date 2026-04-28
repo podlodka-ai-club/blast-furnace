@@ -37,7 +37,8 @@ The system SHALL process automation tasks as discrete asynchronous stages connec
 
 #### Scenario: Target workflow order is used
 - **WHEN** an eligible issue is processed successfully through the full pull-request-created path
-- **THEN** the system SHALL process stages in this order: `Intake`, `Prepare Run`, `Assess`, `Plan`, `Develop`, `Quality Gate`, `Review`, `Make PR`, `Sync Tracker State`
+- **THEN** the system SHALL process stages in this order: `Intake`, `Prepare Run`, `Assess`, `Plan`, `Develop`, `Review`, `Make PR`, `Sync Tracker State`
+- **AND** Develop SHALL own Quality Gate execution through the Codex Stop hook rather than scheduling a separate Quality Gate stage
 
 ### Requirement: Repository Selection
 The system SHALL support automation for exactly one configured repository.
@@ -87,20 +88,29 @@ The system SHALL attempt to implement each accepted issue using the configured l
 
 #### Scenario: Codex makes repository changes
 - **WHEN** Develop exits successfully and changes files
-- **THEN** the system SHALL append the formal development output to the run JSONL ledger
-- **AND** schedule Quality Gate work with a reference to the development handoff record
+- **THEN** the system SHALL run Quality Gate through the Develop Stop-hook loop
+- **AND** append formal development and quality output to the run JSONL ledger when Quality Gate passes
+- **AND** schedule Review work with a reference to the Develop handoff record
 - **AND** SHALL leave commit, push, pull request creation, tracker synchronization, and terminal cleanup to later workflow stages
 
 #### Scenario: Codex makes no repository changes
 - **WHEN** Develop exits successfully without file changes
-- **THEN** the system SHALL append the formal development output to the run JSONL ledger
-- **AND** schedule Quality Gate work with a reference to the development handoff record
+- **THEN** the system SHALL run Quality Gate through the Develop Stop-hook loop
+- **AND** append formal development and quality output to the run JSONL ledger when Quality Gate passes
+- **AND** schedule Review work with a reference to the Develop handoff record
 - **AND** SHALL leave the no-change finalization decision to Make PR
 
-#### Scenario: Quality Gate completes
-- **WHEN** Quality Gate work completes
-- **THEN** the system SHALL append the formal quality output to the run JSONL ledger
-- **AND** schedule Review work with a reference to the quality handoff record
+#### Scenario: Quality Gate passes inside Develop
+- **WHEN** Quality Gate passes inside the Develop Stop-hook loop
+- **THEN** the Develop handoff output SHALL include `quality.status: "passed"`
+- **AND** the handoff SHALL NOT include `quality.outputPath`
+- **AND** successful run-scoped Quality Gate runtime artifacts SHALL be removed after the Develop handoff is written
+
+#### Scenario: Quality Gate does not pass inside Develop
+- **WHEN** Quality Gate is `failed`, `timed-out`, or `misconfigured` after the Develop Stop-hook loop
+- **THEN** Develop SHALL append a terminal handoff record to the run JSONL ledger
+- **AND** SHALL NOT schedule Review, Make PR, or Sync Tracker State work
+- **AND** failed or timed-out run-scoped Quality Gate runtime artifacts SHALL be kept for diagnostics
 
 #### Scenario: Review completes
 - **WHEN** Review work completes
@@ -173,4 +183,3 @@ The system SHALL provide basic operational surfaces for running and observing th
 #### Scenario: Operator runs local development environment
 - **WHEN** an operator starts the project locally using the provided scripts
 - **THEN** the system SHALL start Redis and the development server using the documented local workflow
-

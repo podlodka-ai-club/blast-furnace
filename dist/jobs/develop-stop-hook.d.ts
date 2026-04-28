@@ -41,5 +41,11 @@ export type StopHookDecision = {
 };
 export declare function readDevelopStopHookState(statePath: string): Promise<DevelopStopHookState>;
 export declare function writeDevelopStopHookState(statePath: string, state: DevelopStopHookState): Promise<void>;
+export declare function resolveDevelopStopHookRunner(): {
+    scriptPath: string;
+    hookCommand: string;
+};
+export declare function qualityResultForHandoff(result: QualityGateResult): QualityGateResult;
+export declare function cleanupSuccessfulQualityArtifacts(runDir: string, result: QualityGateResult): Promise<boolean>;
 export declare function prepareDevelopStopHook(options: PrepareDevelopStopHookOptions): Promise<PreparedDevelopStopHook>;
 export declare function handleDevelopStopHook(input: DevelopStopHookInput): Promise<StopHookDecision>;

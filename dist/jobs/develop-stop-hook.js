@@ -1,5 +1,7 @@
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { dirname, extname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { runQualityGate } from './quality-gate-runner.js';
 const CODEX_HOOKS_CONFIG_PATH = '.codex/hooks.json';
 const CODEX_HOOKS_GIT_EXCLUDES = [
@@ -52,76 +54,48 @@ function misconfiguredResult(attempt) {
         summary: 'QUALITY_GATE_TEST_COMMAND is not configured.',
     };
 }
-function buildHookScript() {
-    return `#!/usr/bin/env node
-const fs = await import('node:fs/promises');
-const { spawn } = await import('node:child_process');
-
-const statePath = process.env.BLAST_FURNACE_STOP_HOOK_STATE_PATH;
-const runDir = process.env.BLAST_FURNACE_STOP_HOOK_RUN_DIR;
-const workspacePath = process.env.BLAST_FURNACE_WORKSPACE_PATH;
-const command = process.env.BLAST_FURNACE_QUALITY_GATE_COMMAND || '';
-const timeoutMs = Number(process.env.BLAST_FURNACE_QUALITY_GATE_TIMEOUT_MS || '180000');
-let input = {};
-try {
-  const chunks = [];
-  for await (const chunk of process.stdin) chunks.push(chunk);
-  const raw = Buffer.concat(chunks).toString('utf8').trim();
-  input = raw ? JSON.parse(raw) : {};
-} catch {}
-async function readState() {
-  try {
-    return { attempts: 0, blockedFailureCount: 0, active: false, outputPaths: [], ...JSON.parse(await fs.readFile(statePath, 'utf8')) };
-  } catch {
-    return { attempts: 0, blockedFailureCount: 0, active: false, outputPaths: [] };
-  }
+function localTsxLoaderPath() {
+    const currentDir = dirname(fileURLToPath(import.meta.url));
+    const candidates = [
+        join(process.cwd(), 'node_modules', 'tsx', 'dist', 'loader.mjs'),
+        join(currentDir, '..', '..', 'node_modules', 'tsx', 'dist', 'loader.mjs'),
+    ];
+    return candidates.find((candidate) => existsSync(candidate));
 }
-async function writeState(state) {
-  await fs.mkdir(new URL('.', 'file://' + statePath).pathname, { recursive: true });
-  await fs.writeFile(statePath, JSON.stringify(state, null, 2));
+function quoteCommandPart(value) {
+    return JSON.stringify(value);
 }
-function allow() {
-  process.stdout.write(JSON.stringify({ decision: 'allow' }));
+export function resolveDevelopStopHookRunner() {
+    const currentPath = fileURLToPath(import.meta.url);
+    const currentDir = dirname(currentPath);
+    const sourceMode = extname(currentPath) === '.ts';
+    const scriptPath = join(currentDir, sourceMode ? 'develop-stop-hook-runner.ts' : 'develop-stop-hook-runner.js');
+    if (sourceMode) {
+        const tsxLoaderPath = localTsxLoaderPath();
+        const hookCommand = tsxLoaderPath
+            ? `${quoteCommandPart(process.execPath)} --import ${quoteCommandPart(tsxLoaderPath)} ${quoteCommandPart(scriptPath)}`
+            : `${quoteCommandPart(process.execPath)} --import tsx ${quoteCommandPart(scriptPath)}`;
+        return { scriptPath, hookCommand };
+    }
+    return {
+        scriptPath,
+        hookCommand: `${quoteCommandPart(process.execPath)} ${quoteCommandPart(scriptPath)}`,
+    };
 }
-if (!statePath || !runDir || !workspacePath) allow();
-else {
-  const state = await readState();
-  if (input.stop_hook_active || state.active) allow();
-  else if (!command.trim()) {
-    const result = { status: 'misconfigured', command: '', attempts: state.attempts + 1, durationMs: 0, summary: 'QUALITY_GATE_TEST_COMMAND is not configured.' };
-    await writeState({ ...state, attempts: state.attempts + 1, active: false, lastQualityResult: result });
-    allow();
-  } else {
-    const attempt = state.attempts + 1;
-    await writeState({ ...state, attempts: attempt, active: true });
-    const startedAt = Date.now();
-    const child = spawn(command, { cwd: workspacePath, shell: true, env: process.env });
-    let stdout = '';
-    let stderr = '';
-    let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, timeoutMs);
-    child.stdout?.on('data', (chunk) => { stdout += chunk.toString(); });
-    child.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
-    child.on('close', async (code) => {
-      clearTimeout(timer);
-      const status = timedOut ? 'timed-out' : code === 0 ? 'passed' : 'failed';
-      const outputPath = runDir + '/quality/attempt-' + attempt + '.log';
-      await fs.mkdir(runDir + '/quality', { recursive: true });
-      await fs.writeFile(outputPath, stdout + '\\n--- stderr ---\\n' + stderr);
-      const result = { status, command, exitCode: typeof code === 'number' ? code : undefined, attempts: attempt, durationMs: Date.now() - startedAt, summary: ['Quality Gate command: ' + command, 'status: ' + status, stderr, stdout].filter(Boolean).join('\\n').slice(-1800), outputPath };
-      const nextState = { ...state, attempts: attempt, active: false, lastQualityResult: result, outputPaths: [...(state.outputPaths || []), outputPath] };
-      if ((status === 'failed' || status === 'timed-out') && state.blockedFailureCount < 2) {
-        nextState.blockedFailureCount = state.blockedFailureCount + 1;
-        await writeState(nextState);
-        process.stdout.write(JSON.stringify({ decision: 'block', reason: result.summary }));
-      } else {
-        await writeState(nextState);
-        allow();
-      }
-    });
-  }
+export function qualityResultForHandoff(result) {
+    if (result.status !== 'passed' || result.outputPath === undefined) {
+        return result;
+    }
+    const handoffResult = { ...result };
+    delete handoffResult.outputPath;
+    return handoffResult;
 }
-`;
+export async function cleanupSuccessfulQualityArtifacts(runDir, result) {
+    if (result.status !== 'passed') {
+        return false;
+    }
+    await rm(join(runDir, 'quality'), { recursive: true, force: true });
+    return true;
 }
 async function pathExists(pathToCheck) {
     try {
@@ -184,11 +158,9 @@ async function writeCodexStopHookConfig(workspacePath, hookCommand, hookTimeoutS
 export async function prepareDevelopStopHook(options) {
     const qualityDir = join(options.runDir, 'quality');
     const statePath = join(qualityDir, 'stop-hook-state.json');
-    const scriptPath = join(qualityDir, 'stop-hook.mjs');
+    const { scriptPath, hookCommand } = resolveDevelopStopHookRunner();
     await mkdir(qualityDir, { recursive: true });
     await writeDevelopStopHookState(statePath, await readDevelopStopHookState(statePath));
-    await writeFile(scriptPath, buildHookScript(), { encoding: 'utf8', mode: 0o755 });
-    const hookCommand = `node ${JSON.stringify(scriptPath)}`;
     const hookTimeoutSeconds = Math.max(1, Math.ceil(options.qualityGateTimeoutMs / 1000) + 5);
     const hookConfigPath = await writeCodexStopHookConfig(options.workspacePath, hookCommand, hookTimeoutSeconds);
     return {

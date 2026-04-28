@@ -53,16 +53,24 @@ The system SHALL provide a `develop` job handled by an isolated Develop module t
 - **AND** SHALL write full command output to a run-scoped artifact file outside the target repository workspace
 - **AND** SHALL record only a bounded summary and optional output artifact path in the handoff ledger
 
+#### Scenario: Stop hook runner is reusable
+- **WHEN** Develop prepares Codex Stop-hook configuration
+- **THEN** it SHALL point the hook command at the reusable Stop-hook runner from the Blast Furnace codebase
+- **AND** SHALL NOT generate a per-run `quality/stop-hook.mjs` script
+- **AND** SHALL pass run-specific state path, run directory, workspace path, Quality Gate command, and timeout through environment variables
+
 #### Scenario: Quality Gate passes
 - **WHEN** Codex attempts to stop and Quality Gate exits with code `0`
 - **THEN** the Stop hook SHALL allow Codex to stop
 - **AND** Develop SHALL append a handoff record from `develop` to `review`
 - **AND** the output SHALL include `development` and `quality`
 - **AND** `quality.status` SHALL be `passed`
-- **AND** `quality` SHALL include `command`, `exitCode`, `attempts`, `durationMs`, `summary`, and optional `outputPath`
+- **AND** `quality` SHALL include `command`, `exitCode`, `attempts`, `durationMs`, and `summary`
+- **AND** the handoff `quality` object SHALL NOT include `outputPath` for a passed Quality Gate result
+- **AND** Develop SHALL remove run-scoped Quality Gate runtime artifacts after the successful Develop handoff is written
 - **AND** Develop SHALL enqueue a `review` job with `runId`, `stage`, `stageAttempt`, `reworkAttempt`, and an input handoff record reference
 - **AND** SHALL NOT enqueue a `quality-gate` job
-- **AND** SHALL NOT commit changes, push changes, create pull requests, transition tracker state, or perform terminal cleanup
+- **AND** SHALL NOT commit changes, push changes, create pull requests, transition tracker state, or perform workspace terminal cleanup
 
 #### Scenario: Quality Gate failure is returned to Codex
 - **WHEN** Codex attempts to stop and Quality Gate exits non-zero or times out before the terminal failed attempt
@@ -70,6 +78,7 @@ The system SHALL provide a `develop` job handled by an isolated Develop module t
 - **AND** the Stop hook SHALL return a bounded `reason` containing the command, status, exit code when available, relevant recent output, and detected failing test names when available
 - **AND** Codex SHALL continue in the same session with that reason as continuation context
 - **AND** the Stop hook SHALL persist the attempt result and retry counters in run-scoped state
+- **AND** the system SHALL keep run-scoped Quality Gate runtime artifacts for diagnostics
 
 #### Scenario: Quality Gate retry budget is exhausted
 - **WHEN** Quality Gate has already blocked Codex stop two times and the next Quality Gate attempt exits non-zero or times out
@@ -78,6 +87,8 @@ The system SHALL provide a `develop` job handled by an isolated Develop module t
 - **AND** the output SHALL include `development` and `quality`
 - **AND** `quality.status` SHALL be `failed` when the test command exits non-zero
 - **AND** `quality.status` SHALL be `timed-out` when the test command exceeds its timeout
+- **AND** `quality.outputPath` SHALL be included when a full output artifact exists
+- **AND** the system SHALL keep run-scoped Quality Gate runtime artifacts for diagnostics
 - **AND** the Develop output status SHALL be `quality-failed` or `quality-timed-out` to distinguish it from successful develop output
 - **AND** Develop SHALL NOT enqueue `review`, `make-pr`, or `sync-tracker-state`
 
