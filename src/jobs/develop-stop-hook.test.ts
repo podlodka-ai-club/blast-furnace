@@ -1,11 +1,13 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { QualityGateResult } from '../types/index.js';
 import {
+  cleanupSuccessfulQualityArtifacts,
   handleDevelopStopHook,
   prepareDevelopStopHook,
+  qualityResultForHandoff,
   readDevelopStopHookState,
   writeDevelopStopHookState,
 } from './develop-stop-hook.js';
@@ -83,6 +85,10 @@ describe('develop stop hook state and adapter', () => {
       BLAST_FURNACE_QUALITY_GATE_COMMAND: 'npm test',
     });
     expect(prepared.hookCommand).toContain(prepared.scriptPath);
+    expect(prepared.hookCommand).toContain('develop-stop-hook-runner');
+    expect(prepared.scriptPath).toContain('develop-stop-hook-runner');
+    expect(prepared.scriptPath).not.toContain(runDir);
+    await expect(access(join(runDir, 'quality', 'stop-hook.mjs'))).rejects.toThrow();
     expect(prepared.hookTimeoutSeconds).toBeGreaterThan(180);
   });
 
@@ -235,6 +241,37 @@ describe('develop stop hook state and adapter', () => {
         status: 'misconfigured',
       },
     });
+  });
+
+  it('removes successful Quality Gate runtime artifacts and omits stale output paths from handoff data', async () => {
+    const qualityDir = join(runDir, 'quality');
+    const outputPath = join(qualityDir, 'attempt-1.log');
+    await mkdir(qualityDir, { recursive: true });
+    await writeFile(outputPath, 'test output', 'utf8');
+    await writeFile(join(qualityDir, 'stop-hook-state.json'), '{}', 'utf8');
+    const passed = {
+      ...quality('passed', 1),
+      outputPath,
+    };
+
+    expect(qualityResultForHandoff(passed)).not.toHaveProperty('outputPath');
+    await expect(cleanupSuccessfulQualityArtifacts(runDir, passed)).resolves.toBe(true);
+    await expect(access(qualityDir)).rejects.toThrow();
+  });
+
+  it('keeps failed Quality Gate runtime artifacts and preserves their output path', async () => {
+    const qualityDir = join(runDir, 'quality');
+    const outputPath = join(qualityDir, 'attempt-1.log');
+    await mkdir(qualityDir, { recursive: true });
+    await writeFile(outputPath, 'failing output', 'utf8');
+    const failed = {
+      ...quality('failed', 1),
+      outputPath,
+    };
+
+    expect(qualityResultForHandoff(failed)).toHaveProperty('outputPath', outputPath);
+    await expect(cleanupSuccessfulQualityArtifacts(runDir, failed)).resolves.toBe(false);
+    await expect(access(outputPath)).resolves.toBeUndefined();
   });
 
   it('does not recursively start Quality Gate when the hook input or state is already active', async () => {

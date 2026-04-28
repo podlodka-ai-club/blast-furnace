@@ -231,7 +231,7 @@ Branch names are rejected when empty, containing `..`, starting with `-`, or con
 
 Quality Gate is deterministic deployment configuration, not agent-selected behavior. `QUALITY_GATE_TEST_COMMAND` runs from the target repository `workspacePath`, should be non-interactive and unit-test oriented, must return non-zero on failure, and should not require browser UI, manual auth, or nondeterministic external services. If services are required, their setup must be deterministic outside the command or inside the target repository's test harness.
 
-Full stdout/stderr from each attempt is written to a run-scoped artifact under `.orchestrator/runs/.../quality/`. Handoff records keep only bounded summary feedback plus the artifact path.
+Full stdout/stderr from each attempt is written to a run-scoped artifact under `.orchestrator/runs/.../quality/` while Quality Gate is running. Successful Quality Gate runs clean up those runtime artifacts after the Develop handoff is written, and their handoff records keep only bounded summary feedback. Failed, timed-out, or misconfigured runs keep the quality artifacts for diagnostics, and their handoff records include the artifact path when one exists.
 
 ### Graceful Shutdown
 
@@ -281,6 +281,7 @@ src/
     plan.ts               - Stub-safe planning stage
     develop.ts            - Codex CLI executor and quality handoff stage
     develop-stop-hook.ts  - Stop-hook state and Quality Gate adapter
+    develop-stop-hook-runner.ts - Reusable Codex Stop-hook entrypoint
     quality-gate-runner.ts - Deterministic target-repository test runner
     review.ts             - Stub-safe review stage
     make-pr.ts            - Commit, push, pull request, no-change terminal path

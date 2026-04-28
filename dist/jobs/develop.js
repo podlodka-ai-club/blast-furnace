@@ -2,7 +2,7 @@ import * as pty from 'node-pty';
 import path from 'node:path';
 import { config } from '../config/index.js';
 import { ensureNodePtySpawnHelperExecutable } from '../utils/node-pty.js';
-import { handleDevelopStopHook, prepareDevelopStopHook } from './develop-stop-hook.js';
+import { cleanupSuccessfulQualityArtifacts, handleDevelopStopHook, prepareDevelopStopHook, qualityResultForHandoff, } from './develop-stop-hook.js';
 import { stageOutputSchemas, stagePayloadSchemas } from './handoff-contracts.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
@@ -180,6 +180,7 @@ export async function runDevelopWork(job, logger = createJobLogger(job)) {
     if (!outputStatus) {
         throw new Error(`Unsupported Quality Gate status: ${quality.status}`);
     }
+    const handoffQuality = qualityResultForHandoff(quality);
     const output = stageOutputSchemas.develop.parse({
         ...planned,
         status: outputStatus,
@@ -187,7 +188,7 @@ export async function runDevelopWork(job, logger = createJobLogger(job)) {
         stageAttempt: job.data.stageAttempt,
         reworkAttempt: job.data.reworkAttempt,
         development: DEVELOPMENT_RESULT,
-        quality,
+        quality: handoffQuality,
     });
     const orchestrationRoot = resolveOrchestrationStorageRoot(job.data.inputRecordRef);
     const toStage = output.status === 'success' ? 'review' : null;
@@ -206,6 +207,13 @@ export async function runDevelopWork(job, logger = createJobLogger(job)) {
         status: handoffStatus,
         output,
     }, toStage === null ? output.status : undefined);
+    try {
+        await cleanupSuccessfulQualityArtifacts(stopHook.runDir, quality);
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.warn(`Failed to clean up successful Quality Gate artifacts for run ${job.data.runId}: ${message}`);
+    }
     return {
         output,
         reviewJobData: toStage === 'review'
