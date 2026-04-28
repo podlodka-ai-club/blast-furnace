@@ -10,6 +10,11 @@ function requireString(value, field) {
         throw new Error(`${field} must be a non-empty string`);
     }
 }
+function requireStringValue(value, field) {
+    if (typeof value[field] !== 'string') {
+        throw new Error(`${field} must be a string`);
+    }
+}
 function requireNumber(value, field) {
     if (!Number.isInteger(value[field])) {
         throw new Error(`${field} must be an integer`);
@@ -38,6 +43,11 @@ function parsePreparedOutput(value, label, status = 'success') {
     requirePreparedFields(value);
     return value;
 }
+function parsePreparedFields(value, label) {
+    assertObject(value, label);
+    requirePreparedFields(value);
+    return value;
+}
 function parseAssessOutput(value) {
     const parsed = parsePreparedOutput(value, 'assess output');
     requireObject(parsed, 'assessment');
@@ -48,18 +58,55 @@ function parsePlanOutput(value) {
     requireObject(parsed, 'plan');
     return parsed;
 }
-function parseDevelopOutput(value) {
-    const parsed = parsePlanOutput(value);
-    requireObject(parsed, 'development');
+function parsePlanFields(value) {
+    const parsed = parsePreparedFields(value, 'stage output');
+    requireObject(parsed, 'assessment');
+    requireObject(parsed, 'plan');
     return parsed;
 }
-function parseQualityGateOutput(value) {
-    const parsed = parseDevelopOutput(value);
+function parseQualityGateResult(value) {
+    assertObject(value, 'quality');
+    if (!['passed', 'failed', 'misconfigured', 'timed-out'].includes(String(value['status']))) {
+        throw new Error('quality.status must be passed, failed, misconfigured, or timed-out');
+    }
+    requireStringValue(value, 'command');
+    requireNumber(value, 'attempts');
+    requireNumber(value, 'durationMs');
+    requireString(value, 'summary');
+    if (value['exitCode'] !== undefined) {
+        requireNumber(value, 'exitCode');
+    }
+    if (value['outputPath'] !== undefined) {
+        requireString(value, 'outputPath');
+    }
+    return value;
+}
+function parseDevelopOutput(value) {
+    const parsed = parsePlanFields(value);
+    if (!['success', 'quality-failed', 'quality-timed-out', 'quality-misconfigured'].includes(String(parsed.status))) {
+        throw new Error('develop status must be success, quality-failed, quality-timed-out, or quality-misconfigured');
+    }
+    requireObject(parsed, 'development');
     requireObject(parsed, 'quality');
+    const quality = parseQualityGateResult(parsed['quality']);
+    const expectedQualityStatusByDevelopStatus = {
+        success: 'passed',
+        'quality-failed': 'failed',
+        'quality-timed-out': 'timed-out',
+        'quality-misconfigured': 'misconfigured',
+    };
+    const expectedQualityStatus = expectedQualityStatusByDevelopStatus[parsed.status];
+    if (quality.status !== expectedQualityStatus) {
+        throw new Error(`develop ${parsed.status} requires quality.status ${expectedQualityStatus}`);
+    }
     return parsed;
 }
 function parseReviewOutput(value) {
-    const parsed = parseQualityGateOutput(value);
+    const parsed = parseDevelopOutput(value);
+    if (parsed.quality.status !== 'passed') {
+        throw new Error('review input quality.status must be passed');
+    }
+    requireStatus(parsed, 'success');
     requireObject(parsed, 'review');
     return parsed;
 }
@@ -68,6 +115,10 @@ function parseMakePrOutput(value) {
     requirePreparedFields(value);
     requireObject(value, 'development');
     requireObject(value, 'quality');
+    const quality = parseQualityGateResult(value['quality']);
+    if (quality.status !== 'passed') {
+        throw new Error('make-pr input quality.status must be passed');
+    }
     requireObject(value, 'review');
     if (value['status'] === 'pull-request-created') {
         requireObject(value, 'pullRequest');
@@ -112,7 +163,6 @@ export const stagePayloadSchemas = {
     assess: payloadSchema('assess'),
     plan: payloadSchema('plan'),
     develop: payloadSchema('develop'),
-    'quality-gate': payloadSchema('quality-gate'),
     review: payloadSchema('review'),
     'make-pr': payloadSchema('make-pr'),
     'sync-tracker-state': payloadSchema('sync-tracker-state'),
@@ -129,9 +179,6 @@ export const stageOutputSchemas = {
     },
     develop: {
         parse: parseDevelopOutput,
-    },
-    'quality-gate': {
-        parse: parseQualityGateOutput,
     },
     review: {
         parse: parseReviewOutput,

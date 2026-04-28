@@ -27,12 +27,14 @@ The system SHALL use one append-only JSONL handoff ledger per run as the durable
 #### Scenario: Handoff record is appended
 - **WHEN** a pipeline stage finishes with a handoff-relevant result
 - **THEN** the system SHALL append exactly one JSON object as one line in the run's handoff JSONL file
-- **AND** the appended record SHALL include the producing stage output needed by downstream stages
+- **AND** the appended record SHALL include the producing stage output needed by downstream stages or diagnostics
 - **AND** the system SHALL NOT write duplicate per-stage JSON artifact files for the same handoff output
 
 #### Scenario: Handoff record identifies transition
 - **WHEN** a handoff record is appended
 - **THEN** the record SHALL include `recordId`, `sequence`, `runId`, `createdAt`, `fromStage`, `toStage`, `stageAttempt`, `reworkAttempt`, `status`, `dependsOn`, `output`, and `nextInput`
+- **AND** `toStage` SHALL be a workflow stage for non-terminal handoffs and `null` for terminal handoffs
+- **AND** `nextInput` SHALL be a transport payload for non-terminal handoffs and `null` for terminal handoffs
 - **AND** `sequence` SHALL be a monotonic one-based line sequence within the ledger
 - **AND** `recordId` SHALL be stable and unique within the run
 
@@ -46,6 +48,24 @@ The system SHALL use one append-only JSONL handoff ledger per run as the durable
 - **WHEN** any stage after Prepare Run appends a handoff record
 - **THEN** the record SHALL include a `dependsOn` object containing the previous record id, sequence, and stage
 - **AND** the dependency SHALL identify the input record consumed by the producing stage
+
+#### Scenario: Develop handoff includes passed quality
+- **WHEN** Develop appends a successful handoff to Review
+- **THEN** the record's `fromStage` SHALL be `develop`
+- **AND** the record's `toStage` SHALL be `review`
+- **AND** the record's `status` SHALL be `success`
+- **AND** the record output SHALL include `development` and `quality`
+- **AND** `quality.status` SHALL be `passed`
+- **AND** the record output SHALL NOT include `quality.outputPath`
+
+#### Scenario: Develop terminal handoff includes failed quality
+- **WHEN** Develop appends a terminal handoff for `failed`, `timed-out`, or `misconfigured` quality
+- **THEN** the record's `fromStage` SHALL be `develop`
+- **AND** the record's `toStage` SHALL be `null`
+- **AND** the record's `nextInput` SHALL be `null`
+- **AND** the record output SHALL include `development` and `quality`
+- **AND** the record output SHALL include a non-success Develop status that distinguishes the quality outcome
+- **AND** the record output SHALL include `quality.outputPath` when a failed or timed-out Quality Gate attempt produced a full output artifact
 
 ### Requirement: Handoff Schema Validation
 The system SHALL validate transport payloads, input handoff records, stage outputs, and appended handoff records before crossing a stage boundary.
@@ -67,6 +87,20 @@ The system SHALL validate transport payloads, input handoff records, stage outpu
 - **AND** SHALL append the record before enqueueing the next stage
 - **AND** SHALL enqueue the next stage only with a reference to the appended record
 
+#### Scenario: Develop quality output schema is validated
+- **WHEN** Develop appends any handoff record after Codex exits successfully
+- **THEN** the Develop output schema SHALL require `development`
+- **AND** SHALL require `quality.status` to be one of `passed`, `failed`, `misconfigured`, or `timed-out`
+- **AND** SHALL require `quality.command`, `quality.attempts`, `quality.durationMs`, and `quality.summary`
+- **AND** SHALL allow `quality.exitCode` and `quality.outputPath` when available
+- **AND** SHALL reject stale successful quality artifact references by requiring passed Quality Gate handoffs to omit `quality.outputPath`
+
+#### Scenario: Review input quality schema is validated
+- **WHEN** Review receives a handoff record reference
+- **THEN** the referenced record SHALL be produced by `develop`
+- **AND** the referenced output SHALL include `quality.status: "passed"`
+- **AND** validation SHALL reject missing quality data or non-passed quality data before Review appends output
+
 ### Requirement: Run Summary Pointer Index
 The timestamped run summary SHALL remain a mutable status and pointer index over the handoff ledger.
 
@@ -80,3 +114,9 @@ The timestamped run summary SHALL remain a mutable status and pointer index over
 - **THEN** the summary SHALL identify the active handoff ledger and latest relevant handoff record
 - **AND** the detailed stage output SHALL be read from the JSONL ledger when needed
 
+#### Scenario: Run summary records terminal quality outcome
+- **WHEN** Develop appends a terminal handoff for a non-passed quality result
+- **THEN** the run summary SHALL set `currentStage` to `null`
+- **AND** the run summary status SHALL be `quality-failed`, `quality-timed-out`, or `quality-misconfigured` according to the quality result
+- **AND** the latest handoff record reference SHALL point to the terminal Develop record
+- **AND** the run summary SHALL NOT include a full copy of the quality command output

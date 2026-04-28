@@ -21,6 +21,7 @@ export async function fetchIssues(filters = {}) {
     const response = await githubClient.issues.listForRepo({
         owner: config.github.owner,
         repo: config.github.repo,
+        filter: 'all',
         labels,
         state: state ?? 'open',
         assignee,

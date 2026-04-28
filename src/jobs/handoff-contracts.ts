@@ -6,7 +6,7 @@ import type {
   MakePrOutput,
   PlanOutput,
   PrepareRunOutput,
-  QualityGateOutput,
+  QualityGateResult,
   ReviewOutput,
   StageHandoffJobPayload,
   SyncTrackerStateOutput,
@@ -30,6 +30,12 @@ function assertObject(value: unknown, label: string): asserts value is Record<st
 function requireString(value: Record<string, unknown>, field: string): void {
   if (typeof value[field] !== 'string' || value[field].length === 0) {
     throw new Error(`${field} must be a non-empty string`);
+  }
+}
+
+function requireStringValue(value: Record<string, unknown>, field: string): void {
+  if (typeof value[field] !== 'string') {
+    throw new Error(`${field} must be a string`);
   }
 }
 
@@ -66,6 +72,12 @@ function parsePreparedOutput<T>(value: unknown, label: string, status = 'success
   return value as T;
 }
 
+function parsePreparedFields<T>(value: unknown, label: string): T {
+  assertObject(value, label);
+  requirePreparedFields(value);
+  return value as T;
+}
+
 function parseAssessOutput(value: unknown): AssessOutput {
   const parsed = parsePreparedOutput<AssessOutput>(value, 'assess output');
   requireObject(parsed as unknown as Record<string, unknown>, 'assessment');
@@ -78,20 +90,58 @@ function parsePlanOutput(value: unknown): PlanOutput {
   return parsed;
 }
 
-function parseDevelopOutput(value: unknown): DevelopOutput {
-  const parsed = parsePlanOutput(value) as unknown as DevelopOutput;
-  requireObject(parsed as unknown as Record<string, unknown>, 'development');
+function parsePlanFields(value: unknown): Record<string, unknown> {
+  const parsed = parsePreparedFields<Record<string, unknown>>(value, 'stage output');
+  requireObject(parsed, 'assessment');
+  requireObject(parsed, 'plan');
   return parsed;
 }
 
-function parseQualityGateOutput(value: unknown): QualityGateOutput {
-  const parsed = parseDevelopOutput(value) as unknown as QualityGateOutput;
+function parseQualityGateResult(value: unknown): QualityGateResult {
+  assertObject(value, 'quality');
+  if (!['passed', 'failed', 'misconfigured', 'timed-out'].includes(String(value['status']))) {
+    throw new Error('quality.status must be passed, failed, misconfigured, or timed-out');
+  }
+  requireStringValue(value, 'command');
+  requireNumber(value, 'attempts');
+  requireNumber(value, 'durationMs');
+  requireString(value, 'summary');
+  if (value['exitCode'] !== undefined) {
+    requireNumber(value, 'exitCode');
+  }
+  if (value['outputPath'] !== undefined) {
+    requireString(value, 'outputPath');
+  }
+  return value as unknown as QualityGateResult;
+}
+
+function parseDevelopOutput(value: unknown): DevelopOutput {
+  const parsed = parsePlanFields(value) as unknown as DevelopOutput;
+  if (!['success', 'quality-failed', 'quality-timed-out', 'quality-misconfigured'].includes(String(parsed.status))) {
+    throw new Error('develop status must be success, quality-failed, quality-timed-out, or quality-misconfigured');
+  }
+  requireObject(parsed as unknown as Record<string, unknown>, 'development');
   requireObject(parsed as unknown as Record<string, unknown>, 'quality');
+  const quality = parseQualityGateResult((parsed as unknown as Record<string, unknown>)['quality']);
+  const expectedQualityStatusByDevelopStatus: Record<DevelopOutput['status'], QualityGateResult['status']> = {
+    success: 'passed',
+    'quality-failed': 'failed',
+    'quality-timed-out': 'timed-out',
+    'quality-misconfigured': 'misconfigured',
+  };
+  const expectedQualityStatus = expectedQualityStatusByDevelopStatus[parsed.status];
+  if (quality.status !== expectedQualityStatus) {
+    throw new Error(`develop ${parsed.status} requires quality.status ${expectedQualityStatus}`);
+  }
   return parsed;
 }
 
 function parseReviewOutput(value: unknown): ReviewOutput {
-  const parsed = parseQualityGateOutput(value) as unknown as ReviewOutput;
+  const parsed = parseDevelopOutput(value) as unknown as ReviewOutput;
+  if (parsed.quality.status !== 'passed') {
+    throw new Error('review input quality.status must be passed');
+  }
+  requireStatus(parsed as unknown as Record<string, unknown>, 'success');
   requireObject(parsed as unknown as Record<string, unknown>, 'review');
   return parsed;
 }
@@ -101,6 +151,10 @@ function parseMakePrOutput(value: unknown): MakePrOutput {
   requirePreparedFields(value);
   requireObject(value, 'development');
   requireObject(value, 'quality');
+  const quality = parseQualityGateResult(value['quality']);
+  if (quality.status !== 'passed') {
+    throw new Error('make-pr input quality.status must be passed');
+  }
   requireObject(value, 'review');
 
   if (value['status'] === 'pull-request-created') {
@@ -153,7 +207,6 @@ export const stagePayloadSchemas = {
   assess: payloadSchema('assess'),
   plan: payloadSchema('plan'),
   develop: payloadSchema('develop'),
-  'quality-gate': payloadSchema('quality-gate'),
   review: payloadSchema('review'),
   'make-pr': payloadSchema('make-pr'),
   'sync-tracker-state': payloadSchema('sync-tracker-state'),
@@ -171,9 +224,6 @@ export const stageOutputSchemas = {
   },
   develop: {
     parse: parseDevelopOutput,
-  },
-  'quality-gate': {
-    parse: parseQualityGateOutput,
   },
   review: {
     parse: parseReviewOutput,

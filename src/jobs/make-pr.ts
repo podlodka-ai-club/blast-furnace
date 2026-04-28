@@ -25,6 +25,8 @@ const TARGET_REPO_PATHS = [
   '.',
   ':(exclude).orchestrator',
   ':(exclude).orchestrator/**',
+  ':(exclude).codex',
+  ':(exclude).codex/**',
 ];
 
 function execGitCommand(args: string[], cwd: string): Promise<string> {
@@ -85,6 +87,27 @@ function sanitizeForGit(text: string, maxLength = 200): string {
   return text.replace(/[\r\n]/g, ' ').slice(0, maxLength);
 }
 
+function parseGitStatusPaths(status: string): string[] {
+  const paths = new Set<string>();
+  for (const line of status.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+
+    const statusCode = line.slice(0, 2);
+    const rawPath = (line[2] === ' ' ? line.slice(3) : line.slice(2).trimStart()).trim();
+    if (!rawPath) continue;
+
+    if ((statusCode.includes('R') || statusCode.includes('C')) && rawPath.includes(' -> ')) {
+      const [fromPath, toPath] = rawPath.split(' -> ');
+      if (fromPath) paths.add(fromPath);
+      if (toPath) paths.add(toPath);
+      continue;
+    }
+
+    paths.add(rawPath);
+  }
+  return [...paths];
+}
+
 export async function runMakePrWork(
   job: Job<MakePrJobData>,
   logger = createJobLogger(job)
@@ -129,7 +152,11 @@ export async function runMakePrWork(
   }
 
   logger.info('Changes detected, committing...');
-  await execGitCommand(['add', '-A', '--', ...TARGET_REPO_PATHS], workspacePath);
+  const changedPaths = parseGitStatusPaths(status);
+  if (changedPaths.length === 0) {
+    throw new Error('Detected git status output but could not parse changed target paths');
+  }
+  await execGitCommand(['add', '-A', '--', ...changedPaths], workspacePath);
 
   const sanitizedTitle = sanitizeForGit(issue.title);
   const commitResult = await execGitCommand(

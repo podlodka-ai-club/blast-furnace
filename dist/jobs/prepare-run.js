@@ -1,14 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
 import { getRef, pushBranch, deleteBranch } from '../github/branches.js';
 import { assertConfiguredRepository } from '../github/repository.js';
-import { cloneRepoInto, cleanupWorkingDir, createTempWorkingDir, getRepoRemoteUrl } from '../utils/working-dir.js';
+import { cloneRepoInto, cleanupWorkingDir, createGitCommandEnv, createTempWorkingDir, getRepoRemoteUrl, } from '../utils/working-dir.js';
 import { stageOutputSchemas } from './handoff-contracts.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
-import { appendHandoffRecordAndUpdateSummary, createRunFileSet, initializeRunSummary, scheduleNextJob, } from './orchestration.js';
+import { appendHandoffRecordAndUpdateSummary, createRunFileSet, initializeRunSummary, resolveOrchestrationStorageRoot, scheduleNextJob, } from './orchestration.js';
 import { createForwardStagePayload } from './stage-payloads.js';
 export function createPrepareRunPayload(input) {
     const runId = input.runId ?? randomUUID();
@@ -49,9 +47,23 @@ export function prepareIssueBranchName(issue) {
 }
 function execGitCommand(args, cwd) {
     return new Promise((resolve, reject) => {
-        const child = spawn('git', args, { cwd });
+        const child = spawn('git', args, { cwd, env: createGitCommandEnv() });
         let stdout = '';
         let stderr = '';
+        let settled = false;
+        const timeoutMs = Number(process.env['GIT_COMMAND_TIMEOUT_MS'] ?? 120000);
+        const commandTimeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 120000;
+        const settle = (fn) => {
+            if (settled)
+                return;
+            settled = true;
+            clearTimeout(timer);
+            fn();
+        };
+        const timer = setTimeout(() => {
+            child.kill('SIGTERM');
+            settle(() => reject(new Error(`git command timed out after ${commandTimeoutMs}ms`)));
+        }, commandTimeoutMs);
         child.stdout?.on('data', (data) => {
             stdout += data.toString();
         });
@@ -60,13 +72,15 @@ function execGitCommand(args, cwd) {
         });
         child.on('close', (code) => {
             if (code === 0) {
-                resolve(stdout.trim());
+                settle(() => resolve(stdout.trim()));
             }
             else {
-                reject(new Error(`git command failed: ${stderr}`));
+                settle(() => reject(new Error(`git command failed: ${stderr}`)));
             }
         });
-        child.on('error', reject);
+        child.on('error', (err) => {
+            settle(() => reject(err));
+        });
     });
 }
 async function fetchBranchWithRetry(branchName, cwd, logger, maxRetries = 3) {
@@ -136,23 +150,9 @@ export async function runPrepareRunWork(job, logger = createJobLogger(job), stat
     await job.updateProgress?.({ step: 'creating-workspace', runId });
     const workspacePath = await createTempWorkingDir('prepare-run');
     state.workspacePath = workspacePath;
+    const orchestrationRoot = resolveOrchestrationStorageRoot();
     const runStartedAt = new Date().toISOString();
-    const runFileSet = createRunFileSet(workspacePath, runId, new Date(runStartedAt));
-    await initializeRunSummary(workspacePath, runFileSet, {
-        runId,
-        status: 'running',
-        currentStage: 'prepare-run',
-        runStartedAt,
-        stageAttempt,
-        reworkAttempt: job.data.reworkAttempt,
-        latestHandoffRecord: null,
-        stages: {
-            'prepare-run': {
-                attempts: stageAttempt,
-                status: 'running',
-            },
-        },
-    });
+    const runFileSet = createRunFileSet(orchestrationRoot, runId, new Date(runStartedAt));
     let sha;
     try {
         await job.updateProgress?.({ step: 'fetching-main-ref', runId });
@@ -187,9 +187,21 @@ export async function runPrepareRunWork(job, logger = createJobLogger(job), stat
     await cloneRepoInto(workspacePath, remoteUrl);
     logger.info(`Checking out prepared branch: ${branchName}`);
     await checkoutPreparedBranch(branchName, workspacePath, logger);
-    const runLogPath = join(runFileSet.runDirectory, 'run.log');
-    await mkdir(dirname(runLogPath), { recursive: true });
-    await writeFile(runLogPath, '', { flag: 'a' });
+    await initializeRunSummary(orchestrationRoot, runFileSet, {
+        runId,
+        status: 'running',
+        currentStage: 'prepare-run',
+        runStartedAt,
+        stageAttempt,
+        reworkAttempt: job.data.reworkAttempt,
+        latestHandoffRecord: null,
+        stages: {
+            'prepare-run': {
+                attempts: stageAttempt,
+                status: 'running',
+            },
+        },
+    });
     const output = stageOutputSchemas['prepare-run'].parse({
         status: 'success',
         branchName,
@@ -200,7 +212,7 @@ export async function runPrepareRunWork(job, logger = createJobLogger(job), stat
         stageAttempt,
         reworkAttempt: job.data.reworkAttempt,
     });
-    const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(workspacePath, {
+    const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
         runId,
         fromStage: 'prepare-run',
         toStage: 'assess',
@@ -213,7 +225,6 @@ export async function runPrepareRunWork(job, logger = createJobLogger(job), stat
     const assessJobData = createForwardStagePayload(job.data, 'assess', inputRecordRef);
     return {
         assessJobData,
-        runLogPath,
     };
 }
 export async function runPrepareRunFlow(job) {

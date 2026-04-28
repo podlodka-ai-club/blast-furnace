@@ -67,6 +67,8 @@ All application configuration is loaded from environment variables. For local de
 | `CODEX_CLI_PATH` | `npx @openai/codex` | Command used to launch Codex CLI |
 | `CODEX_MODEL` | `gpt-5.4` | Model passed to Codex CLI with `--model` when the CLI path does not already specify a model |
 | `CODEX_TIMEOUT_MS` | `300000` | Codex CLI timeout in milliseconds, capped at 10 minutes |
+| `QUALITY_GATE_TEST_COMMAND` | (none) | Deterministic target-repository test command run by the Develop Stop hook |
+| `QUALITY_GATE_TEST_TIMEOUT_MS` | `180000` | Quality Gate command timeout in milliseconds, minimum `1` |
 | `ORCHESTRATION_STORAGE_ROOT` | current process working directory | Root where `.orchestrator/runs/...` run files are written |
 
 Legacy `GITHUB_ISSUE_STRATEGY` and `GITHUB_WEBHOOK_SECRET` values are ignored by the current runtime.
@@ -86,13 +88,14 @@ GitHub polling intake
   -> assess
   -> plan
   -> develop
-  -> quality-gate
   -> review
   -> make-pr
   -> sync-tracker-state, only after a pull request is created
 ```
 
-No-change runs terminate in `make-pr` after workspace cleanup. Pull-request runs terminate in `sync-tracker-state` after tracker synchronization and workspace cleanup.
+`develop` owns the Quality Gate Stop-hook loop. Passed quality hands off directly to `review`. Failed, timed-out, or misconfigured terminal quality outcomes are recorded as terminal Develop handoff records and do not enqueue `review`, `make-pr`, or `sync-tracker-state`.
+
+No-change runs terminate in `make-pr` after workspace cleanup. Pull-request runs terminate in `sync-tracker-state` after tracker synchronization and workspace cleanup. Before deploying this topology over a previous version, drain old queued `quality-gate` jobs or explicitly accept that they will be rejected as unsupported active workflow jobs.
 
 ### Intake
 
@@ -157,8 +160,7 @@ BullMQ v5 with Redis provides:
 | `prepare-run` | Create run identity and files, create or reuse `issue-{number}-{slugified-title}`, clone the repository, check out/reset the issue branch, append the first handoff record |
 | `assess` | Stub-safe assessment stage; appends assessment output |
 | `plan` | Stub-safe planning stage; appends plan output used by `develop` |
-| `develop` | Runs Codex CLI in the prepared workspace via `node-pty` and appends development output |
-| `quality-gate` | Stub-safe quality stage; appends passing quality output |
+| `develop` | Runs Codex CLI in the prepared workspace via `node-pty`, enables Codex Stop hooks, appends development and quality output |
 | `review` | Stub-safe review stage; appends review output |
 | `make-pr` | Detects target-repo changes, commits, pushes, creates a PR, or records terminal no-change output |
 | `sync-tracker-state` | Moves issue labels from `ready` to `in review` after PR creation and performs terminal workspace cleanup |
@@ -203,8 +205,6 @@ export async function multiHandler(job: Job<JobPayload>): Promise<void> {
       return planHandler(job as Job<PlanJobData>);
     case 'develop':
       return developHandler(job as Job<DevelopJobData>);
-    case 'quality-gate':
-      return qualityGateHandler(job as Job<QualityGateJobData>);
     case 'review':
       return reviewHandler(job as Job<ReviewJobData>);
     case 'make-pr':
@@ -225,7 +225,13 @@ Branch names are rejected when empty, containing `..`, starting with `-`, or con
 
 ### Codex Execution
 
-`develop` reads the planned context from the handoff ledger, builds a prompt from the issue title, issue body, and plan output, and runs the configured Codex CLI command in the prepared workspace. If the configured command looks like a Codex command and no subcommand is present, `exec` is added automatically. The stage also adds `--dangerously-bypass-approvals-and-sandbox` and `--model <CODEX_MODEL>` unless already provided.
+`develop` reads the planned context from the handoff ledger, builds a prompt from the issue title, issue body, and plan output, and runs the configured Codex CLI command in the prepared workspace. If the configured command looks like a Codex command and no subcommand is present, `exec` is added automatically. The stage also adds `--enable codex_hooks`, `--dangerously-bypass-approvals-and-sandbox`, and `--model <CODEX_MODEL>` unless already provided.
+
+### Quality Gate
+
+Quality Gate is deterministic deployment configuration, not agent-selected behavior. `QUALITY_GATE_TEST_COMMAND` runs from the target repository `workspacePath`, should be non-interactive and unit-test oriented, must return non-zero on failure, and should not require browser UI, manual auth, or nondeterministic external services. If services are required, their setup must be deterministic outside the command or inside the target repository's test harness.
+
+Full stdout/stderr from each attempt is written to a run-scoped artifact under `.orchestrator/runs/.../quality/` while Quality Gate is running. Successful Quality Gate runs clean up those runtime artifacts after the Develop handoff is written, and their handoff records keep only bounded summary feedback. Failed, timed-out, or misconfigured runs keep the quality artifacts for diagnostics, and their handoff records include the artifact path when one exists.
 
 ### Graceful Shutdown
 
@@ -273,8 +279,10 @@ src/
     prepare-run.ts        - Run bootstrap, branch setup, clone, checkout, first handoff
     assess.ts             - Stub-safe assessment stage
     plan.ts               - Stub-safe planning stage
-    develop.ts            - Codex CLI executor stage
-    quality-gate.ts       - Stub-safe quality gate stage
+    develop.ts            - Codex CLI executor and quality handoff stage
+    develop-stop-hook.ts  - Stop-hook state and Quality Gate adapter
+    develop-stop-hook-runner.ts - Reusable Codex Stop-hook entrypoint
+    quality-gate-runner.ts - Deterministic target-repository test runner
     review.ts             - Stub-safe review stage
     make-pr.ts            - Commit, push, pull request, no-change terminal path
     sync-tracker-state.ts - Post-PR label synchronization and cleanup

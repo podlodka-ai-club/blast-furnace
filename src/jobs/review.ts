@@ -19,9 +19,15 @@ const STUB_REVIEW = {
 export async function runReviewWork(job: Job<ReviewJobData>): Promise<MakePrJobData> {
   stagePayloadSchemas.review.parse(job.data);
   const inputRecord = await readValidatedStageInputRecord(job.data);
-  const quality = stageOutputSchemas['quality-gate'].parse(inputRecord.output);
+  if (inputRecord.fromStage !== 'develop') {
+    throw new Error(`review input must be produced by develop, got ${inputRecord.fromStage}`);
+  }
+  const developed = stageOutputSchemas.develop.parse(inputRecord.output);
+  if (developed.quality.status !== 'passed') {
+    throw new Error('review input quality.status must be passed');
+  }
   const output = stageOutputSchemas.review.parse({
-    ...quality,
+    ...developed,
     status: 'success',
     runId: job.data.runId,
     stageAttempt: job.data.stageAttempt,

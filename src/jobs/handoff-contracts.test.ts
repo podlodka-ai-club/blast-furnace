@@ -94,7 +94,12 @@ describe('handoff runtime contracts', () => {
     } as const;
     const quality = {
       status: 'passed',
-      summary: 'Quality gate deferred for this iteration.',
+      command: 'npm test',
+      exitCode: 0,
+      attempts: 1,
+      durationMs: 25,
+      summary: 'Quality Gate passed.',
+      outputPath: '/tmp/run/quality/attempt-1.log',
     } as const;
     const review = {
       status: 'stubbed',
@@ -126,15 +131,8 @@ describe('handoff runtime contracts', () => {
       assessment,
       plan,
       development,
-    })).toMatchObject({ development });
-    expect(stageOutputSchemas['quality-gate'].parse({
-      status: 'success',
-      ...preparedFields,
-      assessment,
-      plan,
-      development,
       quality,
-    })).toMatchObject({ quality });
+    })).toMatchObject({ development, quality });
     expect(stageOutputSchemas.review.parse({
       status: 'success',
       ...preparedFields,
@@ -158,5 +156,64 @@ describe('handoff runtime contracts', () => {
       pullRequest,
       trackerLabels: ['in review'],
     })).toMatchObject({ trackerLabels: ['in review'] });
+  });
+
+  it('validates expanded Develop quality output and terminal quality statuses', () => {
+    const base = {
+      ...preparedFields,
+      assessment: {
+        status: 'stubbed',
+        summary: 'Assessment deferred for this iteration.',
+      },
+      plan: {
+        status: 'stubbed',
+        summary: 'Planning deferred for this iteration.',
+      },
+      development: {
+        status: 'completed',
+        summary: 'Codex completed successfully.',
+      },
+    } as const;
+
+    expect(stageOutputSchemas.develop.parse({
+      ...base,
+      status: 'quality-failed',
+      quality: {
+        status: 'failed',
+        command: 'npm test',
+        exitCode: 1,
+        attempts: 3,
+        durationMs: 120,
+        summary: 'Tests failed.',
+      },
+    })).toMatchObject({
+      status: 'quality-failed',
+      quality: {
+        status: 'failed',
+        attempts: 3,
+      },
+    });
+
+    expect(() => stageOutputSchemas.develop.parse({
+      ...base,
+      status: 'success',
+    })).toThrow('quality must be an object');
+
+    expect(() => stageOutputSchemas.review.parse({
+      ...base,
+      status: 'quality-failed',
+      quality: {
+        status: 'failed',
+        command: 'npm test',
+        exitCode: 1,
+        attempts: 3,
+        durationMs: 120,
+        summary: 'Tests failed.',
+      },
+      review: {
+        status: 'stubbed',
+        summary: 'Review deferred.',
+      },
+    })).toThrow('review input quality.status must be passed');
   });
 });

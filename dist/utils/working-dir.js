@@ -3,18 +3,61 @@ import { mkdir, rm, lstat } from 'fs/promises';
 import { spawn } from 'child_process';
 import path from 'path';
 import { config } from '../config/index.js';
-function execCommand(file, args, cwd) {
+const DEFAULT_GIT_COMMAND_TIMEOUT_MS = 120000;
+function gitCommandTimeoutMs(timeoutMs) {
+    const parsed = Number(process.env['GIT_COMMAND_TIMEOUT_MS'] ?? timeoutMs ?? DEFAULT_GIT_COMMAND_TIMEOUT_MS);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_GIT_COMMAND_TIMEOUT_MS;
+}
+export function createGitCommandEnv(env = process.env) {
+    const gitEnv = {
+        ...env,
+        GIT_TERMINAL_PROMPT: '0',
+    };
+    const token = config.github.token;
+    if (!token) {
+        return gitEnv;
+    }
+    const encodedCredentials = Buffer.from(`x-access-token:${token}`, 'utf8').toString('base64');
+    return {
+        ...gitEnv,
+        GIT_CONFIG_COUNT: '1',
+        GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader',
+        GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${encodedCredentials}`,
+    };
+}
+function execCommand(file, args, cwd, timeoutMs) {
     return new Promise((resolve) => {
-        const child = spawn(file, args, { cwd });
+        const commandTimeoutMs = gitCommandTimeoutMs(timeoutMs);
+        const child = spawn(file, args, { cwd, env: createGitCommandEnv() });
         let stderr = '';
+        let settled = false;
+        let timedOut = false;
+        const settle = (result) => {
+            if (settled)
+                return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(result);
+        };
+        const timer = setTimeout(() => {
+            timedOut = true;
+            child.kill('SIGTERM');
+            settle({
+                exitCode: 124,
+                stderr: `git command timed out after ${commandTimeoutMs}ms${stderr ? `\n${stderr}` : ''}`,
+            });
+        }, commandTimeoutMs);
         child.stderr?.on('data', (data) => {
             stderr += data.toString();
         });
         child.on('close', (code) => {
-            resolve({ exitCode: code ?? 1, stderr });
+            settle({
+                exitCode: timedOut ? 124 : code ?? 1,
+                stderr: timedOut ? `git command timed out after ${commandTimeoutMs}ms${stderr ? `\n${stderr}` : ''}` : stderr,
+            });
         });
         child.on('error', (err) => {
-            resolve({ exitCode: 1, stderr: err.message });
+            settle({ exitCode: 1, stderr: err.message });
         });
     });
 }
@@ -27,8 +70,8 @@ export async function createTempWorkingDir(prefix) {
     await mkdir(dirPath, { recursive: true });
     return dirPath;
 }
-export async function cloneRepoInto(workingDir, remoteUrl) {
-    const { exitCode, stderr } = await execCommand('git', ['clone', remoteUrl, '.'], workingDir);
+export async function cloneRepoInto(workingDir, remoteUrl, timeoutMs) {
+    const { exitCode, stderr } = await execCommand('git', ['clone', remoteUrl, '.'], workingDir, timeoutMs);
     if (exitCode !== 0) {
         throw new Error(`git clone failed: ${stderr}`);
     }
@@ -45,6 +88,6 @@ export async function cleanupWorkingDir(workingDir) {
     await rm(workingDir, { recursive: true, force: true });
 }
 export function getRepoRemoteUrl() {
-    const { owner, repo, token } = config.github;
-    return `https://${token}@github.com/${owner}/${repo}.git`;
+    const { owner, repo } = config.github;
+    return `https://github.com/${owner}/${repo}.git`;
 }

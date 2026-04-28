@@ -6,7 +6,6 @@ import { prepareRunHandler } from './jobs/prepare-run.js';
 import { assessHandler } from './jobs/assess.js';
 import { planHandler } from './jobs/plan.js';
 import { developHandler } from './jobs/develop.js';
-import { qualityGateHandler } from './jobs/quality-gate.js';
 import { reviewHandler } from './jobs/review.js';
 import { makePrHandler } from './jobs/make-pr.js';
 import { syncTrackerStateHandler } from './jobs/sync-tracker-state.js';
@@ -19,7 +18,6 @@ import type {
   MakePrJobData,
   PlanJobData,
   PrepareRunJobData,
-  QualityGateJobData,
   ReviewJobData,
   SyncTrackerStateJobData,
 } from './types/index.js';
@@ -43,8 +41,6 @@ export async function multiHandler(job: Job<JobPayload>): Promise<void> {
       return planHandler(job as Job<PlanJobData>);
     case 'develop':
       return developHandler(job as Job<DevelopJobData>);
-    case 'quality-gate':
-      return qualityGateHandler(job as Job<QualityGateJobData>);
     case 'review':
       return reviewHandler(job as Job<ReviewJobData>);
     case 'make-pr':

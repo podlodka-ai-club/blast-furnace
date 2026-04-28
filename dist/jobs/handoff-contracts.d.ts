@@ -1,11 +1,10 @@
-import type { AssessOutput, DevelopOutput, HandoffRecord, InputRecordRef, MakePrOutput, PlanOutput, PrepareRunOutput, QualityGateOutput, ReviewOutput, StageHandoffJobPayload, SyncTrackerStateOutput, WorkflowStage } from '../types/index.js';
+import type { AssessOutput, DevelopOutput, HandoffRecord, InputRecordRef, MakePrOutput, PlanOutput, PrepareRunOutput, ReviewOutput, StageHandoffJobPayload, SyncTrackerStateOutput, WorkflowStage } from '../types/index.js';
 export interface RuntimeSchema<T> {
     parse(value: unknown): T;
 }
 declare function parseAssessOutput(value: unknown): AssessOutput;
 declare function parsePlanOutput(value: unknown): PlanOutput;
 declare function parseDevelopOutput(value: unknown): DevelopOutput;
-declare function parseQualityGateOutput(value: unknown): QualityGateOutput;
 declare function parseReviewOutput(value: unknown): ReviewOutput;
 declare function parseMakePrOutput(value: unknown): MakePrOutput;
 declare function parseSyncTrackerStateOutput(value: unknown): SyncTrackerStateOutput;
@@ -16,7 +15,6 @@ export declare const stagePayloadSchemas: {
     readonly assess: RuntimeSchema<StageHandoffJobPayload<"assess">>;
     readonly plan: RuntimeSchema<StageHandoffJobPayload<"plan">>;
     readonly develop: RuntimeSchema<StageHandoffJobPayload<"develop">>;
-    readonly 'quality-gate': RuntimeSchema<StageHandoffJobPayload<"quality-gate">>;
     readonly review: RuntimeSchema<StageHandoffJobPayload<"review">>;
     readonly 'make-pr': RuntimeSchema<StageHandoffJobPayload<"make-pr">>;
     readonly 'sync-tracker-state': RuntimeSchema<StageHandoffJobPayload<"sync-tracker-state">>;
@@ -33,9 +31,6 @@ export declare const stageOutputSchemas: {
     };
     readonly develop: {
         readonly parse: typeof parseDevelopOutput;
-    };
-    readonly 'quality-gate': {
-        readonly parse: typeof parseQualityGateOutput;
     };
     readonly review: {
         readonly parse: typeof parseReviewOutput;

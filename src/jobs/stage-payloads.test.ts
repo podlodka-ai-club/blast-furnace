@@ -100,6 +100,41 @@ describe('stage payload factories', () => {
     );
   });
 
+  it('creates the active develop-to-review payload without an intermediate quality-gate stage', () => {
+    const payload = createForwardStagePayload(
+      {
+        taskId: 'task-develop',
+        type: 'develop',
+        runId: 'run-123',
+        stage: 'develop',
+        stageAttempt: 1,
+        reworkAttempt: 0,
+        inputRecordRef: {
+          ...inputRecordRef,
+          recordId: '000003_plan_to_develop',
+          sequence: 3,
+          stage: 'plan',
+        },
+      },
+      'review',
+      {
+        ...inputRecordRef,
+        recordId: '000004_develop_to_review',
+        sequence: 4,
+        stage: 'develop',
+      }
+    );
+
+    expect(payload).toMatchObject({
+      type: 'review',
+      stage: 'review',
+      inputRecordRef: {
+        recordId: '000004_develop_to_review',
+        stage: 'develop',
+      },
+    });
+  });
+
   it('rejects input handoff records that do not match the receiving stage context', () => {
     const payload = createForwardStagePayload(
       {

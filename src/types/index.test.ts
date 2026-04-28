@@ -22,7 +22,6 @@ import type {
   PrepareRunJobData,
   AssessJobData,
   DevelopJobData,
-  QualityGateJobData,
   SyncTrackerStateJobData,
   PlanJobData,
   ReviewJobData,
@@ -195,6 +194,10 @@ describe('types', () => {
           model: 'gpt-5.4',
           timeoutMs: 300000,
         },
+        qualityGate: {
+          testCommand: 'npm test',
+          testTimeoutMs: 180000,
+        },
       };
       expect(config.env).toBe('production');
       expect(config.redis.host).toBe('redis.example.com');
@@ -276,13 +279,13 @@ describe('types', () => {
         'assess',
         'plan',
         'develop',
-        'quality-gate',
         'review',
         'make-pr',
         'sync-tracker-state',
       ];
 
-      expect(stages).toHaveLength(9);
+      expect(stages).toHaveLength(8);
+      expect(stages).not.toContain('quality-gate');
     });
   });
 
@@ -381,20 +384,6 @@ describe('types', () => {
           },
         } satisfies DevelopJobData,
         {
-          taskId: 'task-quality',
-          type: 'quality-gate',
-          runId: 'run-123',
-          stage: 'quality-gate',
-          stageAttempt: 1,
-          reworkAttempt: 0,
-          inputRecordRef: {
-            ...inputRecordRef,
-            recordId: '000004_develop_to_quality-gate',
-            sequence: 4,
-            stage: 'develop',
-          },
-        } satisfies QualityGateJobData,
-        {
           taskId: 'task-review',
           type: 'review',
           runId: 'run-123',
@@ -403,9 +392,9 @@ describe('types', () => {
           reworkAttempt: 0,
           inputRecordRef: {
             ...inputRecordRef,
-            recordId: '000005_quality-gate_to_review',
-            sequence: 5,
-            stage: 'quality-gate',
+            recordId: '000004_develop_to_review',
+            sequence: 4,
+            stage: 'develop',
           },
         } satisfies ReviewJobData,
         {
@@ -444,7 +433,6 @@ describe('types', () => {
         'assess',
         'plan',
         'develop',
-        'quality-gate',
         'review',
         'make-pr',
         'sync-tracker-state',

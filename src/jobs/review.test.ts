@@ -59,14 +59,14 @@ describe('review job', () => {
     tempRoots.length = 0;
   });
 
-  async function createJob(): Promise<Job<ReviewJobData>> {
+  async function createJob(qualityStatus: 'passed' | 'failed' | 'misconfigured' | 'timed-out' = 'passed'): Promise<Job<ReviewJobData>> {
     const workspacePath = await mkdtemp(join(tmpdir(), 'review-ledger-'));
     tempRoots.push(workspacePath);
     const fileSet = createRunFileSet(workspacePath, 'run-123', new Date('2026-04-26T08:07:30.000Z'));
     await initializeRunSummary(workspacePath, fileSet, {
       runId: 'run-123',
       status: 'running',
-      currentStage: 'quality-gate',
+      currentStage: 'develop',
       runStartedAt: '2026-04-26T08:07:30.000Z',
       stageAttempt: 1,
       reworkAttempt: 0,
@@ -75,13 +75,19 @@ describe('review job', () => {
     });
     const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(workspacePath, {
       runId: 'run-123',
-      fromStage: 'quality-gate',
+      fromStage: 'develop',
       toStage: 'review',
       stageAttempt: 1,
       reworkAttempt: 0,
       status: 'success',
       output: {
-        status: 'success',
+        status: qualityStatus === 'passed'
+          ? 'success'
+          : qualityStatus === 'failed'
+            ? 'quality-failed'
+            : qualityStatus === 'timed-out'
+              ? 'quality-timed-out'
+              : 'quality-misconfigured',
         runId: 'run-123',
         issue: createIssue(),
         repository: {
@@ -105,8 +111,12 @@ describe('review job', () => {
           summary: 'Codex completed successfully.',
         },
         quality: {
-          status: 'passed',
-          summary: 'Quality gate deferred for this iteration.',
+          status: qualityStatus,
+          command: 'npm test',
+          exitCode: qualityStatus === 'passed' ? 0 : 1,
+          attempts: 1,
+          durationMs: 25,
+          summary: `Quality gate ${qualityStatus}.`,
         },
       },
     });
@@ -167,6 +177,14 @@ describe('review job', () => {
       }),
     }));
     expect(mockJobQueueAdd.mock.calls[0][1]).not.toHaveProperty('issue');
+  });
+
+  it('rejects Develop input with missing or non-passed quality before appending review output', async () => {
+    const { runReviewWork } = await import('./review.js');
+    const failedJob = await createJob('failed');
+
+    await expect(runReviewWork(failedJob)).rejects.toThrow('review input quality.status must be passed');
+    expect(mockJobQueueAdd).not.toHaveBeenCalled();
   });
 
   it('should export reviewHandler', async () => {

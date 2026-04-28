@@ -20,6 +20,13 @@ function parseTimeout(value, defaultVal) {
     }
     return parsed;
 }
+function parseMinimumTimeout(value, defaultVal) {
+    const parsed = parseInt(value ?? String(defaultVal), 10);
+    if (Number.isNaN(parsed) || parsed < 1) {
+        return defaultVal;
+    }
+    return parsed;
+}
 function loadConfig() {
     return {
         env: process.env['NODE_ENV'] ?? 'development',
@@ -39,6 +46,10 @@ function loadConfig() {
             cliPath: process.env['CODEX_CLI_PATH'] ?? 'npx @openai/codex',
             model: process.env['CODEX_MODEL'] ?? 'gpt-5.4',
             timeoutMs: parseTimeout(process.env['CODEX_TIMEOUT_MS'], 300000),
+        },
+        qualityGate: {
+            testCommand: process.env['QUALITY_GATE_TEST_COMMAND']?.trim() || undefined,
+            testTimeoutMs: parseMinimumTimeout(process.env['QUALITY_GATE_TEST_TIMEOUT_MS'], 180000),
         },
     };
 }

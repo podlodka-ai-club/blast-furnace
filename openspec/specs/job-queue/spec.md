@@ -38,8 +38,6 @@ The system SHALL process jobs through a BullMQ worker using a type-dispatched jo
 - **THEN** the worker SHALL route it to the Plan handler
 - **WHEN** a job has type `develop`
 - **THEN** the worker SHALL route it to the Develop handler
-- **WHEN** a job has type `quality-gate`
-- **THEN** the worker SHALL route it to the Quality Gate handler
 - **WHEN** a job has type `review`
 - **THEN** the worker SHALL route it to the Review handler
 - **WHEN** a job has type `make-pr`
@@ -50,6 +48,10 @@ The system SHALL process jobs through a BullMQ worker using a type-dispatched jo
 #### Scenario: Unknown job type is received
 - **WHEN** a job has an unrecognized type
 - **THEN** the worker SHALL fail the job with an unknown job type error
+
+#### Scenario: Deprecated Quality Gate job type is received
+- **WHEN** a job has type `quality-gate`
+- **THEN** the worker SHALL fail the job as an unknown or unsupported active workflow job type
 
 ### Requirement: Job Logging
 The system SHALL log worker lifecycle events with job context.
@@ -98,3 +100,13 @@ The system SHALL use a shared transport-only queue payload envelope for workflow
 - **THEN** its payload SHALL include an input record reference containing the handoff ledger path, record id, sequence, and producing stage
 - **AND** the receiving stage SHALL read business data from the referenced JSONL record chain
 
+#### Scenario: Develop hands off directly to Review after passed quality
+- **WHEN** Develop appends a passed quality handoff record
+- **THEN** the next stage payload SHALL have `type: "review"` and `stage: "review"`
+- **AND** the input record reference SHALL identify a record produced by `develop`
+- **AND** the system SHALL NOT enqueue an intermediate `quality-gate` payload
+
+#### Scenario: Terminal quality outcomes do not enqueue a stage payload
+- **WHEN** Develop appends a terminal handoff record for `failed`, `timed-out`, or `misconfigured` quality
+- **THEN** the record SHALL NOT produce a next stage payload
+- **AND** no `review`, `make-pr`, or `sync-tracker-state` job SHALL be enqueued for that run path
