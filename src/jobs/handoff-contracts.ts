@@ -49,14 +49,10 @@ function requireObject(value: Record<string, unknown>, field: string): void {
   assertObject(value[field], field);
 }
 
-function requirePreparedFields(value: Record<string, unknown>): void {
+function requireStageMetadata(value: Record<string, unknown>): void {
   requireString(value, 'runId');
-  requireString(value, 'branchName');
-  requireString(value, 'workspacePath');
   requireNumber(value, 'stageAttempt');
   requireNumber(value, 'reworkAttempt');
-  requireObject(value, 'issue');
-  requireObject(value, 'repository');
 }
 
 function requireStatus(value: Record<string, unknown>, expected: string): void {
@@ -65,33 +61,51 @@ function requireStatus(value: Record<string, unknown>, expected: string): void {
   }
 }
 
-function parsePreparedOutput<T>(value: unknown, label: string, status = 'success'): T {
-  assertObject(value, label);
-  requireStatus(value, status);
-  requirePreparedFields(value);
-  return value as T;
-}
+const STABLE_CONTEXT_FIELDS = ['issue', 'repository', 'branchName', 'workspacePath'] as const;
 
-function parsePreparedFields<T>(value: unknown, label: string): T {
-  assertObject(value, label);
-  requirePreparedFields(value);
-  return value as T;
+function rejectFields(value: Record<string, unknown>, label: string, fields: readonly string[]): void {
+  for (const field of fields) {
+    if (field in value) {
+      throw new Error(`${label} must not include ${field}`);
+    }
+  }
 }
 
 function parseAssessOutput(value: unknown): AssessOutput {
-  const parsed = parsePreparedOutput<AssessOutput>(value, 'assess output');
-  requireObject(parsed as unknown as Record<string, unknown>, 'assessment');
+  assertObject(value, 'assess output');
+  rejectFields(value, 'assess output', [
+    ...STABLE_CONTEXT_FIELDS,
+    'plan',
+    'development',
+    'quality',
+    'review',
+    'pullRequest',
+    'trackerLabels',
+  ]);
+  requireStatus(value, 'success');
+  requireStageMetadata(value);
+  requireObject(value, 'assessment');
+  const parsed = value as unknown as AssessOutput;
   return parsed;
 }
 
 function parsePlanOutput(value: unknown): PlanOutput {
-  const parsed = parsePreparedFields<Record<string, unknown>>(value, 'plan output') as unknown as PlanOutput;
-  if (!['success', 'validation-failed'].includes(String(parsed.status))) {
+  assertObject(value, 'plan output');
+  rejectFields(value, 'plan output', [
+    ...STABLE_CONTEXT_FIELDS,
+    'assessment',
+    'development',
+    'quality',
+    'review',
+    'pullRequest',
+    'trackerLabels',
+  ]);
+  requireStageMetadata(value);
+  if (!['success', 'validation-failed'].includes(String(value['status']))) {
     throw new Error('plan status must be success or validation-failed');
   }
-  requireObject(parsed as unknown as Record<string, unknown>, 'assessment');
-  const plan = (parsed as unknown as Record<string, unknown>)['plan'];
-  requireObject(parsed as unknown as Record<string, unknown>, 'plan');
+  const plan = value['plan'];
+  requireObject(value, 'plan');
   assertObject(plan, 'plan');
   if (!['success', 'validation-failed'].includes(String(plan['status']))) {
     throw new Error('plan.status must be success or validation-failed');
@@ -101,14 +115,13 @@ function parsePlanOutput(value: unknown): PlanOutput {
   if (plan['status'] === 'validation-failed') {
     requireString(plan, 'failureReason');
   }
-  return parsed;
-}
-
-function parsePlanFields(value: unknown): Record<string, unknown> {
-  const parsed = parsePreparedFields<Record<string, unknown>>(value, 'stage output');
-  requireObject(parsed, 'assessment');
-  requireObject(parsed, 'plan');
-  return parsed;
+  if (value['status'] === 'success' && plan['status'] !== 'success') {
+    throw new Error('successful plan output requires plan.status success');
+  }
+  if (value['status'] === 'validation-failed' && plan['status'] !== 'validation-failed') {
+    throw new Error('validation-failed plan output requires plan.status validation-failed');
+  }
+  return value as unknown as PlanOutput;
 }
 
 function parseQualityGateResult(value: unknown): QualityGateResult {
@@ -130,13 +143,23 @@ function parseQualityGateResult(value: unknown): QualityGateResult {
 }
 
 function parseDevelopOutput(value: unknown): DevelopOutput {
-  const parsed = parsePlanFields(value) as unknown as DevelopOutput;
-  if (!['success', 'quality-failed', 'quality-timed-out', 'quality-misconfigured'].includes(String(parsed.status))) {
+  assertObject(value, 'develop output');
+  rejectFields(value, 'develop output', [
+    ...STABLE_CONTEXT_FIELDS,
+    'assessment',
+    'plan',
+    'review',
+    'pullRequest',
+    'trackerLabels',
+  ]);
+  requireStageMetadata(value);
+  if (!['success', 'quality-failed', 'quality-timed-out', 'quality-misconfigured'].includes(String(value['status']))) {
     throw new Error('develop status must be success, quality-failed, quality-timed-out, or quality-misconfigured');
   }
-  requireObject(parsed as unknown as Record<string, unknown>, 'development');
-  requireObject(parsed as unknown as Record<string, unknown>, 'quality');
-  const quality = parseQualityGateResult((parsed as unknown as Record<string, unknown>)['quality']);
+  requireObject(value, 'development');
+  requireObject(value, 'quality');
+  const quality = parseQualityGateResult(value['quality']);
+  const parsed = value as unknown as DevelopOutput;
   const expectedQualityStatusByDevelopStatus: Record<DevelopOutput['status'], QualityGateResult['status']> = {
     success: 'passed',
     'quality-failed': 'failed',
@@ -147,35 +170,50 @@ function parseDevelopOutput(value: unknown): DevelopOutput {
   if (quality.status !== expectedQualityStatus) {
     throw new Error(`develop ${parsed.status} requires quality.status ${expectedQualityStatus}`);
   }
+  if (quality.status === 'passed' && quality.outputPath !== undefined) {
+    throw new Error('passed quality output must not include outputPath');
+  }
   return parsed;
 }
 
 function parseReviewOutput(value: unknown): ReviewOutput {
-  const parsed = parseDevelopOutput(value) as unknown as ReviewOutput;
-  if (parsed.quality.status !== 'passed') {
-    throw new Error('review input quality.status must be passed');
-  }
-  requireStatus(parsed as unknown as Record<string, unknown>, 'success');
-  requireObject(parsed as unknown as Record<string, unknown>, 'review');
-  return parsed;
+  assertObject(value, 'review output');
+  rejectFields(value, 'review output', [
+    ...STABLE_CONTEXT_FIELDS,
+    'assessment',
+    'plan',
+    'development',
+    'quality',
+    'pullRequest',
+    'trackerLabels',
+  ]);
+  requireStatus(value, 'success');
+  requireStageMetadata(value);
+  requireObject(value, 'review');
+  return value as unknown as ReviewOutput;
 }
 
 function parseMakePrOutput(value: unknown): MakePrOutput {
   assertObject(value, 'make-pr output');
-  requirePreparedFields(value);
-  requireObject(value, 'development');
-  requireObject(value, 'quality');
-  const quality = parseQualityGateResult(value['quality']);
-  if (quality.status !== 'passed') {
-    throw new Error('make-pr input quality.status must be passed');
-  }
-  requireObject(value, 'review');
+  rejectFields(value, 'make-pr output', [
+    ...STABLE_CONTEXT_FIELDS,
+    'assessment',
+    'plan',
+    'development',
+    'quality',
+    'review',
+    'trackerLabels',
+  ]);
+  requireStageMetadata(value);
 
   if (value['status'] === 'pull-request-created') {
     requireObject(value, 'pullRequest');
     return value as unknown as MakePrOutput;
   }
   if (value['status'] === 'no-changes') {
+    if ('pullRequest' in value) {
+      throw new Error('no-changes make-pr output must not include pullRequest');
+    }
     return value as unknown as MakePrOutput;
   }
 
@@ -183,12 +221,22 @@ function parseMakePrOutput(value: unknown): MakePrOutput {
 }
 
 function parseSyncTrackerStateOutput(value: unknown): SyncTrackerStateOutput {
-  const parsed = parsePreparedOutput<SyncTrackerStateOutput>(value, 'sync-tracker-state output', 'tracker-synced');
-  requireObject(parsed as unknown as Record<string, unknown>, 'pullRequest');
-  if (!Array.isArray((parsed as unknown as Record<string, unknown>)['trackerLabels'])) {
+  assertObject(value, 'sync-tracker-state output');
+  rejectFields(value, 'sync-tracker-state output', [
+    ...STABLE_CONTEXT_FIELDS,
+    'assessment',
+    'plan',
+    'development',
+    'quality',
+    'review',
+    'pullRequest',
+  ]);
+  requireStatus(value, 'tracker-synced');
+  requireStageMetadata(value);
+  if (!Array.isArray(value['trackerLabels'])) {
     throw new Error('trackerLabels must be an array');
   }
-  return parsed;
+  return value as unknown as SyncTrackerStateOutput;
 }
 
 export const inputRecordRefSchema: RuntimeSchema<InputRecordRef> = {
@@ -228,7 +276,22 @@ export const stagePayloadSchemas = {
 
 export const stageOutputSchemas = {
   'prepare-run': {
-    parse: (value: unknown) => parsePreparedOutput<PrepareRunOutput>(value, 'prepare-run output'),
+    parse: (value: unknown) => {
+      assertObject(value, 'prepare-run output');
+      rejectFields(value, 'prepare-run output', [
+        ...STABLE_CONTEXT_FIELDS,
+        'assessment',
+        'plan',
+        'development',
+        'quality',
+        'review',
+        'pullRequest',
+        'trackerLabels',
+      ]);
+      requireStatus(value, 'success');
+      requireStageMetadata(value);
+      return value as unknown as PrepareRunOutput;
+    },
   },
   assess: {
     parse: parseAssessOutput,

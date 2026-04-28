@@ -1,7 +1,8 @@
 import { stageOutputSchemas, stagePayloadSchemas } from './handoff-contracts.js';
+import { resolveReviewContext } from './context-resolvers.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
-import { appendHandoffRecordAndUpdateSummary, readValidatedStageInputRecord, resolveOrchestrationStorageRoot, scheduleNextJob, } from './orchestration.js';
+import { appendHandoffRecordAndUpdateSummary, resolveOrchestrationStorageRoot, scheduleNextJob, } from './orchestration.js';
 import { createForwardStagePayload } from './stage-payloads.js';
 const STUB_REVIEW = {
     status: 'stubbed',
@@ -9,16 +10,8 @@ const STUB_REVIEW = {
 };
 export async function runReviewWork(job) {
     stagePayloadSchemas.review.parse(job.data);
-    const inputRecord = await readValidatedStageInputRecord(job.data);
-    if (inputRecord.fromStage !== 'develop') {
-        throw new Error(`review input must be produced by develop, got ${inputRecord.fromStage}`);
-    }
-    const developed = stageOutputSchemas.develop.parse(inputRecord.output);
-    if (developed.quality.status !== 'passed') {
-        throw new Error('review input quality.status must be passed');
-    }
+    const context = await resolveReviewContext(job.data);
     const output = stageOutputSchemas.review.parse({
-        ...developed,
         status: 'success',
         runId: job.data.runId,
         stageAttempt: job.data.stageAttempt,
@@ -32,7 +25,10 @@ export async function runReviewWork(job) {
         toStage: 'make-pr',
         stageAttempt: job.data.stageAttempt,
         reworkAttempt: job.data.reworkAttempt,
-        dependsOn: job.data.inputRecordRef,
+        dependsOn: [
+            job.data.inputRecordRef,
+            context.planRecord.recordId,
+        ],
         status: 'success',
         output,
     });
@@ -41,11 +37,9 @@ export async function runReviewWork(job) {
 export async function runReviewFlow(job) {
     const logger = createJobLogger(job);
     const makePrJobData = await runReviewWork(job);
-    const outputRecord = await readValidatedStageInputRecord(makePrJobData);
-    const output = stageOutputSchemas.review.parse(outputRecord.output);
-    logger.info(`Reviewing issue #${output.issue.number} on branch ${output.branchName}`);
+    logger.info(`Reviewing run ${job.data.runId}`);
     await scheduleNextJob(jobQueue, 'make-pr', makePrJobData);
-    logger.info(`Make PR job enqueued for branch: ${output.branchName}`);
+    logger.info(`Make PR job enqueued for run: ${job.data.runId}`);
 }
 export const processReview = runReviewFlow;
 export const reviewHandler = processReview;

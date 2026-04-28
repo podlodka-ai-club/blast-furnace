@@ -4,17 +4,19 @@
 Defines the target Develop stage that invokes the configured Codex executor inside the prepared workspace and owns deterministic Quality Gate execution through the Codex Stop hook.
 ## Requirements
 ### Requirement: Develop Job Module
-The system SHALL provide a `develop` job handled by an isolated Develop module that reads planned input from the JSONL ledger, owns Codex executor invocation and the deterministic Quality Gate Stop-hook loop, and appends formal development and quality output without owning repository or workspace preparation.
+The system SHALL provide a `develop` job handled by an isolated Develop module that reads stable run context from the run summary, reads accepted plan output from the JSONL ledger, owns Codex executor invocation and the deterministic Quality Gate Stop-hook loop, and appends formal development and quality output without owning repository or workspace preparation.
 
 #### Scenario: Develop receives planned run data
 - **WHEN** a `develop` job runs
 - **THEN** the payload SHALL include `runId`, `stage`, `stageAttempt`, `reworkAttempt`, and an input handoff record reference
 - **AND** `stage` SHALL be `develop`
-- **AND** Develop SHALL read issue data, repository identity, branch name, workspace path, assessment data, and plan data from the referenced JSONL record chain
+- **AND** Develop SHALL read issue data, configured repository identity, branch name, and workspace path from stable run context in the run summary
+- **AND** Develop SHALL read accepted plan data from the referenced Plan handoff record
+- **AND** Develop SHALL NOT require assessment data in its stage input context
 
 #### Scenario: Repository preparation is not repeated
 - **WHEN** Develop starts
-- **THEN** it SHALL use the workspace path read from the JSONL ledger and prepared by Prepare Run
+- **THEN** it SHALL use the workspace path read from stable run context and prepared by Prepare Run
 - **AND** SHALL NOT create the workspace
 - **AND** SHALL NOT clone the repository
 - **AND** SHALL NOT create, fetch, check out, or reset the issue branch as repository preparation work
@@ -27,7 +29,7 @@ The system SHALL provide a `develop` job handled by an isolated Develop module t
 - **AND** add `--dangerously-bypass-approvals-and-sandbox` when absent
 - **AND** add `--enable codex_hooks` when the command appears to be Codex and hooks are not already enabled
 - **AND** add the configured Codex model when no explicit model argument is present
-- **AND** append a prompt containing issue number, title, body, and available plan context
+- **AND** append a prompt containing the available plan context
 
 #### Scenario: Executor process runs
 - **WHEN** the Codex command is launched
@@ -64,6 +66,7 @@ The system SHALL provide a `develop` job handled by an isolated Develop module t
 - **THEN** the Stop hook SHALL allow Codex to stop
 - **AND** Develop SHALL append a handoff record from `develop` to `review`
 - **AND** the output SHALL include `development` and `quality`
+- **AND** the output SHALL NOT include plan, assessment, review, pull request, tracker synchronization, or stable run context data
 - **AND** `quality.status` SHALL be `passed`
 - **AND** `quality` SHALL include `command`, `exitCode`, `attempts`, `durationMs`, and `summary`
 - **AND** the handoff `quality` object SHALL NOT include `outputPath` for a passed Quality Gate result
@@ -85,6 +88,7 @@ The system SHALL provide a `develop` job handled by an isolated Develop module t
 - **THEN** the Stop hook SHALL allow Codex to stop
 - **AND** Develop SHALL append a terminal handoff record with `toStage: null`
 - **AND** the output SHALL include `development` and `quality`
+- **AND** the output SHALL NOT include plan, assessment, review, pull request, tracker synchronization, or stable run context data
 - **AND** `quality.status` SHALL be `failed` when the test command exits non-zero
 - **AND** `quality.status` SHALL be `timed-out` when the test command exceeds its timeout
 - **AND** `quality.outputPath` SHALL be included when a full output artifact exists

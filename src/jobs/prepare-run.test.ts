@@ -235,16 +235,25 @@ describe('prepare-run job', () => {
     expect(records[0]).toMatchObject({
       fromStage: 'prepare-run',
       toStage: 'assess',
-      dependsOn: null,
+      dependsOn: [],
       output: {
-        issue: job.data.issue,
-        branchName: 'issue-42-test-issue',
-        workspacePath: TEMP_DIR,
+        status: 'success',
       },
     });
+    expect(records[0]).not.toHaveProperty('nextInput');
+    expect(records[0].output).not.toHaveProperty('issue');
+    expect(records[0].output).not.toHaveProperty('repository');
+    expect(records[0].output).not.toHaveProperty('branchName');
+    expect(records[0].output).not.toHaveProperty('workspacePath');
     expect(summary).toMatchObject({
       runId: 'run-123',
       currentStage: 'assess',
+      stableContext: {
+        issue: job.data.issue,
+        repository: job.data.repository,
+        branchName: 'issue-42-test-issue',
+        workspacePath: TEMP_DIR,
+      },
       timestampPrefix: expect.stringMatching(/^\d{4}-\d{2}-\d{2}_\d{2}\.\d{2}$/),
       runDirectory: expect.stringContaining('.orchestrator/runs/'),
       runSummaryPath: expect.stringContaining('_run.json'),

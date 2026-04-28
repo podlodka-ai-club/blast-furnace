@@ -161,32 +161,46 @@ describe('make-pr job', () => {
       stageAttempt: 1,
       reworkAttempt: 0,
       latestHandoffRecord: null,
+      stableContext: {
+        issue,
+        repository,
+        branchName: 'issue-42-test-issue',
+        workspacePath,
+      },
       stages: {},
     });
-    const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
+    const plan = await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
       runId: 'run-123',
-      fromStage: 'review',
-      toStage: 'make-pr',
+      fromStage: 'plan',
+      toStage: 'develop',
       stageAttempt: 1,
       reworkAttempt: 0,
       status: 'success',
       output: {
         status: 'success',
         runId: 'run-123',
-        issue,
-        repository,
-        branchName: 'issue-42-test-issue',
-        workspacePath,
         stageAttempt: 1,
         reworkAttempt: 0,
-        assessment: {
-          status: 'stubbed',
-          summary: 'Assessment deferred for this iteration.',
-        },
         plan: {
-          status: 'stubbed',
-          summary: 'Planning deferred for this iteration.',
+          status: 'success',
+          summary: 'Plan validated successfully.',
+          content: '## Summary\nReady.',
         },
+      },
+    });
+    const develop = await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
+      runId: 'run-123',
+      fromStage: 'develop',
+      toStage: 'review',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      dependsOn: [plan.inputRecordRef],
+      status: 'success',
+      output: {
+        status: 'success',
+        runId: 'run-123',
+        stageAttempt: 1,
+        reworkAttempt: 0,
         development: {
           status: 'completed',
           summary: 'Codex completed successfully.',
@@ -199,6 +213,21 @@ describe('make-pr job', () => {
           durationMs: 25,
           summary: 'Quality gate passed.',
         },
+      },
+    });
+    const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
+      runId: 'run-123',
+      fromStage: 'review',
+      toStage: 'make-pr',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      dependsOn: [develop.inputRecordRef, plan.inputRecordRef],
+      status: 'success',
+      output: {
+        status: 'success',
+        runId: 'run-123',
+        stageAttempt: 1,
+        reworkAttempt: 0,
         review: {
           status: 'stubbed',
           summary: 'Review deferred for this iteration.',
@@ -281,9 +310,14 @@ describe('make-pr job', () => {
       ],
       expectGitSpawnOptions()
     );
-    expect(records[1]).toMatchObject({
+    expect(records[3]).toMatchObject({
       fromStage: 'make-pr',
       toStage: null,
+      dependsOn: [
+        '000003_review_to_make-pr',
+        '000002_develop_to_review',
+        '000001_plan_to_develop',
+      ],
       output: {
         status: 'no-changes',
       },
@@ -348,9 +382,14 @@ describe('make-pr job', () => {
       base: 'main',
       body: 'Closes #42',
     });
-    expect(records[1]).toMatchObject({
+    expect(records[3]).toMatchObject({
       fromStage: 'make-pr',
       toStage: 'sync-tracker-state',
+      dependsOn: [
+        '000003_review_to_make-pr',
+        '000002_develop_to_review',
+        '000001_plan_to_develop',
+      ],
       output: {
         status: 'pull-request-created',
         pullRequest: {
@@ -363,7 +402,7 @@ describe('make-pr job', () => {
       type: 'sync-tracker-state',
       stage: 'sync-tracker-state',
       inputRecordRef: expect.objectContaining({
-        recordId: '000002_make-pr_to_sync-tracker-state',
+        recordId: '000004_make-pr_to_sync-tracker-state',
       }),
     }));
     expect(mockJobQueueAdd.mock.calls[0][1]).not.toHaveProperty('pullRequest');

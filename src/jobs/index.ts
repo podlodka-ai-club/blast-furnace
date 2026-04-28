@@ -28,6 +28,7 @@ export {
   writeRunSummary,
   updateRunSummary,
   updateRunSummaryForHandoff,
+  updateStableRunContext,
   scheduleNextJob,
 } from './orchestration.js';
 export type { AppendHandoffRecordInput, AppendHandoffRecordResult, QueueLike } from './orchestration.js';

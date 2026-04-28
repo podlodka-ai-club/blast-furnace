@@ -63,19 +63,6 @@ describe('plan job', () => {
     const workspacePath = await mkdtemp(join(tmpdir(), 'plan-ledger-'));
     tempRoots.push(workspacePath);
     const issue = createIssue();
-    const prepared = {
-      status: 'success',
-      runId: 'run-123',
-      issue,
-      repository: {
-        owner: 'test-owner',
-        repo: 'test-repo',
-      },
-      branchName: 'issue-42-test-issue',
-      workspacePath,
-      stageAttempt: 1,
-      reworkAttempt: 0,
-    };
     const fileSet = createRunFileSet(workspacePath, 'run-123', new Date('2026-04-26T08:07:30.000Z'));
     await initializeRunSummary(workspacePath, fileSet, {
       runId: 'run-123',
@@ -85,6 +72,15 @@ describe('plan job', () => {
       stageAttempt: 1,
       reworkAttempt: 0,
       latestHandoffRecord: null,
+      stableContext: {
+        issue,
+        repository: {
+          owner: 'test-owner',
+          repo: 'test-repo',
+        },
+        branchName: 'issue-42-test-issue',
+        workspacePath,
+      },
       stages: {},
     });
     const first = await appendHandoffRecordAndUpdateSummary(workspacePath, {
@@ -94,7 +90,12 @@ describe('plan job', () => {
       stageAttempt: 1,
       reworkAttempt: 0,
       status: 'success',
-      output: prepared,
+      output: {
+        status: 'success',
+        runId: 'run-123',
+        stageAttempt: 1,
+        reworkAttempt: 0,
+      },
     });
     const second = await appendHandoffRecordAndUpdateSummary(workspacePath, {
       runId: 'run-123',
@@ -102,10 +103,13 @@ describe('plan job', () => {
       toStage: 'plan',
       stageAttempt: 1,
       reworkAttempt: 0,
-      dependsOn: first.inputRecordRef,
+      dependsOn: [first.inputRecordRef],
       status: 'success',
       output: {
-        ...prepared,
+        status: 'success',
+        runId: 'run-123',
+        stageAttempt: 1,
+        reworkAttempt: 0,
         assessment: {
           status: 'stubbed',
           summary: 'Assessment deferred for this iteration.',
@@ -277,9 +281,7 @@ describe('plan job', () => {
       fromStage: 'plan',
       toStage: 'plan',
       status: 'rework-needed',
-      dependsOn: {
-        recordId: '000002_assess_to_plan',
-      },
+      dependsOn: ['000002_assess_to_plan'],
       output: {
         plan: {
           status: 'validation-failed',
@@ -291,17 +293,13 @@ describe('plan job', () => {
       fromStage: 'plan',
       toStage: 'plan',
       status: 'rework-needed',
-      dependsOn: {
-        recordId: '000003_plan_to_plan',
-      },
+      dependsOn: ['000003_plan_to_plan'],
     });
     expect(records[4]).toMatchObject({
       fromStage: 'plan',
       toStage: 'develop',
       status: 'success',
-      dependsOn: {
-        recordId: '000004_plan_to_plan',
-      },
+      dependsOn: ['000004_plan_to_plan'],
     });
   });
 

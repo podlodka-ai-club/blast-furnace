@@ -221,6 +221,15 @@ describe('develop job', () => {
       stageAttempt: 1,
       reworkAttempt: 0,
       latestHandoffRecord: null,
+      stableContext: {
+        issue,
+        repository: {
+          owner: 'test-owner',
+          repo: 'test-repo',
+        },
+        branchName: 'issue-42-test-issue',
+        workspacePath,
+      },
       stages: {},
     });
     const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(workspacePath, {
@@ -233,19 +242,8 @@ describe('develop job', () => {
       output: {
         status: 'success',
         runId: 'run-123',
-        issue,
-        repository: {
-          owner: 'test-owner',
-          repo: 'test-repo',
-        },
-        branchName: 'issue-42-test-issue',
-        workspacePath,
         stageAttempt: 1,
         reworkAttempt: 0,
-        assessment: {
-          status: 'stubbed',
-          summary: 'Assessment deferred for this iteration.',
-        },
         plan: {
           status: 'success',
           summary: 'Plan validated successfully.',
@@ -395,6 +393,7 @@ describe('develop job', () => {
       fromStage: 'develop',
       toStage: 'review',
       status: 'success',
+      dependsOn: ['000001_plan_to_develop'],
       output: {
         status: 'success',
         development: {
@@ -559,7 +558,6 @@ describe('develop job', () => {
     expect(records[1]).toMatchObject({
       fromStage: 'develop',
       toStage: null,
-      nextInput: null,
       status: 'blocked',
       output: {
         status: 'quality-misconfigured',
@@ -591,7 +589,6 @@ describe('develop job', () => {
     expect(records[1]).toMatchObject({
       fromStage: 'develop',
       toStage: null,
-      nextInput: null,
       status: 'failure',
       output: {
         status: 'quality-failed',
@@ -621,7 +618,6 @@ describe('develop job', () => {
     expect(timedOutRecords[1]).toMatchObject({
       fromStage: 'develop',
       toStage: null,
-      nextInput: null,
       status: 'failure',
       output: {
         status: 'quality-timed-out',

@@ -11,11 +11,11 @@ import {
   qualityResultForHandoff,
 } from './develop-stop-hook.js';
 import { stageOutputSchemas, stagePayloadSchemas } from './handoff-contracts.js';
+import { resolveDevelopContext } from './context-resolvers.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
 import {
   appendHandoffRecordAndUpdateSummary,
-  readValidatedStageInputRecord,
   resolveOrchestrationStorageRoot,
   scheduleNextJob,
 } from './orchestration.js';
@@ -70,9 +70,8 @@ export async function runDevelopWork(
   logger = createJobLogger(job)
 ): Promise<DevelopWorkResult> {
   stagePayloadSchemas.develop.parse(job.data);
-  const inputRecord = await readValidatedStageInputRecord(job.data);
-  const planned = stageOutputSchemas.plan.parse(inputRecord.output);
-  const { branchName, issue, workspacePath } = planned;
+  const context = await resolveDevelopContext(job.data);
+  const { branchName, issue, workspacePath } = context.runContext;
   const qualityGateCommand = process.env['QUALITY_GATE_TEST_COMMAND'] ?? config.qualityGate?.testCommand;
   const qualityGateTimeoutMs = parseMinimumTimeout(
     process.env['QUALITY_GATE_TEST_TIMEOUT_MS'],
@@ -82,7 +81,7 @@ export async function runDevelopWork(
   logger.info(`Running develop for issue #${issue.number} on branch ${branchName}`);
 
   const prompt = await renderDevelopPrompt(DEVELOP_PROMPT_TEMPLATE_PATH, {
-    planContent: planned.plan.content,
+    planContent: context.plan.content,
   });
   const stopHook = await prepareDevelopStopHook({
     runId: job.data.runId,
@@ -140,7 +139,6 @@ export async function runDevelopWork(
   }
   const handoffQuality = qualityResultForHandoff(quality);
   const output = stageOutputSchemas.develop.parse({
-    ...planned,
     status: outputStatus,
     runId: job.data.runId,
     stageAttempt: job.data.stageAttempt,
@@ -161,7 +159,7 @@ export async function runDevelopWork(
     toStage,
     stageAttempt: job.data.stageAttempt,
     reworkAttempt: job.data.reworkAttempt,
-    dependsOn: job.data.inputRecordRef,
+    dependsOn: [job.data.inputRecordRef],
     status: handoffStatus,
     output,
   }, toStage === null ? output.status : undefined);
@@ -186,12 +184,12 @@ export async function runDevelopFlow(job: Job<DevelopJobData>): Promise<void> {
   const result = await runDevelopWork(job, logger);
 
   if (!result.reviewJobData) {
-    logger.info(`Develop stopped after ${result.output.status} for branch: ${result.output.branchName}`);
+    logger.info(`Develop stopped after ${result.output.status} for run: ${job.data.runId}`);
     return;
   }
 
   await scheduleNextJob(jobQueue, 'review', result.reviewJobData);
-  logger.info(`Review job enqueued for branch: ${result.output.branchName}`);
+  logger.info(`Review job enqueued for run: ${job.data.runId}`);
 }
 
 export const processDevelop = runDevelopFlow;

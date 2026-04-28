@@ -4,7 +4,7 @@
 Defines the target Prepare Run stage that initializes run state, prepares the issue branch, and creates the local workspace before assessment.
 ## Requirements
 ### Requirement: Prepare Run Job Module
-The system SHALL provide a `prepare-run` job handled by an isolated Prepare Run module that initializes a timestamped run file set, prepares the configured repository workspace, writes the first JSONL handoff record, and hands off to Assess.
+The system SHALL provide a `prepare-run` job handled by an isolated Prepare Run module that initializes a timestamped run file set, prepares the configured repository workspace, records stable run context in the run summary, writes the first stage-local JSONL handoff record, and hands off to Assess.
 
 #### Scenario: Prepare Run payload is created
 - **WHEN** Intake accepts an eligible issue for automation
@@ -25,6 +25,7 @@ The system SHALL provide a `prepare-run` job handled by an isolated Prepare Run 
 - **AND** create `.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/` under the Blast Furnace repository root
 - **AND** write `<YYYY-MM-DD_HH.MM_runId>_run.json`
 - **AND** create or prepare `<YYYY-MM-DD_HH.MM_runId>_handoff.jsonl`
+- **AND** initialize stable run context with issue identity and configured repository identity
 - **AND** SHALL NOT create `run.log` or any replacement run-level runtime logging file
 
 #### Scenario: Branch name is prepared
@@ -50,10 +51,13 @@ The system SHALL provide a `prepare-run` job handled by an isolated Prepare Run 
 
 #### Scenario: Base context is recorded
 - **WHEN** repository preparation succeeds
-- **THEN** Prepare Run SHALL append the first JSONL handoff record containing at least the `runId`, issue, configured repository identity, branch name, workspace path, stage attempt, and rework attempt
+- **THEN** Prepare Run SHALL record branch name and workspace path in stable run context in the run summary
+- **AND** the stable run context SHALL contain issue identity, configured repository identity, branch name, and workspace path before Assess is enqueued
+- **AND** Prepare Run SHALL append the first JSONL handoff record with stage-local Prepare Run output only
+- **AND** the first handoff record output SHALL NOT include assessment, plan, development, quality, review, pull request, or tracker synchronization output
 - **AND** the first handoff record SHALL have `fromStage` set to `prepare-run`
 - **AND** the first handoff record SHALL have `toStage` set to `assess`
-- **AND** the first handoff record SHALL have `dependsOn` set to `null`
+- **AND** the first handoff record SHALL have `dependsOn` set to an empty array
 
 #### Scenario: Assess is enqueued
 - **WHEN** Prepare Run completes repository preparation and appends the first handoff record

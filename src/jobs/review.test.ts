@@ -71,7 +71,35 @@ describe('review job', () => {
       stageAttempt: 1,
       reworkAttempt: 0,
       latestHandoffRecord: null,
+      stableContext: {
+        issue: createIssue(),
+        repository: {
+          owner: 'test-owner',
+          repo: 'test-repo',
+        },
+        branchName: 'issue-42-test-issue',
+        workspacePath,
+      },
       stages: {},
+    });
+    const plan = await appendHandoffRecordAndUpdateSummary(workspacePath, {
+      runId: 'run-123',
+      fromStage: 'plan',
+      toStage: 'develop',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      status: 'success',
+      output: {
+        status: 'success',
+        runId: 'run-123',
+        stageAttempt: 1,
+        reworkAttempt: 0,
+        plan: {
+          status: 'success',
+          summary: 'Plan validated successfully.',
+          content: '## Summary\nReady.',
+        },
+      },
     });
     const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(workspacePath, {
       runId: 'run-123',
@@ -79,6 +107,7 @@ describe('review job', () => {
       toStage: 'review',
       stageAttempt: 1,
       reworkAttempt: 0,
+      dependsOn: [plan.inputRecordRef],
       status: 'success',
       output: {
         status: qualityStatus === 'passed'
@@ -89,23 +118,8 @@ describe('review job', () => {
               ? 'quality-timed-out'
               : 'quality-misconfigured',
         runId: 'run-123',
-        issue: createIssue(),
-        repository: {
-          owner: 'test-owner',
-          repo: 'test-repo',
-        },
-        branchName: 'issue-42-test-issue',
-        workspacePath,
         stageAttempt: 1,
         reworkAttempt: 0,
-        assessment: {
-          status: 'stubbed',
-          summary: 'Assessment deferred for this iteration.',
-        },
-        plan: {
-          status: 'stubbed',
-          summary: 'Planning deferred for this iteration.',
-        },
         development: {
           status: 'completed',
           summary: 'Codex completed successfully.',
@@ -146,14 +160,18 @@ describe('review job', () => {
       type: 'make-pr',
       stage: 'make-pr',
       inputRecordRef: {
-        recordId: '000002_review_to_make-pr',
+        recordId: '000003_review_to_make-pr',
         stage: 'review',
       },
     });
     expect(result).not.toHaveProperty('review');
-    expect(records[1]).toMatchObject({
+    expect(records[2]).toMatchObject({
       fromStage: 'review',
       toStage: 'make-pr',
+      dependsOn: [
+        '000002_develop_to_review',
+        '000001_plan_to_develop',
+      ],
       output: {
         review: {
           status: 'stubbed',
@@ -173,7 +191,7 @@ describe('review job', () => {
       type: 'make-pr',
       stage: 'make-pr',
       inputRecordRef: expect.objectContaining({
-        recordId: '000002_review_to_make-pr',
+        recordId: '000003_review_to_make-pr',
       }),
     }));
     expect(mockJobQueueAdd.mock.calls[0][1]).not.toHaveProperty('issue');
