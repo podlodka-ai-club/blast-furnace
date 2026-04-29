@@ -1,9 +1,9 @@
-import * as pty from 'node-pty';
-import path from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { Job } from 'bullmq';
-import type { DevelopJobData, DevelopOutput, PlanOutput, QualityGateResult, ReviewJobData } from '../types/index.js';
+import type { DevelopJobData, DevelopOutput, QualityGateResult, ReviewJobData } from '../types/index.js';
 import { config } from '../config/index.js';
-import { ensureNodePtySpawnHelperExecutable } from '../utils/node-pty.js';
+import { buildCodexSessionArgs, runCodexSession } from './codex-session.js';
 import {
   cleanupSuccessfulQualityArtifacts,
   handleDevelopStopHook,
@@ -21,26 +21,7 @@ import {
 } from './orchestration.js';
 import { createForwardStagePayload } from './stage-payloads.js';
 
-const DEFAULT_TIMEOUT_MS = 300000;
-const CODEX_SUBCOMMANDS = new Set([
-  'exec',
-  'review',
-  'login',
-  'logout',
-  'mcp',
-  'mcp-server',
-  'app-server',
-  'app',
-  'completion',
-  'sandbox',
-  'debug',
-  'apply',
-  'resume',
-  'fork',
-  'cloud',
-  'features',
-  'help',
-]);
+export const DEVELOP_PROMPT_TEMPLATE_PATH = join(process.cwd(), 'prompts', 'develop.md');
 
 const DEVELOPMENT_RESULT = {
   status: 'completed',
@@ -52,52 +33,15 @@ export interface DevelopWorkResult {
   reviewJobData?: ReviewJobData;
 }
 
-function hasExplicitModelArg(args: string[]): boolean {
-  return args.some((arg, index) => {
-    if (arg === '-m' || arg === '--model') return true;
-    if (arg.startsWith('--model=')) return true;
-    return arg === '-c' && args[index + 1]?.startsWith('model=');
-  });
-}
-
-function appearsToBeCodexCommand(cliCmd: string, args: string[]): boolean {
-  const basename = path.basename(cliCmd);
-  return basename === 'codex' || basename === 'codex-cli' || args.some((arg) => arg.includes('codex'));
-}
-
-function hasCodexHooksEnabled(args: string[]): boolean {
-  return args.some((arg, index) => {
-    if (arg === 'codex_hooks') {
-      return args[index - 1] === '--enable';
-    }
-    if (arg === '--enable=codex_hooks') return true;
-    return arg === '--enable' && args[index + 1] === 'codex_hooks';
-  });
-}
-
 export function buildCodexCliArgs(cliCmd: string, cliArgs: string[], prompt: string, model: string): string[] {
-  const invocationArgs = [...cliArgs];
-  const hasExplicitSubcommand = invocationArgs.some((arg) => CODEX_SUBCOMMANDS.has(arg));
-  const isCodexCommand = appearsToBeCodexCommand(cliCmd, invocationArgs);
-
-  if (isCodexCommand && !hasExplicitSubcommand) {
-    invocationArgs.push('exec');
-  }
-
-  if (isCodexCommand && !hasCodexHooksEnabled(invocationArgs)) {
-    invocationArgs.push('--enable', 'codex_hooks');
-  }
-
-  if (!invocationArgs.includes('--dangerously-bypass-approvals-and-sandbox')) {
-    invocationArgs.push('--dangerously-bypass-approvals-and-sandbox');
-  }
-
-  if (model && !hasExplicitModelArg(invocationArgs)) {
-    invocationArgs.push('--model', model);
-  }
-
-  invocationArgs.push(prompt);
-  return invocationArgs;
+  return buildCodexSessionArgs({
+    cliCmd,
+    cliArgs,
+    prompt,
+    model,
+    enableHooks: true,
+    resumeLastSession: false,
+  });
 }
 
 function parseMinimumTimeout(value: string | undefined, defaultVal: number): number {
@@ -108,15 +52,17 @@ function parseMinimumTimeout(value: string | undefined, defaultVal: number): num
   return parsed;
 }
 
-function buildDevelopPrompt(data: PlanOutput): string {
-  return [
-    `Issue #${data.issue.number}: ${data.issue.title}`,
-    '',
-    data.issue.body ?? '(No description provided)',
-    '',
-    'Plan context:',
-    JSON.stringify(data.plan, null, 2),
-  ].join('\n');
+export interface DevelopPromptInput {
+  planContent: string;
+}
+
+export async function renderDevelopPrompt(templatePath: string, input: DevelopPromptInput): Promise<string> {
+  const template = await readFile(templatePath, 'utf8');
+  const replacements: Record<string, string> = {
+    planContent: input.planContent,
+  };
+
+  return template.replace(/\{\{([A-Za-z0-9_]+)\}\}/g, (match, key: string) => replacements[key] ?? match);
 }
 
 export async function runDevelopWork(
@@ -127,12 +73,6 @@ export async function runDevelopWork(
   const inputRecord = await readValidatedStageInputRecord(job.data);
   const planned = stageOutputSchemas.plan.parse(inputRecord.output);
   const { branchName, issue, workspacePath } = planned;
-  const codexCliPath = process.env['CODEX_CLI_PATH'] ?? config.codex?.cliPath ?? 'npx @openai/codex';
-  const codexModel = process.env['CODEX_MODEL'] ?? config.codex?.model ?? 'gpt-5.4';
-  const timeoutMs = parseInt(
-    process.env['CODEX_TIMEOUT_MS'] ?? String(config.codex?.timeoutMs ?? DEFAULT_TIMEOUT_MS),
-    10
-  );
   const qualityGateCommand = process.env['QUALITY_GATE_TEST_COMMAND'] ?? config.qualityGate?.testCommand;
   const qualityGateTimeoutMs = parseMinimumTimeout(
     process.env['QUALITY_GATE_TEST_TIMEOUT_MS'],
@@ -141,14 +81,9 @@ export async function runDevelopWork(
 
   logger.info(`Running develop for issue #${issue.number} on branch ${branchName}`);
 
-  const prompt = buildDevelopPrompt(planned);
-  const cliParts = codexCliPath.split(/\s+/).filter(Boolean);
-  if (cliParts.length === 0) {
-    throw new Error('CODEX_CLI_PATH must not be empty');
-  }
-
-  const cliCmd = cliParts[0];
-  const cliArgs = cliParts.slice(1);
+  const prompt = await renderDevelopPrompt(DEVELOP_PROMPT_TEMPLATE_PATH, {
+    planContent: planned.plan.content,
+  });
   const stopHook = await prepareDevelopStopHook({
     runId: job.data.runId,
     runDir: job.data.inputRecordRef.runDir,
@@ -156,62 +91,36 @@ export async function runDevelopWork(
     qualityGateCommand,
     qualityGateTimeoutMs,
   });
-  const baseCliArgs = buildCodexCliArgs(cliCmd, cliArgs, prompt, codexModel);
-
-  await ensureNodePtySpawnHelperExecutable(logger);
-  const ptyProcess = pty.spawn(cliCmd, baseCliArgs, {
-    cwd: workspacePath,
-    name: 'xterm-color',
-    env: { ...process.env, ...stopHook.env },
+  await runCodexSession({
+    prompt,
+    workspacePath,
+    logger,
+    resumeLastSession: false,
+    enableHooks: true,
+    env: stopHook.env,
+    logPrefix: 'codex',
+    timeoutLabel: 'codex process',
   });
-
-  logger.info(`codex command: ${cliCmd} ${cliArgs.join(' ')}`.trim());
-
-  ptyProcess.onData((data: string) => {
-    const line = data.toString().trim();
-    if (line) {
-      logger.info(`[codex] ${line}`);
-    }
-  });
-
-  const exitCode = await new Promise<number>((resolve, reject) => {
-    let settled = false;
-    const settle = (fn: () => void) => {
-      if (!settled) {
-        settled = true;
-        fn();
-      }
-    };
-    const timer = setTimeout(() => {
-      ptyProcess.kill('SIGTERM');
-      settle(() => reject(new Error(`codex process timed out after ${timeoutMs}ms`)));
-    }, timeoutMs);
-
-    ptyProcess.onExit(({ exitCode }: { exitCode: number }) => {
-      clearTimeout(timer);
-      settle(() => resolve(exitCode));
-    });
-  });
-
-  if (exitCode !== 0) {
-    logger.error(`codex process exited with code ${exitCode}`);
-    throw new Error(`codex process failed with exit code ${exitCode}`);
-  }
 
   logger.info('codex process completed successfully');
 
   let quality = await stopHook.readFinalQualityResult();
   if (!quality) {
     logger.warn('Quality Gate did not produce a Stop-hook result before Codex stopped; running fallback Quality Gate');
-    await handleDevelopStopHook({
-      statePath: stopHook.statePath,
-      runDir: stopHook.runDir,
-      workspacePath,
-      qualityGateCommand,
-      qualityGateTimeoutMs,
-      hookInput: {},
-    });
-    quality = await stopHook.readFinalQualityResult();
+    for (let fallbackAttempt = 0; fallbackAttempt < 3 && !quality; fallbackAttempt += 1) {
+      const decision = await handleDevelopStopHook({
+        statePath: stopHook.statePath,
+        runDir: stopHook.runDir,
+        workspacePath,
+        qualityGateCommand,
+        qualityGateTimeoutMs,
+        hookInput: {},
+      });
+      quality = await stopHook.readFinalQualityResult();
+      if (decision.decision === 'allow' && !quality) {
+        break;
+      }
+    }
     if (!quality) {
       if (!qualityGateCommand?.trim()) {
         throw new Error('Quality Gate did not record misconfiguration before Codex stopped');

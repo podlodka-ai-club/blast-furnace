@@ -1,7 +1,7 @@
 import { spawn } from 'child_process';
 import { createPullRequest } from '../github/pullRequests.js';
 import { assertConfiguredRepository } from '../github/repository.js';
-import { cleanupWorkingDir, getRepoRemoteUrl } from '../utils/working-dir.js';
+import { cleanupWorkingDir, createGitCommandEnv, getRepoRemoteUrl } from '../utils/working-dir.js';
 import { stageOutputSchemas, stagePayloadSchemas } from './handoff-contracts.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
@@ -16,7 +16,7 @@ const TARGET_REPO_PATHS = [
 ];
 function execGitCommand(args, cwd) {
     return new Promise((resolve, reject) => {
-        const child = spawn('git', args, { cwd });
+        const child = spawn('git', args, { cwd, env: createGitCommandEnv() });
         let stdout = '';
         let stderr = '';
         child.stdout?.on('data', (data) => {

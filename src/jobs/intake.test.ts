@@ -3,9 +3,16 @@ import type { Job } from 'bullmq';
 import type { IntakeJobData } from '../types/index.js';
 
 // Use vi.hoisted to avoid hoisting issues with vi.mock
-const { mockFetchIssues, mockJobQueueAdd, mockRedisClient } = vi.hoisted(() => ({
+const { mockFetchIssues, mockJobQueueAdd, mockRedisClient, mockCreateJobLogger, mockJobLogger } = vi.hoisted(() => ({
   mockFetchIssues: vi.fn(),
   mockJobQueueAdd: vi.fn(),
+  mockJobLogger: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  },
+  mockCreateJobLogger: vi.fn(),
   mockRedisClient: {
     connect: vi.fn().mockResolvedValue(undefined),
     get: vi.fn().mockResolvedValue(null),
@@ -27,6 +34,10 @@ vi.mock('./queue.js', () => ({
   jobQueue: {
     add: mockJobQueueAdd,
   },
+}));
+
+vi.mock('./logger.js', () => ({
+  createJobLogger: mockCreateJobLogger,
 }));
 
 // Mock the Redis client
@@ -54,6 +65,7 @@ describe('intake job', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mockJobQueueAdd.mockResolvedValue({ id: 'new-job-id' });
+    mockCreateJobLogger.mockReturnValue(mockJobLogger);
     mockRedisClient.set.mockResolvedValue('OK');
     mockRedisClient.del.mockResolvedValue(1);
     mockRedisClient.smembers.mockResolvedValue([]);
@@ -328,6 +340,51 @@ describe('intake job', () => {
         'NX'
       );
       expect(mockJobQueueAdd).not.toHaveBeenCalled();
+    });
+
+    it('should log total fetched issues and claimed issues eligible for processing', async () => {
+      const { intakeHandler } = await import('./intake.js');
+
+      const mockIssues = [
+        {
+          id: 1,
+          number: 42,
+          title: 'Issue 1',
+          body: 'Body 1',
+          state: 'open' as const,
+          labels: ['ready'],
+          assignee: null,
+          createdAt: '2024-01-01T00:00:00Z',
+          updatedAt: '2024-01-01T00:00:00Z',
+        },
+        {
+          id: 2,
+          number: 43,
+          title: 'Issue 2',
+          body: 'Body 2',
+          state: 'open' as const,
+          labels: ['ready'],
+          assignee: null,
+          createdAt: '2024-01-02T00:00:00Z',
+          updatedAt: '2024-01-02T00:00:00Z',
+        },
+      ];
+
+      mockFetchIssues.mockResolvedValue(mockIssues);
+      mockRedisClient.get.mockResolvedValue(null);
+      mockRedisClient.set.mockImplementation((key: string) => {
+        if (key === 'github:intake:processing:test-owner:test-repo:43') {
+          return Promise.resolve(null);
+        }
+        return Promise.resolve('OK');
+      });
+
+      const mockJob = createMockJob(undefined);
+      await intakeHandler(mockJob);
+
+      expect(mockJobLogger.info).toHaveBeenCalledWith(
+        'GitHub intake fetched 2 issue(s); 1 issue(s) eligible for processing'
+      );
     });
 
     it('should propagate error when fetchIssues fails', async () => {

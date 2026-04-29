@@ -39,7 +39,10 @@ async function run() {
     });
 }
 try {
-    process.stdout.write(JSON.stringify(await run()));
+    const decision = await run();
+    if (decision.decision === 'block') {
+        process.stdout.write(JSON.stringify(decision));
+    }
 }
 catch (err) {
     const message = err instanceof Error ? err.message : String(err);

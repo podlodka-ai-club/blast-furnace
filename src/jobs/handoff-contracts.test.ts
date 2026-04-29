@@ -85,8 +85,9 @@ describe('handoff runtime contracts', () => {
       summary: 'Assessment deferred for this iteration.',
     } as const;
     const plan = {
-      status: 'stubbed',
-      summary: 'Planning deferred for this iteration.',
+      status: 'success',
+      summary: 'Plan validated successfully.',
+      content: '## Summary\nReady.',
     } as const;
     const development = {
       status: 'completed',
@@ -125,6 +126,22 @@ describe('handoff runtime contracts', () => {
       assessment,
       plan,
     })).toMatchObject({ plan });
+    expect(stageOutputSchemas.plan.parse({
+      status: 'validation-failed',
+      ...preparedFields,
+      assessment,
+      plan: {
+        status: 'validation-failed',
+        summary: 'Plan validation failed.',
+        content: '## Summary\nMissing sections.',
+        failureReason: 'Missing required plan section titles: Risks',
+      },
+    })).toMatchObject({
+      status: 'validation-failed',
+      plan: {
+        status: 'validation-failed',
+      },
+    });
     expect(stageOutputSchemas.develop.parse({
       status: 'success',
       ...preparedFields,

@@ -46,6 +46,7 @@ export declare function resolveDevelopStopHookRunner(): {
     hookCommand: string;
 };
 export declare function qualityResultForHandoff(result: QualityGateResult): QualityGateResult;
+export declare function finalQualityResultFromState(state: DevelopStopHookState): QualityGateResult | undefined;
 export declare function cleanupSuccessfulQualityArtifacts(runDir: string, result: QualityGateResult): Promise<boolean>;
 export declare function prepareDevelopStopHook(options: PrepareDevelopStopHookOptions): Promise<PreparedDevelopStopHook>;
 export declare function handleDevelopStopHook(input: DevelopStopHookInput): Promise<StopHookDecision>;

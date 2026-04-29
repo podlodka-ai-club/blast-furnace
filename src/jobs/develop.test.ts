@@ -247,8 +247,9 @@ describe('develop job', () => {
           summary: 'Assessment deferred for this iteration.',
         },
         plan: {
-          status: 'stubbed',
-          summary: 'Planning deferred for this iteration.',
+          status: 'success',
+          summary: 'Plan validated successfully.',
+          content: '## Summary\nReady.\n\n## Implementation Plan\nDo it.\n\n## Risks\nNone.',
         },
       },
     });
@@ -267,6 +268,28 @@ describe('develop job', () => {
     } as unknown as Job<DevelopJobData>;
   }
 
+  it('renders the Develop prompt with accepted Plan content only', async () => {
+    const { renderDevelopPrompt } = await import('./develop.js');
+    const root = await mkdtemp(join(tmpdir(), 'develop-prompt-'));
+    tempRoots.push(root);
+    const promptPath = join(root, 'develop.md');
+    await writeFile(promptPath, [
+      'Implement this plan:',
+      '',
+      '{{planContent}}',
+    ].join('\n'));
+
+    const prompt = await renderDevelopPrompt(promptPath, {
+      planContent: '## Summary\nUse the accepted plan.',
+    });
+
+    expect(prompt).toContain('## Summary\nUse the accepted plan.');
+    expect(prompt).not.toContain('{{planContent}}');
+    expect(prompt).not.toContain('Issue #');
+    expect(prompt).not.toContain('Test Issue');
+    expect(prompt).not.toContain('Test body');
+  });
+
   it('uses the prepared workspace from the ledger and does not prepare the repository again', async () => {
     const { runDevelopFlow } = await import('./develop.js');
     vi.mocked(nodePty.spawn).mockReturnValue(createCodexMockProcess());
@@ -284,7 +307,7 @@ describe('develop job', () => {
     );
   });
 
-  it('builds the codex command with issue and plan context and streams PTY output', async () => {
+  it('builds the codex command with accepted Plan content only and streams PTY output', async () => {
     const { runDevelopWork } = await import('./develop.js');
     const dataHandlers: Array<(data: string) => void> = [];
     const mockLogger = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() };
@@ -319,11 +342,16 @@ describe('develop job', () => {
     );
     const args = vi.mocked(nodePty.spawn).mock.calls[0][1];
     expect(args).not.toContain('--config');
+    expect(args).not.toContain('resume');
+    expect(args).not.toContain('--last');
     expect(args.some((arg) => arg.includes('hooks.Stop'))).toBe(false);
-    expect(args.at(-1)).toEqual(expect.stringContaining('Issue #42: Test Issue'));
     const prompt = vi.mocked(nodePty.spawn).mock.calls[0][1].at(-1);
-    expect(prompt).toContain('Test body');
-    expect(prompt).toContain('Planning deferred for this iteration.');
+    expect(prompt).toContain('## Summary\nReady.');
+    expect(prompt).toContain('## Implementation Plan\nDo it.');
+    expect(prompt).not.toContain('Issue #42: Test Issue');
+    expect(prompt).not.toContain('Test body');
+    expect(prompt).not.toContain('Plan validated successfully.');
+    expect(prompt).not.toContain('"status"');
     expect(mockLogger.info).toHaveBeenCalledWith('[codex] codex output');
     expect(mockPrepareDevelopStopHook).toHaveBeenCalledWith(expect.objectContaining({
       workspacePath: expect.stringContaining('develop-ledger-'),
@@ -469,6 +497,48 @@ describe('develop job', () => {
       },
     });
     expect(mockJobQueueAdd).toHaveBeenCalledWith('review', expect.anything());
+  });
+
+  it('keeps running fallback Quality Gate until a terminal quality result is available', async () => {
+    const { runDevelopFlow } = await import('./develop.js');
+    mockReadFinalQualityResult
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({
+        status: 'failed',
+        command: 'npm test',
+        exitCode: 1,
+        attempts: 3,
+        durationMs: 200,
+        summary: 'Tests failed after retry budget.',
+        outputPath: '/tmp/run/quality/attempt-3.log',
+      } satisfies QualityGateResult);
+    mockHandleDevelopStopHook
+      .mockResolvedValueOnce({ decision: 'block', reason: 'first failure' })
+      .mockResolvedValueOnce({ decision: 'block', reason: 'second failure' })
+      .mockResolvedValueOnce({ decision: 'allow' });
+    vi.mocked(nodePty.spawn).mockReturnValue(createCodexMockProcess());
+    const job = await createJob();
+
+    await runDevelopFlow(job);
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
+
+    expect(mockHandleDevelopStopHook).toHaveBeenCalledTimes(3);
+    expect(records[1]).toMatchObject({
+      fromStage: 'develop',
+      toStage: null,
+      status: 'failure',
+      output: {
+        status: 'quality-failed',
+        quality: {
+          status: 'failed',
+          attempts: 3,
+          summary: 'Tests failed after retry budget.',
+        },
+      },
+    });
+    expect(mockJobQueueAdd).not.toHaveBeenCalled();
   });
 
   it('appends terminal quality-misconfigured output and does not enqueue downstream jobs', async () => {

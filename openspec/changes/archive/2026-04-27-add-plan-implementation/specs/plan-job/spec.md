@@ -1,8 +1,5 @@
-# plan-job Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change add-pipeline-step-jobs. Update Purpose after archive.
-## Requirements
 ### Requirement: Plan Job Module
 The system SHALL provide a `plan` job handled by an isolated Plan module in the target workflow that reads assessed input from the JSONL ledger, generates and validates Codex-backed plan output, records each planning attempt in the ledger, and only hands off successful accepted plan content to Develop.
 
@@ -68,4 +65,3 @@ The system SHALL provide a `plan` job handled by an isolated Plan module in the 
 - **WHEN** Plan behavior is implemented
 - **THEN** Plan-specific code SHALL live in its own job module or Plan-owned helpers
 - **AND** worker routing SHALL call that module for `plan` jobs
-

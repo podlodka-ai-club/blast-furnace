@@ -150,6 +150,27 @@ export function qualityResultForHandoff(result: QualityGateResult): QualityGateR
   return handoffResult;
 }
 
+export function finalQualityResultFromState(
+  state: DevelopStopHookState
+): QualityGateResult | undefined {
+  const result = state.lastQualityResult;
+  if (!result) {
+    return undefined;
+  }
+
+  if (result.status === 'passed' || result.status === 'misconfigured') {
+    return result;
+  }
+
+  if (result.status === 'failed' || result.status === 'timed-out') {
+    return state.blockedFailureCount >= 2 && result.attempts > state.blockedFailureCount
+      ? result
+      : undefined;
+  }
+
+  return undefined;
+}
+
 export async function cleanupSuccessfulQualityArtifacts(
   runDir: string,
   result: QualityGateResult
@@ -257,13 +278,13 @@ export async function prepareDevelopStopHook(
       BLAST_FURNACE_QUALITY_GATE_TIMEOUT_MS: String(options.qualityGateTimeoutMs),
       CODEX_STOP_HOOK_COMMAND: hookCommand,
     },
-    readFinalQualityResult: async () => (await readDevelopStopHookState(statePath)).lastQualityResult,
+    readFinalQualityResult: async () => finalQualityResultFromState(await readDevelopStopHookState(statePath)),
   };
 }
 
 export async function handleDevelopStopHook(input: DevelopStopHookInput): Promise<StopHookDecision> {
   let state = await readDevelopStopHookState(input.statePath);
-  if (input.hookInput?.stop_hook_active || state.active) {
+  if (state.active) {
     return { decision: 'allow' };
   }
 

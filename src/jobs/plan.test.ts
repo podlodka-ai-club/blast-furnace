@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -127,14 +127,98 @@ describe('plan job', () => {
     } as unknown as Job<PlanJobData>;
   }
 
-  it('appends plan output and returns a transport-only develop payload', async () => {
+  async function writePlanAssets(root: string, checks = 'requiredTitles:\n  - Summary\n  - Implementation Plan\n  - Risks\n') {
+    const promptPath = join(root, 'plan.md');
+    const checksPath = join(root, 'plan-checks.yaml');
+    await writeFile(promptPath, [
+      'Issue {{issueNumber}}: {{issueTitle}}',
+      '',
+      '{{issueDescription}}',
+    ].join('\n'));
+    await writeFile(checksPath, checks);
+    return { promptPath, checksPath };
+  }
+
+  it('renders the Plan prompt with issue data and fallback body without assessment context', async () => {
+    const { renderPlanPrompt } = await import('./plan.js');
+    const root = await mkdtemp(join(tmpdir(), 'plan-prompt-'));
+    tempRoots.push(root);
+    const promptPath = join(root, 'plan.md');
+    await writeFile(promptPath, '{{issueNumber}} {{issueTitle}}\n{{issueDescription}}');
+
+    const prompt = await renderPlanPrompt(promptPath, {
+      issue: {
+        ...createIssue(),
+        body: null,
+      },
+    });
+
+    expect(prompt).toContain('42 Test issue');
+    expect(prompt).toContain('(No description provided)');
+    expect(prompt).not.toContain('Assessment');
+  });
+
+  it('loads YAML plan checks with strict required title validation', async () => {
+    const { loadPlanChecks } = await import('./plan.js');
+    const root = await mkdtemp(join(tmpdir(), 'plan-checks-'));
+    tempRoots.push(root);
+    const checksPath = join(root, 'plan-checks.yaml');
+    await writeFile(checksPath, 'requiredTitles:\n  - Summary\n  - Implementation Plan\n');
+
+    await expect(loadPlanChecks(checksPath)).resolves.toEqual({
+      requiredTitles: ['Summary', 'Implementation Plan'],
+    });
+
+    await writeFile(checksPath, 'requiredTitles:\n  - Summary\n  - 12\n');
+    await expect(loadPlanChecks(checksPath)).rejects.toThrow('requiredTitles must contain only non-empty strings');
+
+    await writeFile(checksPath, 'notRequiredTitles:\n  - Summary\n');
+    await expect(loadPlanChecks(checksPath)).rejects.toThrow('requiredTitles must be a non-empty array');
+
+    await writeFile(checksPath, 'requiredTitles: [Summary\n');
+    await expect(loadPlanChecks(checksPath)).rejects.toThrow('Failed to parse Plan checks YAML');
+  });
+
+  it('validates required response titles against Markdown headings', async () => {
+    const { validatePlanResponse } = await import('./plan.js');
+
+    expect(validatePlanResponse('## summary\ntext\n### Implementation Plan  \nsteps', {
+      requiredTitles: ['Summary', 'Implementation Plan'],
+    })).toEqual({
+      passed: true,
+      missingTitles: [],
+    });
+
+    expect(validatePlanResponse('## Summary\ntext', {
+      requiredTitles: ['Summary', 'Risks'],
+    })).toEqual({
+      passed: false,
+      missingTitles: ['Risks'],
+      failureReason: 'Missing required plan section titles: Risks',
+    });
+  });
+
+  it('appends accepted Plan output and returns a transport-only develop payload', async () => {
     const { runPlanWork } = await import('./plan.js');
     const job = await createJob();
+    const assets = await writePlanAssets(job.data.inputRecordRef.runDir);
+    const session = {
+      prompts: [] as string[],
+      send: vi.fn(async (prompt: string) => {
+        session.prompts.push(prompt);
+        return '## Summary\nReady.\n\n## Implementation Plan\nDo it.\n\n## Risks\nNone.';
+      }),
+      close: vi.fn(async () => undefined),
+    };
 
-    const result = await runPlanWork(job);
+    const result = await runPlanWork(job, {
+      promptTemplatePath: assets.promptPath,
+      checksPath: assets.checksPath,
+      createPlanningSession: async () => session,
+    });
     const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
 
-    expect(result).toMatchObject({
+    expect(result.developJobData).toMatchObject({
       type: 'develop',
       stage: 'develop',
       inputRecordRef: {
@@ -143,14 +227,111 @@ describe('plan job', () => {
         stage: 'plan',
       },
     });
-    expect(result).not.toHaveProperty('plan');
+    expect(result.developJobData).not.toHaveProperty('plan');
+    expect(session.prompts[0]).toContain('Issue 42: Test issue');
     expect(records[2]).toMatchObject({
       fromStage: 'plan',
       toStage: 'develop',
+      status: 'success',
+      output: {
+        status: 'success',
+        plan: {
+          status: 'success',
+          summary: 'Plan validated successfully.',
+          content: '## Summary\nReady.\n\n## Implementation Plan\nDo it.\n\n## Risks\nNone.',
+        },
+      },
+    });
+  });
+
+  it('records non-terminal failed attempts and retries in the same injected session', async () => {
+    const { PLAN_CONTINUATION_PROMPT, runPlanWork } = await import('./plan.js');
+    const job = await createJob();
+    const assets = await writePlanAssets(job.data.inputRecordRef.runDir);
+    const responses = [
+      '## Summary\nMissing required sections.',
+      '## Summary\nStill missing sections.',
+      '## Summary\nReady.\n\n## Implementation Plan\nDo it.\n\n## Risks\nNone.',
+    ];
+    const session = {
+      prompts: [] as string[],
+      send: vi.fn(async (prompt: string) => {
+        session.prompts.push(prompt);
+        return responses.shift() ?? '';
+      }),
+      close: vi.fn(async () => undefined),
+    };
+
+    const result = await runPlanWork(job, {
+      promptTemplatePath: assets.promptPath,
+      checksPath: assets.checksPath,
+      createPlanningSession: async () => session,
+    });
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
+
+    expect(result.developJobData?.inputRecordRef.recordId).toBe('000005_plan_to_develop');
+    expect(session.prompts).toHaveLength(3);
+    expect(session.prompts[1]).toBe(PLAN_CONTINUATION_PROMPT);
+    expect(session.prompts[2]).toBe(PLAN_CONTINUATION_PROMPT);
+    expect(records[2]).toMatchObject({
+      fromStage: 'plan',
+      toStage: 'plan',
+      status: 'rework-needed',
+      dependsOn: {
+        recordId: '000002_assess_to_plan',
+      },
       output: {
         plan: {
-          status: 'stubbed',
-          summary: 'Planning deferred for this iteration.',
+          status: 'validation-failed',
+          failureReason: 'Missing required plan section titles: Implementation Plan, Risks',
+        },
+      },
+    });
+    expect(records[3]).toMatchObject({
+      fromStage: 'plan',
+      toStage: 'plan',
+      status: 'rework-needed',
+      dependsOn: {
+        recordId: '000003_plan_to_plan',
+      },
+    });
+    expect(records[4]).toMatchObject({
+      fromStage: 'plan',
+      toStage: 'develop',
+      status: 'success',
+      dependsOn: {
+        recordId: '000004_plan_to_plan',
+      },
+    });
+  });
+
+  it('records terminal blocked Plan output after the third failed validation attempt', async () => {
+    const { runPlanWork } = await import('./plan.js');
+    const job = await createJob();
+    const assets = await writePlanAssets(job.data.inputRecordRef.runDir);
+    const session = {
+      send: vi.fn(async () => '## Summary\nMissing required sections.'),
+      close: vi.fn(async () => undefined),
+    };
+
+    const result = await runPlanWork(job, {
+      promptTemplatePath: assets.promptPath,
+      checksPath: assets.checksPath,
+      createPlanningSession: async () => session,
+    });
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
+
+    expect(result.developJobData).toBeUndefined();
+    expect(records[4]).toMatchObject({
+      fromStage: 'plan',
+      toStage: null,
+      status: 'blocked',
+      output: {
+        status: 'validation-failed',
+        plan: {
+          status: 'validation-failed',
+          content: '## Summary\nMissing required sections.',
+          failureReason: 'Missing required plan section titles: Implementation Plan, Risks',
         },
       },
     });
@@ -159,8 +340,16 @@ describe('plan job', () => {
   it('enqueues develop with only an input record reference', async () => {
     const { runPlanFlow } = await import('./plan.js');
     const job = await createJob();
+    const assets = await writePlanAssets(job.data.inputRecordRef.runDir);
 
-    await runPlanFlow(job);
+    await runPlanFlow(job, {
+      promptTemplatePath: assets.promptPath,
+      checksPath: assets.checksPath,
+      createPlanningSession: async () => ({
+        send: vi.fn(async () => '## Summary\nReady.\n\n## Implementation Plan\nDo it.\n\n## Risks\nNone.'),
+        close: vi.fn(async () => undefined),
+      }),
+    });
 
     expect(mockJobQueueAdd).toHaveBeenCalledWith('develop', expect.objectContaining({
       type: 'develop',
@@ -170,6 +359,23 @@ describe('plan job', () => {
       }),
     }));
     expect(mockJobQueueAdd.mock.calls[0][1]).not.toHaveProperty('issue');
+  });
+
+  it('does not enqueue develop when Plan validation is terminally blocked', async () => {
+    const { runPlanFlow } = await import('./plan.js');
+    const job = await createJob();
+    const assets = await writePlanAssets(job.data.inputRecordRef.runDir);
+
+    await runPlanFlow(job, {
+      promptTemplatePath: assets.promptPath,
+      checksPath: assets.checksPath,
+      createPlanningSession: async () => ({
+        send: vi.fn(async () => '## Summary\nMissing required sections.'),
+        close: vi.fn(async () => undefined),
+      }),
+    });
+
+    expect(mockJobQueueAdd).not.toHaveBeenCalled();
   });
 
   it('should export planHandler', async () => {
