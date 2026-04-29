@@ -147,17 +147,19 @@ describe('make-pr job', () => {
       owner: 'test-owner',
       repo: 'test-repo',
     },
-    reviewOutput: Record<string, unknown> = {
+    reviewOutput?: Record<string, unknown>,
+    stageAttempt = 1
+  ): Promise<Job<MakePrJobData>> {
+    const effectiveReviewOutput = reviewOutput ?? {
       status: 'success',
       runId: 'run-123',
-      stageAttempt: 1,
+      stageAttempt,
       reworkAttempt: 0,
       review: {
         status: 'passed',
         summary: 'Review Success',
       },
-    }
-  ): Promise<Job<MakePrJobData>> {
+    };
     const workspacePath = await mkdtemp(join(tmpdir(), 'make-pr-ledger-'));
     tempRoots.push(workspacePath);
     const orchestrationRoot = await mkdtemp(join(tmpdir(), 'make-pr-orchestration-'));
@@ -168,7 +170,7 @@ describe('make-pr job', () => {
       status: 'running',
       currentStage: 'review',
       runStartedAt: '2026-04-26T08:07:30.000Z',
-      stageAttempt: 1,
+      stageAttempt,
       reworkAttempt: 0,
       latestHandoffRecord: null,
       stableContext: {
@@ -183,13 +185,13 @@ describe('make-pr job', () => {
       runId: 'run-123',
       fromStage: 'plan',
       toStage: 'develop',
-      stageAttempt: 1,
+      stageAttempt,
       reworkAttempt: 0,
       status: 'success',
       output: {
         status: 'success',
         runId: 'run-123',
-        stageAttempt: 1,
+        stageAttempt,
         reworkAttempt: 0,
         plan: {
           status: 'success',
@@ -202,14 +204,14 @@ describe('make-pr job', () => {
       runId: 'run-123',
       fromStage: 'develop',
       toStage: 'review',
-      stageAttempt: 1,
+      stageAttempt,
       reworkAttempt: 0,
       dependsOn: [plan.inputRecordRef],
       status: 'success',
       output: {
         status: 'success',
         runId: 'run-123',
-        stageAttempt: 1,
+        stageAttempt,
         reworkAttempt: 0,
         development: {
           status: 'completed',
@@ -229,11 +231,11 @@ describe('make-pr job', () => {
       runId: 'run-123',
       fromStage: 'review',
       toStage: 'make-pr',
-      stageAttempt: 1,
+      stageAttempt,
       reworkAttempt: 0,
       dependsOn: [develop.inputRecordRef, plan.inputRecordRef],
       status: 'success',
-      output: reviewOutput,
+      output: effectiveReviewOutput,
     });
 
     return {
@@ -243,7 +245,7 @@ describe('make-pr job', () => {
         type: 'make-pr',
         runId: 'run-123',
         stage: 'make-pr',
-        stageAttempt: 1,
+        stageAttempt,
         reworkAttempt: 0,
         inputRecordRef,
       },
@@ -408,6 +410,32 @@ describe('make-pr job', () => {
     }));
     expect(mockJobQueueAdd.mock.calls[0][1]).not.toHaveProperty('pullRequest');
     expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
+  });
+
+  it('preserves the make-pr stage attempt when enqueueing sync-tracker-state after a retry', async () => {
+    const mockSpawn = vi.mocked(spawn);
+    mockSpawn.mockImplementation((cmd: string, args: readonly string[]) => {
+      if (cmd === 'git' && args[0] === 'status') {
+        return createGitMockProcess(0, 'M modified-file.txt');
+      }
+      return createGitMockProcess();
+    });
+    const job = await createJob(createIssue(), {
+      owner: 'test-owner',
+      repo: 'test-repo',
+    }, undefined, 2);
+
+    await runMakePrFlow(job);
+
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('sync-tracker-state', expect.objectContaining({
+      type: 'sync-tracker-state',
+      stage: 'sync-tracker-state',
+      stageAttempt: 2,
+      reworkAttempt: 0,
+      inputRecordRef: expect.objectContaining({
+        recordId: '000004_make-pr_to_sync-tracker-state',
+      }),
+    }));
   });
 
   it('treats target workspace orchestration and Codex hook files as non-committable state', async () => {

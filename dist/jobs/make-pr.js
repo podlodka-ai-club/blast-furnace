@@ -158,7 +158,7 @@ export async function runMakePrWork(job, logger = createJobLogger(job)) {
     return {
         status: 'pull-request-created',
         output,
-        syncTrackerStateJobData: createForwardStagePayload(job.data, 'sync-tracker-state', inputRecordRef),
+        syncTrackerStateJobData: createForwardStagePayload(job.data, 'sync-tracker-state', inputRecordRef, job.data.stageAttempt),
     };
 }
 export async function runMakePrFlow(job) {

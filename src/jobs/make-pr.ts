@@ -211,7 +211,8 @@ export async function runMakePrWork(
     syncTrackerStateJobData: createForwardStagePayload(
       job.data,
       'sync-tracker-state',
-      inputRecordRef
+      inputRecordRef,
+      job.data.stageAttempt
     ) as SyncTrackerStateJobData,
   };
 }
