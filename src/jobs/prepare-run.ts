@@ -269,6 +269,12 @@ export async function runPrepareRunWork(
     stageAttempt,
     reworkAttempt: job.data.reworkAttempt,
     latestHandoffRecord: null,
+    stableContext: {
+      issue,
+      repository,
+      branchName,
+      workspacePath,
+    },
     stages: {
       'prepare-run': {
         attempts: stageAttempt,
@@ -279,11 +285,7 @@ export async function runPrepareRunWork(
 
   const output = stageOutputSchemas['prepare-run'].parse({
     status: 'success',
-    branchName,
-    workspacePath,
     runId,
-    issue,
-    repository,
     stageAttempt,
     reworkAttempt: job.data.reworkAttempt,
   }) as PrepareRunOutput;
@@ -293,7 +295,7 @@ export async function runPrepareRunWork(
     toStage: 'assess',
     stageAttempt,
     reworkAttempt: job.data.reworkAttempt,
-    dependsOn: null,
+    dependsOn: [],
     status: 'success',
     output,
   });

@@ -70,13 +70,148 @@ describe('handoff runtime contracts', () => {
       toStage: 'assess',
       stageAttempt: 1,
       reworkAttempt: 0,
-      dependsOn: null,
+      dependsOn: [],
       status: 'success',
       output: { status: 'success' },
-      nextInput: null,
     })).toMatchObject({
       recordId: '000001_prepare-run_to_assess',
     });
+  });
+
+  it('rejects persisted nextInput and requires explicit dependency arrays', () => {
+    const baseRecord = {
+      recordId: '000002_assess_to_plan',
+      sequence: 2,
+      runId: 'run-123',
+      createdAt: '2026-04-26T08:07:30.000Z',
+      fromStage: 'assess',
+      toStage: 'plan',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      status: 'success',
+      output: {
+        status: 'success',
+        runId: 'run-123',
+        stageAttempt: 1,
+        reworkAttempt: 0,
+        assessment: {
+          status: 'stubbed',
+          summary: 'Assessment deferred for this iteration.',
+        },
+      },
+    };
+
+    expect(handoffRecordSchema.parse({
+      ...baseRecord,
+      dependsOn: [inputRecordRef.recordId],
+    })).toMatchObject({
+      dependsOn: [inputRecordRef.recordId],
+    });
+    expect(() => handoffRecordSchema.parse({
+      ...baseRecord,
+      dependsOn: [{
+        recordId: inputRecordRef.recordId,
+        sequence: inputRecordRef.sequence,
+        stage: inputRecordRef.stage,
+      }],
+    })).toThrow('dependsOn[0] must be a non-empty record id string');
+    expect(() => handoffRecordSchema.parse({
+      ...baseRecord,
+      dependsOn: null,
+    })).toThrow('dependsOn must be an array');
+    expect(() => handoffRecordSchema.parse({
+      ...baseRecord,
+      dependsOn: [],
+      nextInput: {
+        taskId: 'task-plan',
+        type: 'plan',
+        runId: 'run-123',
+        stage: 'plan',
+        stageAttempt: 1,
+        reworkAttempt: 0,
+        inputRecordRef,
+      },
+    })).toThrow('must not include nextInput');
+  });
+
+  it('rejects stage outputs that include stable run context or prior stage output fields', () => {
+    const assessment = {
+      status: 'stubbed',
+      summary: 'Assessment deferred for this iteration.',
+    } as const;
+    const plan = {
+      status: 'success',
+      summary: 'Plan validated successfully.',
+      content: '## Summary\nReady.',
+    } as const;
+    const development = {
+      status: 'completed',
+      summary: 'Codex completed successfully.',
+    } as const;
+    const quality = {
+      status: 'passed',
+      command: 'npm test',
+      exitCode: 0,
+      attempts: 1,
+      durationMs: 25,
+      summary: 'Quality Gate passed.',
+    } as const;
+    const review = {
+      status: 'stubbed',
+      summary: 'Review deferred for this iteration.',
+    } as const;
+    const pullRequest = {
+      number: 7,
+      htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+    };
+
+    expect(() => stageOutputSchemas.assess.parse({
+      status: 'success',
+      ...preparedFields,
+      assessment,
+    })).toThrow('assess output must not include issue');
+    expect(() => stageOutputSchemas.plan.parse({
+      status: 'success',
+      runId: 'run-123',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      assessment,
+      plan,
+    })).toThrow('plan output must not include assessment');
+    expect(() => stageOutputSchemas.develop.parse({
+      status: 'success',
+      runId: 'run-123',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      plan,
+      development,
+      quality,
+    })).toThrow('develop output must not include plan');
+    expect(() => stageOutputSchemas.review.parse({
+      status: 'success',
+      runId: 'run-123',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      development,
+      quality,
+      review,
+    })).toThrow('review output must not include development');
+    expect(() => stageOutputSchemas['make-pr'].parse({
+      status: 'pull-request-created',
+      runId: 'run-123',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      review,
+      pullRequest,
+    })).toThrow('make-pr output must not include review');
+    expect(() => stageOutputSchemas['sync-tracker-state'].parse({
+      status: 'tracker-synced',
+      runId: 'run-123',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      pullRequest,
+      trackerLabels: ['in review'],
+    })).toThrow('sync-tracker-state output must not include pullRequest');
   });
 
   it('parses all formal stage output objects', () => {
@@ -100,7 +235,6 @@ describe('handoff runtime contracts', () => {
       attempts: 1,
       durationMs: 25,
       summary: 'Quality Gate passed.',
-      outputPath: '/tmp/run/quality/attempt-1.log',
     } as const;
     const review = {
       status: 'stubbed',
@@ -113,23 +247,29 @@ describe('handoff runtime contracts', () => {
 
     expect(stageOutputSchemas['prepare-run'].parse({
       status: 'success',
-      ...preparedFields,
-    })).toMatchObject({ status: 'success', branchName: 'issue-42-test-issue' });
+      runId: 'run-123',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+    })).toMatchObject({ status: 'success' });
     expect(stageOutputSchemas.assess.parse({
       status: 'success',
-      ...preparedFields,
+      runId: 'run-123',
+      stageAttempt: 1,
+      reworkAttempt: 0,
       assessment,
     })).toMatchObject({ assessment });
     expect(stageOutputSchemas.plan.parse({
       status: 'success',
-      ...preparedFields,
-      assessment,
+      runId: 'run-123',
+      stageAttempt: 1,
+      reworkAttempt: 0,
       plan,
     })).toMatchObject({ plan });
     expect(stageOutputSchemas.plan.parse({
       status: 'validation-failed',
-      ...preparedFields,
-      assessment,
+      runId: 'run-123',
+      stageAttempt: 1,
+      reworkAttempt: 0,
       plan: {
         status: 'validation-failed',
         summary: 'Plan validation failed.',
@@ -144,48 +284,40 @@ describe('handoff runtime contracts', () => {
     });
     expect(stageOutputSchemas.develop.parse({
       status: 'success',
-      ...preparedFields,
-      assessment,
-      plan,
+      runId: 'run-123',
+      stageAttempt: 1,
+      reworkAttempt: 0,
       development,
       quality,
     })).toMatchObject({ development, quality });
     expect(stageOutputSchemas.review.parse({
       status: 'success',
-      ...preparedFields,
-      assessment,
-      plan,
-      development,
-      quality,
+      runId: 'run-123',
+      stageAttempt: 1,
+      reworkAttempt: 0,
       review,
     })).toMatchObject({ review });
     expect(stageOutputSchemas['make-pr'].parse({
       status: 'pull-request-created',
-      ...preparedFields,
-      development,
-      quality,
-      review,
+      runId: 'run-123',
+      stageAttempt: 1,
+      reworkAttempt: 0,
       pullRequest,
     })).toMatchObject({ pullRequest });
     expect(stageOutputSchemas['sync-tracker-state'].parse({
       status: 'tracker-synced',
-      ...preparedFields,
-      pullRequest,
+      runId: 'run-123',
+      stageAttempt: 1,
+      reworkAttempt: 0,
       trackerLabels: ['in review'],
     })).toMatchObject({ trackerLabels: ['in review'] });
   });
 
   it('validates expanded Develop quality output and terminal quality statuses', () => {
     const base = {
-      ...preparedFields,
-      assessment: {
-        status: 'stubbed',
-        summary: 'Assessment deferred for this iteration.',
-      },
-      plan: {
-        status: 'stubbed',
-        summary: 'Planning deferred for this iteration.',
-      },
+      runId: 'run-123',
+      stageAttempt: 1,
+      reworkAttempt: 0,
       development: {
         status: 'completed',
         summary: 'Codex completed successfully.',
@@ -231,6 +363,6 @@ describe('handoff runtime contracts', () => {
         status: 'stubbed',
         summary: 'Review deferred.',
       },
-    })).toThrow('review input quality.status must be passed');
+    })).toThrow('review output must not include development');
   });
 });

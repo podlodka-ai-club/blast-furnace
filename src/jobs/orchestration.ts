@@ -1,5 +1,6 @@
 import { appendFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { WORKFLOW_STAGES } from '../types/index.js';
 import type {
   ArtifactLocation,
   ArtifactMetadata,
@@ -12,9 +13,9 @@ import type {
   RunId,
   RunFileSet,
   RunSummaryData,
+  StableRunContext,
   StageHandoffJobPayload,
   StageAttemptLocation,
-  StageJobPayload,
   WorkflowStage,
 } from '../types/index.js';
 import { validateStageInputRecord } from './stage-payloads.js';
@@ -237,30 +238,16 @@ export async function initializeRunSummary(
   return written;
 }
 
-function isInputRecordRef(value: unknown): value is InputRecordRef {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'runDir' in value &&
-    typeof value.runDir === 'string' &&
-    'handoffPath' in value &&
-    typeof value.handoffPath === 'string' &&
-    'recordId' in value &&
-    typeof value.recordId === 'string' &&
-    'sequence' in value &&
-    typeof value.sequence === 'number' &&
-    'stage' in value &&
-    typeof value.stage === 'string'
-  );
+function isWorkflowStage(value: unknown): value is WorkflowStage {
+  return typeof value === 'string' && (WORKFLOW_STAGES as readonly string[]).includes(value);
 }
 
-function toDependency(dependsOn: InputRecordRef | HandoffRecordDependency | null | undefined): HandoffRecordDependency | null {
-  if (!dependsOn) return null;
-  return {
-    recordId: dependsOn.recordId,
-    sequence: dependsOn.sequence,
-    stage: dependsOn.stage,
-  };
+function toDependency(dependsOn: InputRecordRef | HandoffRecordDependency): HandoffRecordDependency {
+  return typeof dependsOn === 'string' ? dependsOn : dependsOn.recordId;
+}
+
+function toDependencies(dependsOn: Array<InputRecordRef | HandoffRecordDependency> | undefined): HandoffRecordDependency[] {
+  return (dependsOn ?? []).map(toDependency);
 }
 
 function toInputRecordRef(fileSet: RunFileSet, record: HandoffRecord): InputRecordRef {
@@ -283,7 +270,7 @@ export interface AppendHandoffRecordInput {
   toStage: WorkflowStage | null;
   stageAttempt: number;
   reworkAttempt: number;
-  dependsOn?: InputRecordRef | HandoffRecordDependency | null;
+  dependsOn?: Array<InputRecordRef | HandoffRecordDependency>;
   status: HandoffStatus;
   output: unknown;
   createdAt?: string;
@@ -338,23 +325,12 @@ export async function appendHandoffRecord(
     toStage: input.toStage,
     stageAttempt: input.stageAttempt,
     reworkAttempt: input.reworkAttempt,
-    dependsOn: toDependency(input.dependsOn),
+    dependsOn: toDependencies(input.dependsOn),
     status: input.status,
     output: input.output,
-    nextInput: null,
   };
 
   const inputRecordRef = toInputRecordRef(fileSet, record);
-  record.nextInput = input.toStage ? {
-    taskId: `${input.toStage}-${input.runId}-${sequence}`,
-    type: input.toStage,
-    runId: input.runId,
-    stage: input.toStage,
-    stageAttempt: input.stageAttempt,
-    reworkAttempt: input.reworkAttempt,
-    inputRecordRef,
-  } as StageJobPayload : null;
-
   validateHandoffRecord(record);
   await mkdir(dirname(fileSet.handoffLedgerPath), { recursive: true });
   await appendFile(fileSet.handoffLedgerPath, `${JSON.stringify(record)}\n`, { encoding: 'utf8' });
@@ -382,6 +358,39 @@ export async function appendHandoffRecordAndUpdateSummary(
   return result;
 }
 
+function validateDependencyReference(value: unknown, label = 'dependsOn entry'): asserts value is HandoffRecordDependency {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`${label} must be a non-empty record id string`);
+  }
+}
+
+const STABLE_CONTEXT_FIELDS = ['issue', 'repository', 'branchName', 'workspacePath'] as const;
+const PRIOR_OUTPUT_FIELDS_BY_STAGE: Partial<Record<WorkflowStage, readonly string[]>> = {
+  'prepare-run': ['assessment', 'plan', 'development', 'quality', 'review', 'pullRequest', 'trackerLabels'],
+  assess: ['plan', 'development', 'quality', 'review', 'pullRequest', 'trackerLabels'],
+  plan: ['assessment', 'development', 'quality', 'review', 'pullRequest', 'trackerLabels'],
+  develop: ['assessment', 'plan', 'review', 'pullRequest', 'trackerLabels'],
+  review: ['assessment', 'plan', 'development', 'quality', 'pullRequest', 'trackerLabels'],
+  'make-pr': ['assessment', 'plan', 'development', 'quality', 'review', 'trackerLabels'],
+  'sync-tracker-state': ['assessment', 'plan', 'development', 'quality', 'review', 'pullRequest'],
+};
+
+function validateStageLocalOutput(stage: WorkflowStage, output: unknown): void {
+  if (typeof output !== 'object' || output === null || Array.isArray(output)) {
+    throw new Error('Handoff record output must be an object');
+  }
+  const objectOutput = output as Record<string, unknown>;
+  const forbiddenFields = [
+    ...STABLE_CONTEXT_FIELDS,
+    ...(PRIOR_OUTPUT_FIELDS_BY_STAGE[stage] ?? []),
+  ];
+  for (const field of forbiddenFields) {
+    if (field in objectOutput) {
+      throw new Error(`${stage} output must not include ${field}`);
+    }
+  }
+}
+
 export function validateHandoffRecord(record: HandoffRecord): void {
   if (!record.recordId) throw new Error('Handoff record must include recordId');
   if (!Number.isInteger(record.sequence) || record.sequence < 1) {
@@ -391,13 +400,27 @@ export function validateHandoffRecord(record: HandoffRecord): void {
   if (!record.createdAt || Number.isNaN(new Date(record.createdAt).getTime())) {
     throw new Error('Handoff record must include valid createdAt');
   }
-  if (!record.fromStage) throw new Error('Handoff record must include fromStage');
+  if (!isWorkflowStage(record.fromStage)) throw new Error('Handoff record must include valid fromStage');
+  if (record.toStage !== null && !isWorkflowStage(record.toStage)) {
+    throw new Error('Handoff record must include valid toStage or null');
+  }
+  if (!Number.isInteger(record.stageAttempt) || record.stageAttempt < 1) {
+    throw new Error('Handoff record stageAttempt must be a positive integer');
+  }
+  if (!Number.isInteger(record.reworkAttempt) || record.reworkAttempt < 0) {
+    throw new Error('Handoff record reworkAttempt must be a non-negative integer');
+  }
+  if (!Array.isArray(record.dependsOn)) {
+    throw new Error('dependsOn must be an array');
+  }
+  record.dependsOn.forEach((dependency, index) => validateDependencyReference(dependency, `dependsOn[${index}]`));
   if (!['success', 'failure', 'blocked', 'clarify', 'rework-needed'].includes(record.status)) {
     throw new Error(`Invalid handoff record status: ${record.status}`);
   }
-  if (record.nextInput !== null && !isInputRecordRef((record.nextInput as { inputRecordRef?: unknown }).inputRecordRef)) {
-    throw new Error('Handoff record nextInput must include a valid inputRecordRef');
+  if ('nextInput' in (record as unknown as Record<string, unknown>)) {
+    throw new Error('Handoff record must not include nextInput');
   }
+  validateStageLocalOutput(record.fromStage, record.output);
 }
 
 export async function updateRunSummary(
@@ -444,6 +467,25 @@ export async function updateRunSummaryForHandoff(
       },
     },
   }));
+}
+
+export async function updateStableRunContext(
+  root: string,
+  runId: RunId,
+  stableContext: StableRunContext
+): Promise<RunSummaryData> {
+  return updateRunSummary(root, runId, (summary) => {
+    const existing = summary.stableContext;
+    return {
+      ...summary,
+      stableContext: {
+        issue: stableContext.issue,
+        repository: stableContext.repository,
+        branchName: existing?.branchName ?? stableContext.branchName,
+        workspacePath: existing?.workspacePath ?? stableContext.workspacePath,
+      },
+    };
+  });
 }
 
 export async function scheduleNextJob<TData extends JobPayload>(

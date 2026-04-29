@@ -159,10 +159,9 @@ describe('stage payload factories', () => {
       toStage: 'assess',
       stageAttempt: 1,
       reworkAttempt: 0,
-      dependsOn: null,
+      dependsOn: [],
       status: 'success',
       output: {},
-      nextInput: null,
     })).toThrow('toStage mismatch');
   });
 });

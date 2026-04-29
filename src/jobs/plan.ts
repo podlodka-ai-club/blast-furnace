@@ -2,14 +2,14 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import type { Job } from 'bullmq';
-import type { DevelopJobData, GitHubIssue, PlanJobData, PlanOutput } from '../types/index.js';
+import type { DevelopJobData, GitHubIssue, InputRecordRef, PlanJobData, PlanOutput } from '../types/index.js';
 import { runCodexSession } from './codex-session.js';
 import { stageOutputSchemas, stagePayloadSchemas } from './handoff-contracts.js';
+import { resolvePlanContext } from './context-resolvers.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
 import {
   appendHandoffRecordAndUpdateSummary,
-  readValidatedStageInputRecord,
   resolveOrchestrationStorageRoot,
   scheduleNextJob,
 } from './orchestration.js';
@@ -144,20 +144,19 @@ export function validatePlanResponse(content: string, checks: PlanChecks): PlanR
 
 export async function runPlanWork(job: Job<PlanJobData>, options: PlanRunOptions = {}): Promise<PlanWorkResult> {
   stagePayloadSchemas.plan.parse(job.data);
-  const inputRecord = await readValidatedStageInputRecord(job.data);
-  const assessed = stageOutputSchemas.assess.parse(inputRecord.output);
+  const context = await resolvePlanContext(job.data);
   const orchestrationRoot = resolveOrchestrationStorageRoot(job.data.inputRecordRef);
   const logger = createJobLogger(job);
   const checks = await loadPlanChecks(options.checksPath ?? PLAN_CHECKS_PATH);
   const initialPrompt = await renderPlanPrompt(options.promptTemplatePath ?? PLAN_PROMPT_TEMPLATE_PATH, {
-    issue: assessed.issue,
+    issue: context.runContext.issue,
   });
   const session = await (options.createPlanningSession ?? createDefaultPlanningSession)({
-    workspacePath: assessed.workspacePath,
+    workspacePath: context.runContext.workspacePath,
     logger,
   });
 
-  let dependsOn = job.data.inputRecordRef;
+  let dependencies: InputRecordRef[] = [job.data.inputRecordRef];
   let latestOutput: PlanOutput | undefined;
   try {
     for (let attempt = 1; attempt <= MAX_PLAN_ATTEMPTS; attempt += 1) {
@@ -166,7 +165,6 @@ export async function runPlanWork(job: Job<PlanJobData>, options: PlanRunOptions
       const validation = validatePlanResponse(content, checks);
       const isFinalAttempt = attempt === MAX_PLAN_ATTEMPTS;
       const output = stageOutputSchemas.plan.parse({
-        ...assessed,
         status: validation.passed ? 'success' : 'validation-failed',
         runId: job.data.runId,
         stageAttempt: job.data.stageAttempt,
@@ -193,7 +191,7 @@ export async function runPlanWork(job: Job<PlanJobData>, options: PlanRunOptions
           toStage: 'develop',
           stageAttempt: job.data.stageAttempt,
           reworkAttempt: job.data.reworkAttempt,
-          dependsOn,
+          dependsOn: dependencies,
           status: 'success',
           output,
         });
@@ -210,11 +208,11 @@ export async function runPlanWork(job: Job<PlanJobData>, options: PlanRunOptions
         toStage: isFinalAttempt ? null : 'plan',
         stageAttempt: job.data.stageAttempt,
         reworkAttempt: job.data.reworkAttempt,
-        dependsOn,
+        dependsOn: dependencies,
         status: isFinalAttempt ? 'blocked' : 'rework-needed',
         output,
       }, isFinalAttempt ? 'blocked' : undefined);
-      dependsOn = inputRecordRef;
+      dependencies = [inputRecordRef];
 
       if (isFinalAttempt) {
         return { output };
@@ -235,16 +233,13 @@ export async function runPlanFlow(job: Job<PlanJobData>, options: PlanRunOptions
 
   const result = await runPlanWork(job, options);
   if (!result.developJobData) {
-    logger.info(`Planning stopped after ${result.output.status} for branch: ${result.output.branchName}`);
+    logger.info(`Planning stopped after ${result.output.status} for run: ${job.data.runId}`);
     return;
   }
 
   const developJobData = result.developJobData;
-  const outputRecord = await readValidatedStageInputRecord(developJobData);
-  const output = stageOutputSchemas.plan.parse(outputRecord.output);
-  logger.info(`Planning issue #${output.issue.number} on branch ${output.branchName}`);
   await scheduleNextJob(jobQueue, 'develop', developJobData);
-  logger.info(`Develop job enqueued for branch: ${output.branchName}`);
+  logger.info(`Develop job enqueued for run: ${job.data.runId}`);
 }
 
 export const processPlan = runPlanFlow;

@@ -92,11 +92,7 @@ export interface InputRecordRef {
   stage: WorkflowStage;
 }
 
-export interface HandoffRecordDependency {
-  recordId: string;
-  sequence: number;
-  stage: WorkflowStage;
-}
+export type HandoffRecordDependency = string;
 
 export type HandoffStatus = 'success' | 'failure' | 'blocked' | 'clarify' | 'rework-needed';
 
@@ -109,10 +105,16 @@ export interface HandoffRecord<TOutput = unknown> {
   toStage: WorkflowStage | null;
   stageAttempt: number;
   reworkAttempt: number;
-  dependsOn: HandoffRecordDependency | null;
+  dependsOn: HandoffRecordDependency[];
   status: HandoffStatus;
   output: TOutput;
-  nextInput: StageJobPayload | null;
+}
+
+export interface StableRunContext {
+  issue: GitHubIssue;
+  repository: RepositoryIdentity;
+  branchName: string;
+  workspacePath: string;
 }
 
 export interface RunSummaryData {
@@ -127,6 +129,7 @@ export interface RunSummaryData {
   stageAttempt?: number;
   reworkAttempt?: number;
   latestHandoffRecord?: InputRecordRef | null;
+  stableContext?: StableRunContext;
   stages: Record<string, RunStageSummary>;
   createdAt?: string;
   updatedAt?: string;
@@ -280,14 +283,14 @@ export interface ReviewResult {
   summary: string;
 }
 
-export interface PrepareRunOutput extends PreparedRunFields {
+export interface PrepareRunOutput {
   status: 'success';
   runId: RunId;
   stageAttempt: number;
   reworkAttempt: number;
 }
 
-export interface AssessOutput extends PreparedRunFields {
+export interface AssessOutput {
   status: 'success';
   runId: RunId;
   stageAttempt: number;
@@ -295,67 +298,53 @@ export interface AssessOutput extends PreparedRunFields {
   assessment: AssessmentResult;
 }
 
-export interface PlanOutput extends PreparedRunFields {
+export interface PlanOutput {
   status: 'success' | 'validation-failed';
   runId: RunId;
   stageAttempt: number;
   reworkAttempt: number;
-  assessment: AssessmentResult;
   plan: PlanResult;
 }
 
-export interface DevelopOutput extends PreparedRunFields {
+export interface DevelopOutput {
   status: 'success' | 'quality-failed' | 'quality-timed-out' | 'quality-misconfigured';
   runId: RunId;
   stageAttempt: number;
   reworkAttempt: number;
-  assessment: AssessmentResult;
-  plan: PlanResult;
   development: DevelopmentResult;
   quality: QualityGateResult;
 }
 
-export interface ReviewOutput extends PreparedRunFields {
+export interface ReviewOutput {
   status: 'success';
   runId: RunId;
   stageAttempt: number;
   reworkAttempt: number;
-  assessment: AssessmentResult;
-  plan: PlanResult;
-  development: DevelopmentResult;
-  quality: QualityGateResult;
   review: ReviewResult;
 }
 
-export interface PullRequestOutput extends PreparedRunFields {
+export interface PullRequestOutput {
   status: 'pull-request-created';
   runId: RunId;
   stageAttempt: number;
   reworkAttempt: number;
-  development: DevelopmentResult;
-  quality: QualityGateResult;
-  review: ReviewResult;
   pullRequest: PullRequestResponse;
 }
 
-export interface NoChangeOutput extends PreparedRunFields {
+export interface NoChangeOutput {
   status: 'no-changes';
   runId: RunId;
   stageAttempt: number;
   reworkAttempt: number;
-  development: DevelopmentResult;
-  quality: QualityGateResult;
-  review: ReviewResult;
 }
 
 export type MakePrOutput = PullRequestOutput | NoChangeOutput;
 
-export interface SyncTrackerStateOutput extends PreparedRunFields {
+export interface SyncTrackerStateOutput {
   status: 'tracker-synced';
   runId: RunId;
   stageAttempt: number;
   reworkAttempt: number;
-  pullRequest: PullRequestResponse;
   trackerLabels: string[];
 }
 

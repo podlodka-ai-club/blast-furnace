@@ -3,6 +3,7 @@ import type { MakePrJobData, NoChangeOutput, PullRequestOutput, SyncTrackerState
 export type MakePrWorkResult = {
     status: 'no-changes';
     output: NoChangeOutput;
+    workspacePath: string;
 } | {
     status: 'pull-request-created';
     output: PullRequestOutput;

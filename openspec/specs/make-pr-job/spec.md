@@ -4,13 +4,15 @@
 TBD - created by archiving change add-pipeline-step-jobs. Update Purpose after archive.
 ## Requirements
 ### Requirement: Make PR Job Module
-The system SHALL provide a `make-pr` job handled by an isolated Make PR module that reads reviewed input from the JSONL ledger, owns deterministic configured-repository finalization, appends formal terminal or pull-request output, and hands post-PR tracker processing to Sync Tracker State only when a pull request exists.
+The system SHALL provide a `make-pr` job handled by an isolated Make PR module that reads stable run context from the run summary, reads reviewed input and required development context from explicit JSONL dependencies, owns deterministic configured-repository finalization, appends formal terminal or pull-request output, and hands post-PR tracker processing to Sync Tracker State only when a pull request exists.
 
 #### Scenario: Make PR job receives reviewed data
 - **WHEN** a `make-pr` job runs with a handoff record reference from `review`
 - **THEN** the payload SHALL include `runId`, `stage`, `stageAttempt`, `reworkAttempt`, and an input handoff record reference
-- **AND** the Make PR module SHALL read run, issue, configured repository identity, branch, workspace, development, quality, review, and attempt data from the referenced JSONL record chain
-- **AND** use the workspace path read from the ledger to finalize the issue branch
+- **AND** the Make PR module SHALL read issue data, configured repository identity, branch name, and workspace path from stable run context in the run summary
+- **AND** the Make PR module SHALL read review output from the referenced Review handoff record
+- **AND** the Make PR module SHALL read development and quality output from explicit dependency record ids required for finalization
+- **AND** use the workspace path read from stable run context to finalize the issue branch
 
 #### Scenario: Repository identity is mismatched
 - **WHEN** Make PR reads repository identity that does not match the configured repository
@@ -21,7 +23,8 @@ The system SHALL provide a `make-pr` job handled by an isolated Make PR module t
 - **THEN** it SHALL skip commit, push, pull request creation, and tracker synchronization
 - **AND** treat that no-change outcome as terminal within `make-pr`
 - **AND** append a terminal no-change output record to the JSONL ledger
-- **AND** attempt to clean up the workspace path read from the ledger
+- **AND** the output SHALL NOT include review, development, quality, plan, assessment, or stable run context data
+- **AND** attempt to clean up the workspace path read from stable run context
 - **AND** SHALL NOT enqueue `sync-tracker-state`
 
 #### Scenario: Changes are produced
@@ -45,6 +48,8 @@ The system SHALL provide a `make-pr` job handled by an isolated Make PR module t
 - **AND** use `main` as base
 - **AND** use body `Closes #{number}`
 - **AND** append a formal pull request output record to the JSONL ledger
+- **AND** the output SHALL include pull request result data only
+- **AND** the output SHALL NOT include review, development, quality, plan, assessment, or stable run context data
 - **AND** enqueue `sync-tracker-state` with `runId`, `stage`, `stageAttempt`, `reworkAttempt`, and an input handoff record reference
 
 #### Scenario: Tracker transition is deferred

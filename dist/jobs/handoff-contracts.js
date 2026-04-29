@@ -23,44 +23,58 @@ function requireNumber(value, field) {
 function requireObject(value, field) {
     assertObject(value[field], field);
 }
-function requirePreparedFields(value) {
+function requireStageMetadata(value) {
     requireString(value, 'runId');
-    requireString(value, 'branchName');
-    requireString(value, 'workspacePath');
     requireNumber(value, 'stageAttempt');
     requireNumber(value, 'reworkAttempt');
-    requireObject(value, 'issue');
-    requireObject(value, 'repository');
 }
 function requireStatus(value, expected) {
     if (value['status'] !== expected) {
         throw new Error(`status must be ${expected}`);
     }
 }
-function parsePreparedOutput(value, label, status = 'success') {
-    assertObject(value, label);
-    requireStatus(value, status);
-    requirePreparedFields(value);
-    return value;
-}
-function parsePreparedFields(value, label) {
-    assertObject(value, label);
-    requirePreparedFields(value);
-    return value;
+const STABLE_CONTEXT_FIELDS = ['issue', 'repository', 'branchName', 'workspacePath'];
+function rejectFields(value, label, fields) {
+    for (const field of fields) {
+        if (field in value) {
+            throw new Error(`${label} must not include ${field}`);
+        }
+    }
 }
 function parseAssessOutput(value) {
-    const parsed = parsePreparedOutput(value, 'assess output');
-    requireObject(parsed, 'assessment');
+    assertObject(value, 'assess output');
+    rejectFields(value, 'assess output', [
+        ...STABLE_CONTEXT_FIELDS,
+        'plan',
+        'development',
+        'quality',
+        'review',
+        'pullRequest',
+        'trackerLabels',
+    ]);
+    requireStatus(value, 'success');
+    requireStageMetadata(value);
+    requireObject(value, 'assessment');
+    const parsed = value;
     return parsed;
 }
 function parsePlanOutput(value) {
-    const parsed = parsePreparedFields(value, 'plan output');
-    if (!['success', 'validation-failed'].includes(String(parsed.status))) {
+    assertObject(value, 'plan output');
+    rejectFields(value, 'plan output', [
+        ...STABLE_CONTEXT_FIELDS,
+        'assessment',
+        'development',
+        'quality',
+        'review',
+        'pullRequest',
+        'trackerLabels',
+    ]);
+    requireStageMetadata(value);
+    if (!['success', 'validation-failed'].includes(String(value['status']))) {
         throw new Error('plan status must be success or validation-failed');
     }
-    requireObject(parsed, 'assessment');
-    const plan = parsed['plan'];
-    requireObject(parsed, 'plan');
+    const plan = value['plan'];
+    requireObject(value, 'plan');
     assertObject(plan, 'plan');
     if (!['success', 'validation-failed'].includes(String(plan['status']))) {
         throw new Error('plan.status must be success or validation-failed');
@@ -70,13 +84,13 @@ function parsePlanOutput(value) {
     if (plan['status'] === 'validation-failed') {
         requireString(plan, 'failureReason');
     }
-    return parsed;
-}
-function parsePlanFields(value) {
-    const parsed = parsePreparedFields(value, 'stage output');
-    requireObject(parsed, 'assessment');
-    requireObject(parsed, 'plan');
-    return parsed;
+    if (value['status'] === 'success' && plan['status'] !== 'success') {
+        throw new Error('successful plan output requires plan.status success');
+    }
+    if (value['status'] === 'validation-failed' && plan['status'] !== 'validation-failed') {
+        throw new Error('validation-failed plan output requires plan.status validation-failed');
+    }
+    return value;
 }
 function parseQualityGateResult(value) {
     assertObject(value, 'quality');
@@ -96,13 +110,23 @@ function parseQualityGateResult(value) {
     return value;
 }
 function parseDevelopOutput(value) {
-    const parsed = parsePlanFields(value);
-    if (!['success', 'quality-failed', 'quality-timed-out', 'quality-misconfigured'].includes(String(parsed.status))) {
+    assertObject(value, 'develop output');
+    rejectFields(value, 'develop output', [
+        ...STABLE_CONTEXT_FIELDS,
+        'assessment',
+        'plan',
+        'review',
+        'pullRequest',
+        'trackerLabels',
+    ]);
+    requireStageMetadata(value);
+    if (!['success', 'quality-failed', 'quality-timed-out', 'quality-misconfigured'].includes(String(value['status']))) {
         throw new Error('develop status must be success, quality-failed, quality-timed-out, or quality-misconfigured');
     }
-    requireObject(parsed, 'development');
-    requireObject(parsed, 'quality');
-    const quality = parseQualityGateResult(parsed['quality']);
+    requireObject(value, 'development');
+    requireObject(value, 'quality');
+    const quality = parseQualityGateResult(value['quality']);
+    const parsed = value;
     const expectedQualityStatusByDevelopStatus = {
         success: 'passed',
         'quality-failed': 'failed',
@@ -113,43 +137,68 @@ function parseDevelopOutput(value) {
     if (quality.status !== expectedQualityStatus) {
         throw new Error(`develop ${parsed.status} requires quality.status ${expectedQualityStatus}`);
     }
+    if (quality.status === 'passed' && quality.outputPath !== undefined) {
+        throw new Error('passed quality output must not include outputPath');
+    }
     return parsed;
 }
 function parseReviewOutput(value) {
-    const parsed = parseDevelopOutput(value);
-    if (parsed.quality.status !== 'passed') {
-        throw new Error('review input quality.status must be passed');
-    }
-    requireStatus(parsed, 'success');
-    requireObject(parsed, 'review');
-    return parsed;
+    assertObject(value, 'review output');
+    rejectFields(value, 'review output', [
+        ...STABLE_CONTEXT_FIELDS,
+        'assessment',
+        'plan',
+        'development',
+        'quality',
+        'pullRequest',
+        'trackerLabels',
+    ]);
+    requireStatus(value, 'success');
+    requireStageMetadata(value);
+    requireObject(value, 'review');
+    return value;
 }
 function parseMakePrOutput(value) {
     assertObject(value, 'make-pr output');
-    requirePreparedFields(value);
-    requireObject(value, 'development');
-    requireObject(value, 'quality');
-    const quality = parseQualityGateResult(value['quality']);
-    if (quality.status !== 'passed') {
-        throw new Error('make-pr input quality.status must be passed');
-    }
-    requireObject(value, 'review');
+    rejectFields(value, 'make-pr output', [
+        ...STABLE_CONTEXT_FIELDS,
+        'assessment',
+        'plan',
+        'development',
+        'quality',
+        'review',
+        'trackerLabels',
+    ]);
+    requireStageMetadata(value);
     if (value['status'] === 'pull-request-created') {
         requireObject(value, 'pullRequest');
         return value;
     }
     if (value['status'] === 'no-changes') {
+        if ('pullRequest' in value) {
+            throw new Error('no-changes make-pr output must not include pullRequest');
+        }
         return value;
     }
     throw new Error('make-pr status must be pull-request-created or no-changes');
 }
 function parseSyncTrackerStateOutput(value) {
-    const parsed = parsePreparedOutput(value, 'sync-tracker-state output', 'tracker-synced');
-    requireObject(parsed, 'pullRequest');
-    if (!Array.isArray(parsed['trackerLabels'])) {
+    assertObject(value, 'sync-tracker-state output');
+    rejectFields(value, 'sync-tracker-state output', [
+        ...STABLE_CONTEXT_FIELDS,
+        'assessment',
+        'plan',
+        'development',
+        'quality',
+        'review',
+        'pullRequest',
+    ]);
+    requireStatus(value, 'tracker-synced');
+    requireStageMetadata(value);
+    if (!Array.isArray(value['trackerLabels'])) {
         throw new Error('trackerLabels must be an array');
     }
-    return parsed;
+    return value;
 }
 export const inputRecordRefSchema = {
     parse(value) {
@@ -183,7 +232,22 @@ export const stagePayloadSchemas = {
 };
 export const stageOutputSchemas = {
     'prepare-run': {
-        parse: (value) => parsePreparedOutput(value, 'prepare-run output'),
+        parse: (value) => {
+            assertObject(value, 'prepare-run output');
+            rejectFields(value, 'prepare-run output', [
+                ...STABLE_CONTEXT_FIELDS,
+                'assessment',
+                'plan',
+                'development',
+                'quality',
+                'review',
+                'pullRequest',
+                'trackerLabels',
+            ]);
+            requireStatus(value, 'success');
+            requireStageMetadata(value);
+            return value;
+        },
     },
     assess: {
         parse: parseAssessOutput,

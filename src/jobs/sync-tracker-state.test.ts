@@ -10,6 +10,7 @@ import {
   initializeRunSummary,
   readHandoffRecords,
   readRunSummary,
+  resolveOrchestrationStorageRoot,
 } from './orchestration.js';
 
 const { mockCleanupWorkingDir } = vi.hoisted(() => ({
@@ -96,6 +97,12 @@ describe('sync-tracker-state job', () => {
       stageAttempt: 1,
       reworkAttempt: 0,
       latestHandoffRecord: null,
+      stableContext: {
+        issue: createIssue(),
+        repository,
+        branchName: 'issue-42-test-issue',
+        workspacePath,
+      },
       stages: {},
     });
     const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(workspacePath, {
@@ -108,28 +115,8 @@ describe('sync-tracker-state job', () => {
       output: {
         status: 'pull-request-created',
         runId: 'run-123',
-        issue: createIssue(),
-        repository,
-        branchName: 'issue-42-test-issue',
-        workspacePath,
         stageAttempt: 1,
         reworkAttempt: 0,
-        development: {
-          status: 'completed',
-          summary: 'Codex completed successfully.',
-        },
-        quality: {
-          status: 'passed',
-          command: 'npm test',
-          exitCode: 0,
-          attempts: 1,
-          durationMs: 25,
-          summary: 'Quality gate passed.',
-        },
-        review: {
-          status: 'stubbed',
-          summary: 'Review deferred for this iteration.',
-        },
         pullRequest: {
           number: 7,
           htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
@@ -157,7 +144,7 @@ describe('sync-tracker-state job', () => {
 
     const result = await runSyncTrackerStateWork(job);
     const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
-    const summary = await readRunSummary(records[0].output.workspacePath as string, 'run-123');
+    const summary = await readRunSummary(resolveOrchestrationStorageRoot(job.data.inputRecordRef), 'run-123');
 
     expect(mockMoveIssueToInReview).toHaveBeenCalledWith(42);
     expect(result).toEqual({
@@ -167,6 +154,7 @@ describe('sync-tracker-state job', () => {
     expect(records[1]).toMatchObject({
       fromStage: 'sync-tracker-state',
       toStage: null,
+      dependsOn: ['000001_make-pr_to_sync-tracker-state'],
       output: {
         status: 'tracker-synced',
         trackerLabels: ['in review'],

@@ -10,6 +10,7 @@ import {
   initializeRunSummary,
   readHandoffRecords,
   readRunSummary,
+  resolveOrchestrationStorageRoot,
 } from './orchestration.js';
 
 const { mockJobQueueAdd, mockCreateJobLogger } = vi.hoisted(() => ({
@@ -73,6 +74,15 @@ describe('assess job', () => {
       stageAttempt: 1,
       reworkAttempt: 0,
       latestHandoffRecord: null,
+      stableContext: {
+        issue,
+        repository: {
+          owner: 'test-owner',
+          repo: 'test-repo',
+        },
+        branchName: 'issue-42-test-issue',
+        workspacePath,
+      },
       stages: {},
     });
     const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(workspacePath, {
@@ -85,13 +95,6 @@ describe('assess job', () => {
       output: {
         status: 'success',
         runId: 'run-123',
-        issue,
-        repository: {
-          owner: 'test-owner',
-          repo: 'test-repo',
-        },
-        branchName: 'issue-42-test-issue',
-        workspacePath,
         stageAttempt: 1,
         reworkAttempt: 0,
       },
@@ -117,7 +120,7 @@ describe('assess job', () => {
 
     const result = await runAssessWork(job);
     const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
-    const summary = await readRunSummary(records[0].output.workspacePath as string, 'run-123');
+    const summary = await readRunSummary(resolveOrchestrationStorageRoot(job.data.inputRecordRef), 'run-123');
 
     expect(result).toMatchObject({
       taskId: 'task-assess',
@@ -136,11 +139,7 @@ describe('assess job', () => {
     expect(records[1]).toMatchObject({
       fromStage: 'assess',
       toStage: 'plan',
-      dependsOn: {
-        recordId: '000001_prepare-run_to_assess',
-        sequence: 1,
-        stage: 'prepare-run',
-      },
+      dependsOn: ['000001_prepare-run_to_assess'],
       output: {
         assessment: {
           status: 'stubbed',
@@ -148,6 +147,7 @@ describe('assess job', () => {
         },
       },
     });
+    expect(records[1]).not.toHaveProperty('nextInput');
     expect(summary).toMatchObject({
       currentStage: 'plan',
       latestHandoffRecord: {
@@ -169,6 +169,15 @@ describe('assess job', () => {
         recordId: '000002_assess_to_plan',
       }),
     }));
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
+    expect(mockJobQueueAdd.mock.calls[0][1].inputRecordRef).toEqual({
+      runDir: job.data.inputRecordRef.runDir,
+      handoffPath: job.data.inputRecordRef.handoffPath,
+      recordId: records[1].recordId,
+      sequence: records[1].sequence,
+      stage: records[1].fromStage,
+    });
+    expect(records[1]).not.toHaveProperty('nextInput');
     expect(mockJobQueueAdd.mock.calls[0][1]).not.toHaveProperty('issue');
   });
 

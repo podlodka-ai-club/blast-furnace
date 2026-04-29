@@ -11,11 +11,11 @@ import { createPullRequest } from '../github/pullRequests.js';
 import { assertConfiguredRepository } from '../github/repository.js';
 import { cleanupWorkingDir, createGitCommandEnv, getRepoRemoteUrl } from '../utils/working-dir.js';
 import { stageOutputSchemas, stagePayloadSchemas } from './handoff-contracts.js';
+import { resolveMakePrContext } from './context-resolvers.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
 import {
   appendHandoffRecordAndUpdateSummary,
-  readValidatedStageInputRecord,
   resolveOrchestrationStorageRoot,
   scheduleNextJob,
 } from './orchestration.js';
@@ -76,7 +76,7 @@ async function pushWithRetry(
 }
 
 export type MakePrWorkResult =
-  | { status: 'no-changes'; output: NoChangeOutput }
+  | { status: 'no-changes'; output: NoChangeOutput; workspacePath: string }
   | {
     status: 'pull-request-created';
     output: PullRequestOutput;
@@ -113,9 +113,8 @@ export async function runMakePrWork(
   logger = createJobLogger(job)
 ): Promise<MakePrWorkResult> {
   stagePayloadSchemas['make-pr'].parse(job.data);
-  const inputRecord = await readValidatedStageInputRecord(job.data);
-  const reviewed = stageOutputSchemas.review.parse(inputRecord.output);
-  const { issue, repository, branchName, workspacePath } = reviewed;
+  const context = await resolveMakePrContext(job.data);
+  const { issue, repository, branchName, workspacePath } = context.runContext;
   assertConfiguredRepository(repository);
 
   logger.info(`Finalizing issue #${issue.number} on branch ${branchName}`);
@@ -129,7 +128,6 @@ export async function runMakePrWork(
   if (!status) {
     logger.info('No changes detected, skipping commit, push, pull request, and tracker synchronization');
     const output = stageOutputSchemas['make-pr'].parse({
-      ...reviewed,
       status: 'no-changes',
       runId: job.data.runId,
       stageAttempt: job.data.stageAttempt,
@@ -144,11 +142,15 @@ export async function runMakePrWork(
       toStage: null,
       stageAttempt: job.data.stageAttempt,
       reworkAttempt: job.data.reworkAttempt,
-      dependsOn: job.data.inputRecordRef,
+      dependsOn: [
+        job.data.inputRecordRef,
+        context.developRecord.recordId,
+        context.planRecord.recordId,
+      ],
       status: 'success',
       output,
     }, 'completed');
-    return { status: 'no-changes', output };
+    return { status: 'no-changes', output, workspacePath };
   }
 
   logger.info('Changes detected, committing...');
@@ -179,7 +181,6 @@ export async function runMakePrWork(
   logger.info(`Pull request created: ${prResult.htmlUrl}`);
 
   const output = stageOutputSchemas['make-pr'].parse({
-    ...reviewed,
     status: 'pull-request-created',
     pullRequest: prResult,
     runId: job.data.runId,
@@ -195,7 +196,11 @@ export async function runMakePrWork(
     toStage: 'sync-tracker-state',
     stageAttempt: job.data.stageAttempt,
     reworkAttempt: job.data.reworkAttempt,
-    dependsOn: job.data.inputRecordRef,
+    dependsOn: [
+      job.data.inputRecordRef,
+      context.developRecord.recordId,
+      context.planRecord.recordId,
+    ],
     status: 'success',
     output,
   });
@@ -218,8 +223,8 @@ export async function runMakePrFlow(job: Job<MakePrJobData>): Promise<void> {
     const result = await runMakePrWork(job, logger);
 
     if (result.status === 'no-changes') {
-      logger.info(`Cleaning up temp working directory: ${result.output.workspacePath}`);
-      await cleanupWorkingDir(result.output.workspacePath);
+      logger.info(`Cleaning up temp working directory: ${result.workspacePath}`);
+      await cleanupWorkingDir(result.workspacePath);
       return;
     }
 

@@ -18,6 +18,7 @@ import {
   readRunSummary,
   writeRunSummary,
   updateRunSummary,
+  updateStableRunContext,
   scheduleNextJob,
 } from './orchestration.js';
 
@@ -219,7 +220,7 @@ describe('job orchestration infrastructure', () => {
       toStage: 'plan',
       stageAttempt: 1,
       reworkAttempt: 0,
-      dependsOn: first.inputRecordRef,
+      dependsOn: [first.inputRecordRef],
       status: 'success',
       output: { status: 'success', assessed: true },
     });
@@ -231,17 +232,103 @@ describe('job orchestration infrastructure', () => {
     expect(first.record).toMatchObject({
       recordId: '000001_prepare-run_to_assess',
       sequence: 1,
-      dependsOn: null,
+      dependsOn: [],
     });
     expect(second.record).toMatchObject({
       recordId: '000002_assess_to_plan',
       sequence: 2,
-      dependsOn: {
-        recordId: first.record.recordId,
-        sequence: first.record.sequence,
-        stage: 'prepare-run',
+      dependsOn: [first.record.recordId],
+    });
+    expect(first.record).not.toHaveProperty('nextInput');
+    expect(second.record).not.toHaveProperty('nextInput');
+    expect(second.inputRecordRef).toEqual({
+      runDir: fileSet.runDirectory,
+      handoffPath: fileSet.handoffLedgerPath,
+      recordId: second.record.recordId,
+      sequence: second.record.sequence,
+      stage: 'assess',
+    });
+  });
+
+  it('stores stable run context in run summary without copying stage output data', async () => {
+    const root = await createTempRoot();
+    const fileSet = createRunFileSet(root, 'run-123', new Date('2026-04-26T08:07:30.000Z'));
+    const issue = {
+      id: 1,
+      number: 42,
+      title: 'Issue',
+      body: null,
+      state: 'open' as const,
+      labels: ['ready'],
+      assignee: null,
+      createdAt: '2026-04-22T00:00:00Z',
+      updatedAt: '2026-04-22T00:00:00Z',
+    };
+    const repository = {
+      owner: 'test-owner',
+      repo: 'test-repo',
+    };
+
+    await writeRunSummary(root, {
+      runId: 'run-123',
+      status: 'running',
+      currentStage: 'prepare-run',
+      runStartedAt: '2026-04-26T08:07:30.000Z',
+      timestampPrefix: fileSet.timestampPrefix,
+      runDirectory: fileSet.runDirectory,
+      runSummaryPath: fileSet.runSummaryPath,
+      handoffLedgerPath: fileSet.handoffLedgerPath,
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      latestHandoffRecord: null,
+      stableContext: {
+        issue,
+        repository,
+        branchName: 'issue-42-issue',
+        workspacePath: '/tmp/prepare-run-abc123',
+      },
+      stages: {},
+    });
+    await appendHandoffRecord(root, {
+      runId: 'run-123',
+      fromStage: 'assess',
+      toStage: 'plan',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      dependsOn: [],
+      status: 'success',
+      output: {
+        status: 'success',
+        runId: 'run-123',
+        stageAttempt: 1,
+        reworkAttempt: 0,
+        assessment: {
+          status: 'stubbed',
+          summary: 'Assessment deferred for this iteration.',
+        },
       },
     });
+
+    await updateStableRunContext(root, 'run-123', {
+      issue,
+      repository,
+      branchName: 'should-not-replace',
+      workspacePath: '/tmp/should-not-replace',
+    });
+
+    await expect(readRunSummary(root, 'run-123')).resolves.toMatchObject({
+      stableContext: {
+        issue,
+        repository,
+        branchName: 'issue-42-issue',
+        workspacePath: '/tmp/prepare-run-abc123',
+      },
+    });
+    const summary = await readRunSummary(root, 'run-123');
+    expect(summary).not.toHaveProperty('assessment');
+    expect(summary).not.toHaveProperty('plan');
+    expect(summary).not.toHaveProperty('development');
+    expect(summary).not.toHaveProperty('quality');
   });
 
   it('schedules the next BullMQ job with the current job name and payload unchanged', async () => {
@@ -255,26 +342,12 @@ describe('job orchestration infrastructure', () => {
       stage: 'plan',
       stageAttempt: 1,
       reworkAttempt: 0,
-      issue: {
-        id: 1,
-        number: 42,
-        title: 'Issue',
-        body: null,
-        state: 'open',
-        labels: [],
-        assignee: null,
-        createdAt: '2026-04-22T00:00:00Z',
-        updatedAt: '2026-04-22T00:00:00Z',
-      },
-      repository: {
-        owner: 'test-owner',
-        repo: 'test-repo',
-      },
-      branchName: 'issue-42-issue',
-      workspacePath: '/tmp/prepare-run-abc123',
-      assessment: {
-        status: 'stubbed',
-        summary: 'Assessment deferred for this iteration.',
+      inputRecordRef: {
+        runDir: '/tmp/blast/.orchestrator/runs/2026-04-26_08.07_run-123',
+        handoffPath: '/tmp/blast/.orchestrator/runs/2026-04-26_08.07_run-123/2026-04-26_08.07_run-123_handoff.jsonl',
+        recordId: '000002_assess_to_plan',
+        sequence: 2,
+        stage: 'assess',
       },
     };
 

@@ -1,4 +1,4 @@
-import type { ArtifactLocation, ArtifactMetadata, EventMetadata, HandoffRecord, HandoffRecordDependency, HandoffStatus, InputRecordRef, JobPayload, RunId, RunFileSet, RunSummaryData, StageHandoffJobPayload, StageAttemptLocation, WorkflowStage } from '../types/index.js';
+import type { ArtifactLocation, ArtifactMetadata, EventMetadata, HandoffRecord, HandoffRecordDependency, HandoffStatus, InputRecordRef, JobPayload, RunId, RunFileSet, RunSummaryData, StableRunContext, StageHandoffJobPayload, StageAttemptLocation, WorkflowStage } from '../types/index.js';
 export interface QueueLike {
     add(name: string, data: JobPayload): Promise<unknown>;
 }
@@ -23,7 +23,7 @@ export interface AppendHandoffRecordInput {
     toStage: WorkflowStage | null;
     stageAttempt: number;
     reworkAttempt: number;
-    dependsOn?: InputRecordRef | HandoffRecordDependency | null;
+    dependsOn?: Array<InputRecordRef | HandoffRecordDependency>;
     status: HandoffStatus;
     output: unknown;
     createdAt?: string;
@@ -41,5 +41,6 @@ export declare function appendHandoffRecordAndUpdateSummary(root: string, input:
 export declare function validateHandoffRecord(record: HandoffRecord): void;
 export declare function updateRunSummary(root: string, runId: RunId, update: (summary: RunSummaryData) => RunSummaryData): Promise<RunSummaryData>;
 export declare function updateRunSummaryForHandoff(root: string, record: HandoffRecord, ref: InputRecordRef, status?: string): Promise<RunSummaryData>;
+export declare function updateStableRunContext(root: string, runId: RunId, stableContext: StableRunContext): Promise<RunSummaryData>;
 export declare function scheduleNextJob<TData extends JobPayload>(queue: QueueLike, jobName: TData['type'], data: TData): Promise<unknown>;
 export {};
