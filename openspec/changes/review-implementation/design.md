@@ -8,7 +8,7 @@ This change turns Review into an active Codex stage and adds a Review-to-Develop
 
 **Goals:**
 
-- Run Codex review in read-only mode in the same workspace left by Develop.
+- Run Codex review against uncommitted changes in the same workspace left by Develop.
 - Render Review prompts from repository-owned prompt files.
 - Classify Review Codex responses into success, review failure, or malformed response.
 - Retry malformed responses once by sending the repair prompt to the same Review Codex session.
@@ -26,11 +26,11 @@ This change turns Review into an active Codex stage and adds a Review-to-Develop
 
 ## Decisions
 
-### Run Review Codex in read-only mode
+### Run Review as codex review on uncommitted changes
 
-Review will use the Codex session infrastructure with `workspacePath` from stable run context, hooks disabled, and `outputLastMessage: true` so validation uses Codex's final response instead of PTY noise when available. Unlike Develop, Review must run Codex in read-only mode: the Review command must not include `--dangerously-bypass-approvals-and-sandbox`, and when the configured command is Codex it must include `--sandbox read-only` unless an equivalent explicit read-only sandbox argument is already present.
+Review will use the Codex session infrastructure with `workspacePath` from stable run context and hooks disabled. The Review command is `codex review --uncommitted`, which makes Codex inspect staged, unstaged, and untracked changes in the prepared workspace rather than a new exec session. Review preserves the configured model and read-only behavior through Codex config overrides, specifically `-c model="..."` and `-c sandbox_mode="read-only"` when the configured command is Codex.
 
-This likely requires extending `buildCodexSessionArgs` / `runCodexSession` with options for sandbox mode and bypass behavior instead of hardcoding bypass for every stage. Develop can keep its current permissive behavior, while Review explicitly requests read-only execution.
+This requires a review-specific argument builder instead of reusing the Develop `exec`-style command path. Develop can keep its permissive executor settings, while Review explicitly uses the review subcommand and uncommitted-change review mode.
 
 Alternative considered: run Review with the same permissive executor settings as Develop. That would make an implementation-review stage able to mutate the workspace it is judging, which conflicts with Review's role.
 
@@ -41,7 +41,7 @@ Review response parsing will trim surrounding whitespace and accept exactly two 
 - `Review Success` as the only non-empty line.
 - A first line exactly equal to `Review failed` with additional non-empty review text after it.
 
-Any other response is malformed. Review sends `prompts/review-repair.md` as the second prompt in the same logical Review Codex session and validates that response with the same parser. The implementation can follow the existing Plan session pattern: first send starts a session, the second send resumes/continues that session rather than starting a fresh review. If the repaired response is still malformed, Review appends a terminal handoff containing the repaired Codex response and does not enqueue another job.
+Any other response is malformed. Review sends `prompts/review-repair.md` as the next review prompt and validates that response with the same parser. If the repaired response is still malformed, Review appends a terminal handoff containing the repaired Codex response and does not enqueue another job.
 
 Alternative considered: interpret partial matches such as lowercase success or prose containing the marker. Strict parsing is preferable because downstream control flow depends on deterministic stage outcomes.
 

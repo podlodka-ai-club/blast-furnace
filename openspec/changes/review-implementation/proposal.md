@@ -4,9 +4,9 @@ The Review stage is currently stubbed, so the pipeline can pass work to Make PR 
 
 ## What Changes
 
-- Implement the Review stage so it runs Codex in read-only mode in the working copy left by Develop using the `prompts/review.md` template without template substitutions.
+- Implement the Review stage so it runs `codex review --uncommitted` in the working copy left by Develop using the `prompts/review.md` template without template substitutions, while preserving the configured model and read-only behavior through Codex config overrides.
 - Validate Codex review output as either exactly `Review Success` on a single line or a response whose first line is `Review failed` followed by review text.
-- Retry one malformed review response by sending `prompts/review-repair.md` to the same Codex review session.
+- Retry one malformed review response by re-running Codex review with `prompts/review-repair.md`.
 - Permanently terminate the flow when the repaired response is still malformed, appending the last Codex response to handoff.
 - On `Review Success`, append successful review output and enqueue the normal next stage.
 - On `Review failed`, check the `stageAttempt` from the Review input; terminate permanently when it is greater than or equal to the configured review attempt limit.

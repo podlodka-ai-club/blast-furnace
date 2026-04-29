@@ -19,7 +19,7 @@ The system SHALL load `REVIEW_ATTEMPT_LIMIT` as a startup configuration value th
 ## MODIFIED Requirements
 
 ### Requirement: Review Job Module
-The system SHALL provide a `review` job handled by an isolated Review module in the target workflow that reads passed quality input from a Develop-produced JSONL handoff record, reads accepted plan output through explicit dependency record ids when needed, runs Codex review in read-only mode, validates Review output deterministically, appends formal review output, and either hands off to Make PR, routes Review failures back to Develop, or terminates the run.
+The system SHALL provide a `review` job handled by an isolated Review module in the target workflow that reads passed quality input from a Develop-produced JSONL handoff record, reads accepted plan output through explicit dependency record ids when needed, runs Codex review on uncommitted changes with read-only config overrides, validates Review output deterministically, appends formal review output, and either hands off to Make PR, routes Review failures back to Develop, or terminates the run.
 
 #### Scenario: Review job receives Develop quality data
 - **WHEN** a `review` job runs with a handoff record reference from `develop`
@@ -36,15 +36,14 @@ The system SHALL provide a `review` job handled by an isolated Review module in 
 - **AND** SHALL NOT enqueue `make-pr`
 - **AND** SHALL NOT enqueue `develop`
 
-#### Scenario: Review runs Codex in read-only mode
+#### Scenario: Review runs Codex on uncommitted changes
 - **WHEN** Review starts substantive review work
 - **THEN** the Review module SHALL load `prompts/review.md`
 - **AND** SHALL send the prompt without template substitutions
-- **AND** SHALL run Codex in the workspace path read from stable run context
-- **AND** SHALL configure Codex with read-only sandbox behavior
-- **AND** SHALL NOT include `--dangerously-bypass-approvals-and-sandbox`
+- **AND** SHALL run `codex review --uncommitted` in the workspace path read from stable run context when the configured command is Codex
+- **AND** SHALL preserve the configured model and read-only behavior through Codex config overrides
 - **AND** SHALL disable Codex hooks for Review
-- **AND** SHALL validate Codex's final response when a final message is available
+- **AND** SHALL validate Codex's review command output
 
 #### Scenario: Review accepts successful response
 - **WHEN** Codex Review returns exactly `Review Success` as the only non-empty line after surrounding whitespace is trimmed
@@ -83,7 +82,7 @@ The system SHALL provide a `review` job handled by an isolated Review module in 
 #### Scenario: Review repairs malformed response
 - **WHEN** Codex Review returns a response that is neither a valid success response nor a valid failed response
 - **THEN** the Review module SHALL load `prompts/review-repair.md`
-- **AND** SHALL send the repair prompt to the same Codex review session
+- **AND** SHALL re-run Codex review with the repair prompt
 - **AND** SHALL validate the repaired response with the same response parser
 - **AND** SHALL continue as success or failed review when the repaired response is valid
 

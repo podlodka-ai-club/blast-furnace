@@ -50,6 +50,7 @@ async function runReviewCodex(job, logger, workspacePath) {
         enableHooks: false,
         bypassSandbox: false,
         sandboxMode: 'read-only',
+        codexExecSubcommand: 'review',
         logPrefix: 'review-codex',
         timeoutLabel: 'review codex process',
     });

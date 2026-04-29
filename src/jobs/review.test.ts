@@ -28,7 +28,7 @@ vi.mock('./logger.js', () => ({
 }));
 
 vi.mock('./codex-session.js', () => ({
-  runCodexSession: mockRunCodexSession,
+  runCodexReviewSession: mockRunCodexSession,
 }));
 
 function createIssue(): GitHubIssue {
@@ -210,6 +210,9 @@ describe('review job', () => {
         },
       },
     });
+    expect(mockRunCodexSession).toHaveBeenCalledWith(expect.objectContaining({
+      sandboxMode: 'read-only',
+    }));
   });
 
   it('enqueues make-pr with only an input record reference', async () => {
@@ -306,7 +309,7 @@ describe('review job', () => {
     });
   });
 
-  it('repairs malformed review responses in the same logical session', async () => {
+  it('repairs malformed review responses by retrying the review command', async () => {
     const { runReviewWork } = await import('./review.js');
     const job = await createJob();
     mockRunCodexSession
@@ -317,9 +320,7 @@ describe('review job', () => {
 
     expect(result).toMatchObject({ status: 'success' });
     expect(mockRunCodexSession).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      resumeLastSession: true,
       sandboxMode: 'read-only',
-      bypassSandbox: false,
     }));
   });
 
