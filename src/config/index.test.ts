@@ -30,6 +30,7 @@ describe('config', () => {
     delete process.env['CODEX_TIMEOUT_MS'];
     delete process.env['QUALITY_GATE_TEST_COMMAND'];
     delete process.env['QUALITY_GATE_TEST_TIMEOUT_MS'];
+    delete process.env['REVIEW_ATTEMPT_LIMIT'];
 
     // Import fresh module
     vi.resetModules();
@@ -50,6 +51,7 @@ describe('config', () => {
     expect(config.codex.timeoutMs).toBe(300000);
     expect(config.qualityGate.testCommand).toBeUndefined();
     expect(config.qualityGate.testTimeoutMs).toBe(180000);
+    expect(config.review.attemptLimit).toBe(3);
   });
 
   it('should load config from environment variables', async () => {
@@ -68,6 +70,7 @@ describe('config', () => {
     process.env['CODEX_TIMEOUT_MS'] = '600000';
     process.env['QUALITY_GATE_TEST_COMMAND'] = 'npm test -- --runInBand';
     process.env['QUALITY_GATE_TEST_TIMEOUT_MS'] = '45000';
+    process.env['REVIEW_ATTEMPT_LIMIT'] = '7';
 
     // Import fresh module
     vi.resetModules();
@@ -88,6 +91,7 @@ describe('config', () => {
     expect(config.codex.timeoutMs).toBe(600000);
     expect(config.qualityGate.testCommand).toBe('npm test -- --runInBand');
     expect(config.qualityGate.testTimeoutMs).toBe(45000);
+    expect(config.review.attemptLimit).toBe(7);
   });
 
   it('should ignore legacy issue strategy and webhook secret environment variables', async () => {
@@ -146,5 +150,12 @@ describe('config', () => {
 
     expect(config.qualityGate.testCommand).toBeUndefined();
     expect(config.qualityGate.testTimeoutMs).toBe(180000);
+  });
+
+  it.each(['abc', '2.5', '0', '20'])('should reject invalid review attempt limit %s', async (value) => {
+    process.env['REVIEW_ATTEMPT_LIMIT'] = value;
+
+    vi.resetModules();
+    await expect(import('./index.js')).rejects.toThrow('REVIEW_ATTEMPT_LIMIT must be an integer from 1 through 19');
   });
 });

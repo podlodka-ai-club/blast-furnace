@@ -146,6 +146,16 @@ describe('make-pr job', () => {
     repository: RepositoryIdentity = {
       owner: 'test-owner',
       repo: 'test-repo',
+    },
+    reviewOutput: Record<string, unknown> = {
+      status: 'success',
+      runId: 'run-123',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      review: {
+        status: 'passed',
+        summary: 'Review Success',
+      },
     }
   ): Promise<Job<MakePrJobData>> {
     const workspacePath = await mkdtemp(join(tmpdir(), 'make-pr-ledger-'));
@@ -223,16 +233,7 @@ describe('make-pr job', () => {
       reworkAttempt: 0,
       dependsOn: [develop.inputRecordRef, plan.inputRecordRef],
       status: 'success',
-      output: {
-        status: 'success',
-        runId: 'run-123',
-        stageAttempt: 1,
-        reworkAttempt: 0,
-        review: {
-          status: 'stubbed',
-          summary: 'Review deferred for this iteration.',
-        },
-      },
+      output: reviewOutput,
     });
 
     return {
@@ -464,6 +465,27 @@ describe('make-pr job', () => {
     expect(mockCreatePullRequest).not.toHaveBeenCalled();
     expect(mockJobQueueAdd).not.toHaveBeenCalled();
     expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-passed Review records before repository finalization', async () => {
+    const { runMakePrWork } = await import('./make-pr.js');
+    const job = await createJob(createIssue(), {
+      owner: 'test-owner',
+      repo: 'test-repo',
+    }, {
+      status: 'review-failed',
+      runId: 'run-123',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      review: {
+        status: 'failed',
+        summary: 'Review failed.',
+        content: 'Fix the issue.',
+      },
+    });
+
+    await expect(runMakePrWork(job)).rejects.toThrow('Make PR requires a passed Review input record');
+    expect(spawn).not.toHaveBeenCalled();
   });
 
   it('fails without enqueueing sync-tracker-state when push fails', async () => {

@@ -6,11 +6,12 @@ import type {
   GitHubIssue,
   HandoffRecord,
   InputRecordRef,
+  DevelopJobData,
   ReviewJobData,
   RunFileSet,
 } from '../types/index.js';
 import { createRunFileSet, initializeRunSummary } from './orchestration.js';
-import { resolveReviewContext } from './context-resolvers.js';
+import { resolveDevelopContext, resolveReviewContext } from './context-resolvers.js';
 
 function createIssue(): GitHubIssue {
   return {
@@ -43,6 +44,18 @@ function createReviewPayload(inputRecordRef: InputRecordRef): ReviewJobData {
     runId: 'run-123',
     stage: 'review',
     stageAttempt: 1,
+    reworkAttempt: 0,
+    inputRecordRef,
+  };
+}
+
+function createDevelopPayload(inputRecordRef: InputRecordRef): DevelopJobData {
+  return {
+    taskId: 'task-develop',
+    type: 'develop',
+    runId: 'run-123',
+    stage: 'develop',
+    stageAttempt: 2,
     reworkAttempt: 0,
     inputRecordRef,
   };
@@ -140,7 +153,9 @@ describe('stage context resolvers', () => {
 
     return {
       payload: createReviewPayload(ref(fileSet, developRecord)),
+      fileSet,
       planRecord,
+      developRecord,
     };
   }
 
@@ -233,5 +248,49 @@ describe('stage context resolvers', () => {
     const { payload } = await writeReviewLedger({ dependencyRecord: invalidPlanRecord });
 
     await expect(resolveReviewContext(payload)).rejects.toThrow('plan must be an object');
+  });
+
+  it('resolves Develop rework context from a failed Review record and explicit Plan dependency', async () => {
+    const { fileSet, planRecord, developRecord } = await writeReviewLedger();
+    const reviewRecord: HandoffRecord = {
+      recordId: '000003_review_to_develop',
+      sequence: 3,
+      runId: 'run-123',
+      createdAt: '2026-04-26T08:09:30.000Z',
+      fromStage: 'review',
+      toStage: 'develop',
+      stageAttempt: 2,
+      reworkAttempt: 0,
+      dependsOn: [developRecord.recordId, planRecord.recordId],
+      status: 'rework-needed',
+      output: {
+        status: 'review-failed',
+        runId: 'run-123',
+        stageAttempt: 2,
+        reworkAttempt: 0,
+        review: {
+          status: 'failed',
+          summary: 'Review failed.',
+          content: 'Fix the regression.',
+        },
+      },
+    };
+    await writeFile(fileSet.handoffLedgerPath, [
+      JSON.stringify(planRecord),
+      JSON.stringify(developRecord),
+      JSON.stringify(reviewRecord),
+      '',
+    ].join('\n'));
+
+    await expect(resolveDevelopContext(createDevelopPayload(ref(fileSet, reviewRecord)))).resolves.toMatchObject({
+      inputKind: 'review-rework',
+      plan: {
+        content: '## Summary\nReady.',
+      },
+      reviewFailureContent: 'Fix the regression.',
+      planRecord: {
+        recordId: planRecord.recordId,
+      },
+    });
   });
 });

@@ -157,8 +157,8 @@ describe('handoff runtime contracts', () => {
       summary: 'Quality Gate passed.',
     } as const;
     const review = {
-      status: 'stubbed',
-      summary: 'Review deferred for this iteration.',
+      status: 'passed',
+      summary: 'Review Success',
     } as const;
     const pullRequest = {
       number: 7,
@@ -237,8 +237,8 @@ describe('handoff runtime contracts', () => {
       summary: 'Quality Gate passed.',
     } as const;
     const review = {
-      status: 'stubbed',
-      summary: 'Review deferred for this iteration.',
+      status: 'passed',
+      summary: 'Review Success',
     } as const;
     const pullRequest = {
       number: 7,
@@ -360,9 +360,68 @@ describe('handoff runtime contracts', () => {
         summary: 'Tests failed.',
       },
       review: {
-        status: 'stubbed',
-        summary: 'Review deferred.',
+        status: 'passed',
+        summary: 'Review Success',
       },
     })).toThrow('review output must not include development');
+  });
+
+  it('validates Review output statuses and rejects invalid Review-owned shapes', () => {
+    const base = {
+      runId: 'run-123',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+    } as const;
+
+    expect(stageOutputSchemas.review.parse({
+      ...base,
+      status: 'review-failed',
+      review: {
+        status: 'failed',
+        summary: 'Review failed.',
+        content: 'Fix the failing test.',
+      },
+    })).toMatchObject({ status: 'review-failed' });
+
+    expect(stageOutputSchemas.review.parse({
+      ...base,
+      status: 'review-malformed',
+      review: {
+        status: 'malformed',
+        summary: 'Review response was malformed after repair.',
+        rawResponse: 'unexpected prose',
+      },
+    })).toMatchObject({ status: 'review-malformed' });
+
+    expect(stageOutputSchemas.review.parse({
+      ...base,
+      status: 'review-exhausted',
+      review: {
+        status: 'exhausted',
+        summary: 'Review failed and rework attempt limit was reached.',
+        content: 'Still failing.',
+      },
+    })).toMatchObject({ status: 'review-exhausted' });
+
+    expect(() => stageOutputSchemas.review.parse({
+      ...base,
+      status: 'review-failed',
+      plan: { status: 'success' },
+      review: {
+        status: 'failed',
+        summary: 'Review failed.',
+        content: 'Fix the failing test.',
+      },
+    })).toThrow('review output must not include plan');
+
+    expect(() => stageOutputSchemas.review.parse({
+      ...base,
+      status: 'success',
+      review: {
+        status: 'failed',
+        summary: 'Review failed.',
+        content: 'Fix the failing test.',
+      },
+    })).toThrow('successful review output requires review.status passed');
   });
 });

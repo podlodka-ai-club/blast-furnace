@@ -153,9 +153,39 @@ function parseReviewOutput(value) {
         'pullRequest',
         'trackerLabels',
     ]);
-    requireStatus(value, 'success');
     requireStageMetadata(value);
+    if (!['success', 'review-failed', 'review-malformed', 'review-exhausted'].includes(String(value['status']))) {
+        throw new Error('review status must be success, review-failed, review-malformed, or review-exhausted');
+    }
     requireObject(value, 'review');
+    const review = value['review'];
+    assertObject(review, 'review');
+    const outputStatus = value['status'];
+    const reviewStatus = review['status'];
+    if (outputStatus === 'success') {
+        if (reviewStatus !== 'passed' || review['summary'] !== 'Review Success') {
+            throw new Error('successful review output requires review.status passed and summary Review Success');
+        }
+    }
+    else if (outputStatus === 'review-failed') {
+        if (reviewStatus !== 'failed') {
+            throw new Error('review-failed output requires review.status failed');
+        }
+        requireString(review, 'content');
+    }
+    else if (outputStatus === 'review-malformed') {
+        if (reviewStatus !== 'malformed') {
+            throw new Error('review-malformed output requires review.status malformed');
+        }
+        requireStringValue(review, 'rawResponse');
+    }
+    else if (outputStatus === 'review-exhausted') {
+        if (reviewStatus !== 'exhausted') {
+            throw new Error('review-exhausted output requires review.status exhausted');
+        }
+        requireString(review, 'content');
+    }
+    requireString(review, 'summary');
     return value;
 }
 function parseMakePrOutput(value) {

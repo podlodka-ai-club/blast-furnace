@@ -7,6 +7,8 @@ export interface CodexCliArgsOptions {
     resumeLastSession?: boolean;
     outputLastMessagePath?: string;
     enableHooks?: boolean;
+    bypassSandbox?: boolean;
+    sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access';
 }
 export interface RunCodexSessionOptions {
     prompt: string;
@@ -15,6 +17,8 @@ export interface RunCodexSessionOptions {
     resumeLastSession?: boolean;
     outputLastMessage?: boolean;
     enableHooks?: boolean;
+    bypassSandbox?: boolean;
+    sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access';
     env?: NodeJS.ProcessEnv;
     logPrefix: string;
     timeoutLabel: string;
