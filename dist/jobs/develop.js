@@ -151,7 +151,7 @@ export async function runDevelopWork(job, logger = createJobLogger(job)) {
             ? 'Blast Furnace is ready for review'
             : 'Blast Furnace stopped during Quality Gate',
         focus: output.status === 'success'
-            ? `Current focus: ${attempt === 1 ? 'Review' : `Review attempt ${attempt}`}`
+            ? `Current focus: ${attempt === 1 ? 'Code Review' : `Code Review attempt ${attempt}`}`
             : `Final state: Quality Gate ${output.quality.status}`,
         items: output.status === 'success'
             ? [
@@ -163,7 +163,7 @@ export async function runDevelopWork(job, logger = createJobLogger(job)) {
                 developStatusItem(attempt, 'failed', 'Quality Gate failed'),
                 qualityStatusItem(attempt, 'failed', output.quality.status),
                 reviewStatusItem(attempt, 'skipped'),
-                statusItem('draft-pr-and-in-review', 1, 'skipped', 'Draft PR + move to `in review`'),
+                statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR'),
             ],
     }, logger);
     try {

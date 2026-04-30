@@ -66,7 +66,7 @@ export async function runSyncTrackerStateWork(
         'draft-pr-and-in-review',
         1,
         'completed',
-        'Draft PR + move to `in review`',
+        'Make PR',
         trackerWarning ? 'PR created, tracker warning' : 'PR created, issue moved to `in review`'
       ),
     ],

@@ -6,7 +6,7 @@ import { getConfiguredRepository } from '../github/repository.js';
 import { jobQueue } from './queue.js';
 import { createPrepareRunPayload } from './prepare-run.js';
 import { createJobLogger } from './logger.js';
-import { createRunFileSet, initializeRunSummary, readRunSummary, resolveOrchestrationStorageRoot, } from './orchestration.js';
+import { createRunFileSet, findActiveRunForIssue, initializeRunSummary, readRunSummary, resolveOrchestrationStorageRoot, } from './orchestration.js';
 import { statusItem, updateRunStatus } from './status.js';
 const LAST_POLL_KEY = 'github:intake:last-poll';
 const LEGACY_LAST_POLL_KEY = 'github:issue-watcher:last-poll';
@@ -75,6 +75,12 @@ export async function intakeHandler(job) {
     });
     let eligibleIssueCount = 0;
     for (const issue of issues) {
+        const orchestrationRoot = resolveOrchestrationStorageRoot();
+        const activeRun = await findActiveRunForIssue(orchestrationRoot, repository, issue.number);
+        if (activeRun) {
+            logger.info(`Skipping issue #${issue.number}; active run ${activeRun.runId} is already processing it`);
+            continue;
+        }
         const payload = createPrepareRunPayload({ issue, repository });
         const claim = await claimIssueForProcessing(repository, issue, payload.runId);
         if (!claim.claimed) {
@@ -82,7 +88,6 @@ export async function intakeHandler(job) {
         }
         eligibleIssueCount += 1;
         try {
-            const orchestrationRoot = resolveOrchestrationStorageRoot();
             const runStartedAt = new Date().toISOString();
             if (!await readRunSummary(orchestrationRoot, payload.runId)) {
                 const runFileSet = createRunFileSet(orchestrationRoot, payload.runId, new Date(runStartedAt));

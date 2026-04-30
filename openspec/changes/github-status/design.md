@@ -129,7 +129,7 @@ The rendered body should use this structure:
 
 - hidden marker as the first line.
 - one `#` heading with the current high-level outcome, for example `Blast Furnace is building a solution`, `Blast Furnace is applying review feedback`, `Blast Furnace stopped after review`, or `Blast Furnace created a pull request`.
-- a two-column metadata table with `Взято в работу` and `Последнее изменение` timestamps.
+- a two-column metadata table with `Picked up` and `Last update` timestamps.
 - a short blockquote with the current focus, final state, or result.
 - a `## Progress` table with status icon, stage label, and short status detail.
 - when rework exists, a separate `### Review feedback loop` table instead of inserting every retry as peer rows in the main progress table.
@@ -155,19 +155,19 @@ The main flow remains visually stable:
 | ✅ | Plan solution | |
 | 🔵 | Develop changes | In progress |
 | ⚪ | Quality Gate | |
-| ⚪ | Review | |
-| ⚪ | Draft PR + move to `in review` | |
+| ⚪ | Code Review | |
+| ⚪ | Make PR | |
 
-When Review requests rework, the main `Review` row should show the aggregate Review state and the rework details should move into a separate loop table. The loop table must include visual status icons in the Review column as well as Develop and Quality Gate columns, so a failed or change-requested Review is visible at a glance:
+When Review requests rework, the main `Code Review` row should show the aggregate Review state and the rework details should move into a separate loop table. The loop table must include visual status icons in the Code Review column as well as Develop and Quality Gate columns, so a failed or change-requested Review is visible at a glance:
 
-| Attempt | Develop | Quality Gate | Review |
+| Attempt | Develop | Quality Gate | Code Review |
 |---|---|---|---|
 | 1 | ✅ | ✅ | 🟡 Changes requested |
 | 2 | 🔵 In progress | ⚪ | ⚪ |
 
 For terminal review exhaustion:
 
-| Attempt | Develop | Quality Gate | Review |
+| Attempt | Develop | Quality Gate | Code Review |
 |---|---|---|---|
 | 1 | ✅ | ✅ | 🟡 Changes requested |
 | 2 | ✅ | ✅ | 🟡 Changes requested |

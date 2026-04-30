@@ -10,6 +10,7 @@ import { createPrepareRunPayload } from './prepare-run.js';
 import { createJobLogger } from './logger.js';
 import {
   createRunFileSet,
+  findActiveRunForIssue,
   initializeRunSummary,
   readRunSummary,
   resolveOrchestrationStorageRoot,
@@ -102,6 +103,13 @@ export async function intakeHandler(job: Job<IntakeJobData>): Promise<void> {
 
   let eligibleIssueCount = 0;
   for (const issue of issues) {
+    const orchestrationRoot = resolveOrchestrationStorageRoot();
+    const activeRun = await findActiveRunForIssue(orchestrationRoot, repository, issue.number);
+    if (activeRun) {
+      logger.info(`Skipping issue #${issue.number}; active run ${activeRun.runId} is already processing it`);
+      continue;
+    }
+
     const payload = createPrepareRunPayload({ issue, repository });
     const claim = await claimIssueForProcessing(repository, issue, payload.runId);
     if (!claim.claimed) {
@@ -110,7 +118,6 @@ export async function intakeHandler(job: Job<IntakeJobData>): Promise<void> {
     eligibleIssueCount += 1;
 
     try {
-      const orchestrationRoot = resolveOrchestrationStorageRoot();
       const runStartedAt = new Date().toISOString();
       if (!await readRunSummary(orchestrationRoot, payload.runId)) {
         const runFileSet = createRunFileSet(orchestrationRoot, payload.runId, new Date(runStartedAt));

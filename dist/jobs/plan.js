@@ -170,8 +170,8 @@ export async function runPlanWork(job, options = {}) {
                         statusItem('plan', 1, 'blocked', 'Plan solution', 'Validation limit reached'),
                         statusItem('develop', 1, 'skipped', 'Develop changes'),
                         statusItem('quality-gate', 1, 'skipped', 'Quality Gate'),
-                        statusItem('review', 1, 'skipped', 'Review'),
-                        statusItem('draft-pr-and-in-review', 1, 'skipped', 'Draft PR + move to `in review`'),
+                        statusItem('review', 1, 'skipped', 'Code Review'),
+                        statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR'),
                     ]
                     : [statusItem('plan', 1, 'retrying', 'Plan solution', 'Validation retry')],
             }, logger);

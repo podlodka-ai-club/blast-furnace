@@ -143,6 +143,40 @@ export async function readRunSummary(root, runId) {
     }
     return null;
 }
+export async function findActiveRunForIssue(root, repository, issueNumber) {
+    const runsRoot = join(root, '.orchestrator', 'runs');
+    let entries;
+    try {
+        entries = await readdir(runsRoot);
+    }
+    catch (err) {
+        if (typeof err === 'object' && err !== null && 'code' in err && err.code === 'ENOENT') {
+            return null;
+        }
+        throw err;
+    }
+    for (const entry of entries.sort().reverse()) {
+        const summaryPath = join(runsRoot, entry, `${entry}_run.json`);
+        let summary;
+        try {
+            summary = JSON.parse(await readFile(summaryPath, 'utf8'));
+        }
+        catch (err) {
+            if (typeof err === 'object' && err !== null && 'code' in err && err.code === 'ENOENT') {
+                continue;
+            }
+            throw err;
+        }
+        const context = summary.stableContext ?? summary.initialContext;
+        if (summary.status === 'running' &&
+            context?.issue.number === issueNumber &&
+            context.repository.owner === repository.owner &&
+            context.repository.repo === repository.repo) {
+            return summary;
+        }
+    }
+    return null;
+}
 export async function writeRunSummary(root, summary) {
     const now = new Date().toISOString();
     await writeJson(await resolveWritableRunSummaryPath(root, summary), {

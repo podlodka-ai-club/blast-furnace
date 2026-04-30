@@ -5,8 +5,8 @@ const BASE_STAGES = [
     { stage: 'plan', label: 'Plan solution' },
     { stage: 'develop', label: 'Develop changes' },
     { stage: 'quality-gate', label: 'Quality Gate' },
-    { stage: 'review', label: 'Review' },
-    { stage: 'draft-pr-and-in-review', label: 'Draft PR + move to `in review`' },
+    { stage: 'review', label: 'Code Review' },
+    { stage: 'draft-pr-and-in-review', label: 'Make PR' },
 ];
 const STAGE_ORDER = new Map(BASE_STAGES.map((entry, index) => [entry.stage, index]));
 export function statusItemId(stage, attempt) {
@@ -37,10 +37,7 @@ function itemSortKey(item) {
 export function upsertStatusItems(checklist, updates) {
     const byId = new Map(checklist.map((item) => [item.id, item]));
     for (const update of updates) {
-        byId.set(update.id, {
-            ...byId.get(update.id),
-            ...update,
-        });
+        byId.set(update.id, update);
     }
     return [...byId.values()].sort((a, b) => itemSortKey(a).localeCompare(itemSortKey(b)));
 }

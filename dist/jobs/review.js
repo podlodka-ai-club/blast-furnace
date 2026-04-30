@@ -80,7 +80,7 @@ export async function runReviewWork(job, logger = createJobLogger(job)) {
     const orchestrationRoot = resolveOrchestrationStorageRoot(job.data.inputRecordRef);
     await updateRunStatus(orchestrationRoot, job.data.runId, {
         heading: 'Blast Furnace is reviewing the changes',
-        focus: `Current focus: ${job.data.stageAttempt === 1 ? 'Review' : `Review attempt ${job.data.stageAttempt}`}`,
+        focus: `Current focus: ${job.data.stageAttempt === 1 ? 'Code Review' : `Code Review attempt ${job.data.stageAttempt}`}`,
         items: [reviewStatusItem(job.data.stageAttempt, 'in-progress', 'In progress')],
     }, logger);
     const response = await runReviewCodex(job, logger, context.runContext.workspacePath);
@@ -112,10 +112,10 @@ export async function runReviewWork(job, logger = createJobLogger(job)) {
         });
         await updateRunStatus(orchestrationRoot, job.data.runId, {
             heading: 'Blast Furnace is creating a pull request',
-            focus: 'Current focus: Draft PR + move issue to `in review`',
+            focus: 'Current focus: Make PR',
             items: [
                 reviewStatusItem(job.data.stageAttempt, 'completed'),
-                statusItem('draft-pr-and-in-review', 1, 'pending', 'Draft PR + move to `in review`'),
+                statusItem('draft-pr-and-in-review', 1, 'pending', 'Make PR'),
             ],
         }, logger);
         return {
@@ -152,7 +152,7 @@ export async function runReviewWork(job, logger = createJobLogger(job)) {
                 focus: 'Final state: Review limit reached',
                 items: [
                     reviewStatusItem(job.data.stageAttempt, 'failed', 'Limit reached'),
-                    statusItem('draft-pr-and-in-review', 1, 'skipped', 'Draft PR + move to `in review`'),
+                    statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR'),
                 ],
             }, logger);
             return { status: 'review-exhausted', output };
@@ -225,7 +225,7 @@ export async function runReviewWork(job, logger = createJobLogger(job)) {
         focus: 'Final state: Review response malformed',
         items: [
             reviewStatusItem(job.data.stageAttempt, 'failed', 'Malformed response'),
-            statusItem('draft-pr-and-in-review', 1, 'skipped', 'Draft PR + move to `in review`'),
+            statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR'),
         ],
     }, logger);
     return { status: 'review-malformed', output };

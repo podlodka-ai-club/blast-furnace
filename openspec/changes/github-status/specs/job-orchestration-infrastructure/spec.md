@@ -48,6 +48,7 @@ The system SHALL maintain a deterministic status checklist for the user-facing r
 - **WHEN** a worker retry or status update retry applies the same status transition more than once
 - **THEN** the checklist item SHALL be upserted by stable item id
 - **AND** duplicate checklist rows SHALL NOT be created
+- **AND** stale status detail from a previous state SHALL NOT be preserved when the replacement item omits detail
 
 #### Scenario: Review rework expands checklist idempotently
 - **WHEN** Review routes work back to Develop for rework
@@ -67,7 +68,7 @@ The system SHALL render GitHub status comments as a polished status card suitabl
 #### Scenario: Status card header is rendered
 - **WHEN** the status comment is rendered
 - **THEN** it SHALL include one top-level heading describing the current high-level outcome
-- **AND** SHALL include a two-column metadata table with labels `Взято в работу` and `Последнее изменение`
+- **AND** SHALL include a two-column metadata table with labels `Picked up` and `Last update`
 - **AND** SHALL include a short blockquote describing the current focus, final state, or result
 
 #### Scenario: Main progress table is rendered
@@ -75,10 +76,12 @@ The system SHALL render GitHub status comments as a polished status card suitabl
 - **THEN** it SHALL use columns for status icon, stage label, and short status detail
 - **AND** SHALL use status icons instead of textual `completed` or `pending` suffixes
 - **AND** SHALL render completed items with `✅`, current in-progress items with `🔵`, retrying items with `🟡`, pending items with `⚪`, terminal failures with `❌`, skipped items with `⏭️`, and the aggregate review feedback loop row with `🔁`
+- **AND** SHALL render the Review stage label as `Code Review`
+- **AND** SHALL render the combined Draft PR / move issue to `in review` stage label as `Make PR`
 
 #### Scenario: Review feedback loop is rendered separately
 - **WHEN** one or more Review rework attempts exist
 - **THEN** the status card SHALL render a separate `Review feedback loop` table
 - **AND** SHALL NOT insert every rework item as a peer row in the main progress table
-- **AND** the feedback loop table SHALL include Attempt, Develop, Quality Gate, and Review columns
-- **AND** the Review column SHALL include a status icon such as `🟡` for changes requested or `❌` for terminal Review exhaustion
+- **AND** the feedback loop table SHALL include Attempt, Develop, Quality Gate, and Code Review columns
+- **AND** the Code Review column SHALL include a status icon such as `🟡` for changes requested or `❌` for terminal Review exhaustion

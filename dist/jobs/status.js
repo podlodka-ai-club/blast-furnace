@@ -55,5 +55,5 @@ export function qualityStatusItem(attempt, state, detail) {
     return statusItem('quality-gate', attempt, state, attempt === 1 ? 'Quality Gate' : `Quality Gate rework ${attempt - 1}`, detail);
 }
 export function reviewStatusItem(attempt, state, detail) {
-    return statusItem('review', attempt, state, attempt === 1 ? 'Review' : `Review attempt ${attempt}`, detail);
+    return statusItem('review', attempt, state, attempt === 1 ? 'Code Review' : `Code Review attempt ${attempt}`, detail);
 }

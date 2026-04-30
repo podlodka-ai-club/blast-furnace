@@ -86,8 +86,8 @@ export async function runMakePrWork(job, logger = createJobLogger(job)) {
     const orchestrationRoot = resolveOrchestrationStorageRoot(job.data.inputRecordRef);
     await updateRunStatus(orchestrationRoot, job.data.runId, {
         heading: 'Blast Furnace is creating a pull request',
-        focus: 'Current focus: Draft PR + move issue to `in review`',
-        items: [statusItem('draft-pr-and-in-review', 1, 'in-progress', 'Draft PR + move to `in review`', 'In progress')],
+        focus: 'Current focus: Make PR',
+        items: [statusItem('draft-pr-and-in-review', 1, 'in-progress', 'Make PR', 'In progress')],
     }, logger);
     const status = await execGitCommand(['status', '--porcelain', '--untracked-files=all', '--', ...TARGET_REPO_PATHS], workspacePath);
     if (!status) {
@@ -118,7 +118,7 @@ export async function runMakePrWork(job, logger = createJobLogger(job)) {
         await updateRunStatus(orchestrationRoot, job.data.runId, {
             heading: 'Blast Furnace finished with no changes',
             focus: 'Final state: No repository changes',
-            items: [statusItem('draft-pr-and-in-review', 1, 'skipped', 'Draft PR + move to `in review`', 'No changes')],
+            items: [statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR', 'No changes')],
         }, logger);
         return { status: 'no-changes', output, workspacePath };
     }
@@ -170,7 +170,7 @@ export async function runMakePrWork(job, logger = createJobLogger(job)) {
         heading: 'Blast Furnace created a pull request',
         focus: `Result: Pull request #${output.pullRequest.number} created`,
         items: [
-            statusItem('draft-pr-and-in-review', 1, 'completed', 'Draft PR + move to `in review`', `PR #${output.pullRequest.number} created`),
+            statusItem('draft-pr-and-in-review', 1, 'completed', 'Make PR', `PR #${output.pullRequest.number} created`),
         ],
     }, logger);
     return {
@@ -197,7 +197,7 @@ export async function runMakePrFlow(job) {
                 heading: 'Blast Furnace stopped before creating a pull request',
                 focus: 'Final state: Pull request creation failed',
                 items: [
-                    statusItem('draft-pr-and-in-review', 1, 'failed', 'Draft PR + move to `in review`', 'PR was not created'),
+                    statusItem('draft-pr-and-in-review', 1, 'failed', 'Make PR', 'PR was not created'),
                 ],
             }, logger);
         }

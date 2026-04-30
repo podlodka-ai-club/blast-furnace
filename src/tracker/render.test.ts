@@ -15,7 +15,7 @@ describe('status card renderer', () => {
     });
 
     expect(body).toContain('<!-- blast-furnace:tracker-comment kind=orchestrator-status runId=run-123 owner=owner repo=repo issue=42 -->');
-    expect(body).toContain('| Взято в работу | Последнее изменение |');
+    expect(body).toContain('| Picked up | Last update |');
     expect(body).toContain('| ✅ | Task picked up |  |');
     expect(body).toContain('| ⚪ | Prepare run |  |');
     expect(body).not.toContain('Issue:');
@@ -33,13 +33,13 @@ describe('status card renderer', () => {
       checklist: upsertStatusItems(initial.checklist, [
         makeStatusItem('develop', 1, 'completed', 'Develop changes'),
         makeStatusItem('quality-gate', 1, 'completed', 'Quality Gate'),
-        makeStatusItem('review', 1, 'retrying', 'Review', 'Changes requested'),
+        makeStatusItem('review', 1, 'retrying', 'Code Review', 'Changes requested'),
         makeStatusItem('develop', 2, 'completed', 'Develop rework 1'),
         makeStatusItem('quality-gate', 2, 'completed', 'Quality Gate rework 1'),
-        makeStatusItem('review', 2, 'retrying', 'Review attempt 2', 'Changes requested'),
+        makeStatusItem('review', 2, 'retrying', 'Code Review attempt 2', 'Changes requested'),
         makeStatusItem('develop', 3, 'in-progress', 'Develop rework 2', 'In progress'),
         makeStatusItem('quality-gate', 3, 'pending', 'Quality Gate rework 2'),
-        makeStatusItem('review', 3, 'pending', 'Review attempt 3'),
+        makeStatusItem('review', 3, 'pending', 'Code Review attempt 3'),
       ]),
     };
 
@@ -68,7 +68,7 @@ describe('status card renderer', () => {
         focus: 'Result: Pull request #108 created',
         note: 'Pull request #108 was created, but moving the issue to `in review` failed.',
         checklist: upsertStatusItems(initial.checklist, [
-          makeStatusItem('draft-pr-and-in-review', 1, 'completed', 'Draft PR + move to `in review`', 'PR created, tracker warning'),
+          makeStatusItem('draft-pr-and-in-review', 1, 'completed', 'Make PR', 'PR created, tracker warning'),
         ]),
       },
     });

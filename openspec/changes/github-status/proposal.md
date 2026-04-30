@@ -11,7 +11,7 @@ Orchestrator runs currently have no durable, user-visible progress indicator in 
 - Persist enough identity metadata to update the same status comment over time without confusing it with other tracker comments such as future plan or rework-start comments.
 - Define deterministic status item states and stage-output mappings so updates are repeatable and terminal failures are distinguishable from retryable attempt failures.
 - Use stable, attempt-aware checklist item ids and upsert status items by id so worker retries and Review rework expansion do not create duplicate rows.
-- Model the default status sequence as progressing from task pickup through preparation, planning, development, Quality Gate, review, and a combined Draft PR / move issue to `in review` step.
+- Model the default status sequence as progressing from task pickup through preparation, planning, development, Quality Gate, Code Review, and a final Make PR step.
 - Extend the displayed status sequence dynamically when Review sends Develop back for rework, adding the rework Develop, Quality Gate, Review cycle and subsequent steps that follow from it.
 - Update orchestration stages to report status changes as they start, complete, branch to rework, proceed to Make PR, or terminate.
 

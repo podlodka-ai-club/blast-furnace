@@ -102,5 +102,5 @@ export function qualityStatusItem(attempt: number, state: StatusItemState, detai
 }
 
 export function reviewStatusItem(attempt: number, state: StatusItemState, detail?: string): StatusChecklistItem {
-  return statusItem('review', attempt, state, attempt === 1 ? 'Review' : `Review attempt ${attempt}`, detail);
+  return statusItem('review', attempt, state, attempt === 1 ? 'Code Review' : `Code Review attempt ${attempt}`, detail);
 }

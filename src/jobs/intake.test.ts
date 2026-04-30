@@ -398,6 +398,66 @@ describe('intake job', () => {
       expect(mockJobQueueAdd).not.toHaveBeenCalled();
     });
 
+    it('should skip issues that already have an active orchestration run after the Redis claim expires', async () => {
+      const { intakeHandler } = await import('./intake.js');
+      const { createRunFileSet, initializeRunSummary } = await import('./orchestration.js');
+
+      const mockIssue = {
+        id: 1,
+        number: 42,
+        title: 'Issue 1',
+        body: 'Body 1',
+        state: 'open' as const,
+        labels: ['ready'],
+        assignee: null,
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+      };
+
+      const orchestrationRoot = process.env['ORCHESTRATION_STORAGE_ROOT']!;
+      const activeRunId = 'active-run-123';
+      const runStartedAt = '2024-01-01T00:00:00.000Z';
+      await initializeRunSummary(
+        orchestrationRoot,
+        createRunFileSet(orchestrationRoot, activeRunId, new Date(runStartedAt)),
+        {
+          runId: activeRunId,
+          status: 'running',
+          currentStage: 'develop',
+          runStartedAt,
+          stageAttempt: 1,
+          reworkAttempt: 0,
+          latestHandoffRecord: null,
+          initialContext: {
+            issue: mockIssue,
+            repository: {
+              owner: 'test-owner',
+              repo: 'test-repo',
+            },
+          },
+          stages: {},
+        }
+      );
+
+      mockFetchIssues.mockResolvedValue([mockIssue]);
+      mockRedisClient.get.mockResolvedValue(null);
+      mockRedisClient.set.mockResolvedValue('OK');
+
+      await intakeHandler(createMockJob());
+
+      expect(mockRedisClient.set).not.toHaveBeenCalledWith(
+        'github:intake:processing:test-owner:test-repo:42',
+        expect.any(String),
+        'EX',
+        expect.any(Number),
+        'NX'
+      );
+      expect(mockJobQueueAdd).not.toHaveBeenCalled();
+      expect(mockJobLogger.info).toHaveBeenCalledWith(
+        'GitHub intake fetched 1 issue(s); 0 issue(s) eligible for processing'
+      );
+    });
+
     it('should log total fetched issues and claimed issues eligible for processing', async () => {
       const { intakeHandler } = await import('./intake.js');
 

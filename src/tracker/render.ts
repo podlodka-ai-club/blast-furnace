@@ -80,7 +80,7 @@ function renderReviewLoop(checklist: StatusChecklistItem[]): string[] {
     '',
     '### Review feedback loop',
     '',
-    '| Attempt | Develop | Quality Gate | Review |',
+    '| Attempt | Develop | Quality Gate | Code Review |',
     '|---|---|---|---|',
     ...attempts.map(row),
   ];
@@ -99,7 +99,7 @@ export function renderStatusComment(input: RenderStatusCommentInput): string {
     '',
     `# ${input.status.heading ?? 'Blast Furnace status'}`,
     '',
-    '| Взято в работу | Последнее изменение |',
+    '| Picked up | Last update |',
     '|---|---|',
     `| ${formatTimestamp(input.status.pickedUpAt)} | ${formatTimestamp(input.status.lastChangedAt)} |`,
     '',

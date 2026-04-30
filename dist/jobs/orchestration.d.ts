@@ -1,4 +1,4 @@
-import type { ArtifactLocation, ArtifactMetadata, EventMetadata, HandoffRecord, HandoffRecordDependency, HandoffStatus, InputRecordRef, JobPayload, RunId, RunFileSet, RunSummaryData, StableRunContext, StageHandoffJobPayload, StageAttemptLocation, WorkflowStage } from '../types/index.js';
+import type { ArtifactLocation, ArtifactMetadata, EventMetadata, HandoffRecord, HandoffRecordDependency, HandoffStatus, InputRecordRef, JobPayload, RepositoryIdentity, RunId, RunFileSet, RunSummaryData, StableRunContext, StageHandoffJobPayload, StageAttemptLocation, WorkflowStage } from '../types/index.js';
 export interface QueueLike {
     add(name: string, data: JobPayload): Promise<unknown>;
 }
@@ -15,6 +15,7 @@ export declare function resolveRunSummaryPath(root: string, runId: RunId): strin
 export declare function writeArtifactFile(root: string, location: ArtifactLocation, data: unknown): Promise<ArtifactMetadata>;
 export declare function writeEventFile(root: string, runId: RunId, eventName: string, data: unknown): Promise<EventMetadata>;
 export declare function readRunSummary(root: string, runId: RunId): Promise<RunSummaryData | null>;
+export declare function findActiveRunForIssue(root: string, repository: RepositoryIdentity, issueNumber: number): Promise<RunSummaryData | null>;
 export declare function writeRunSummary(root: string, summary: RunSummaryData): Promise<void>;
 export declare function initializeRunSummary(root: string, fileSet: RunFileSet, summary: Omit<RunSummaryData, 'timestampPrefix' | 'runDirectory' | 'runSummaryPath' | 'handoffLedgerPath'>): Promise<RunSummaryData>;
 export interface AppendHandoffRecordInput {

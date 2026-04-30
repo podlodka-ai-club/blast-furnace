@@ -50,7 +50,7 @@ export async function runSyncTrackerStateWork(job, logger = createJobLogger(job)
         focus: `Result: Pull request #${pullRequest.number} created`,
         note: trackerWarning,
         items: [
-            statusItem('draft-pr-and-in-review', 1, 'completed', 'Draft PR + move to `in review`', trackerWarning ? 'PR created, tracker warning' : 'PR created, issue moved to `in review`'),
+            statusItem('draft-pr-and-in-review', 1, 'completed', 'Make PR', trackerWarning ? 'PR created, tracker warning' : 'PR created, issue moved to `in review`'),
         ],
     }, logger);
     return pullRequest;

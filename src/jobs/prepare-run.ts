@@ -365,8 +365,8 @@ export async function runPrepareRunFlow(job: Job<PrepareRunJobData>): Promise<vo
             statusItem('plan', 1, 'skipped', 'Plan solution'),
             statusItem('develop', 1, 'skipped', 'Develop changes'),
             statusItem('quality-gate', 1, 'skipped', 'Quality Gate'),
-            statusItem('review', 1, 'skipped', 'Review'),
-            statusItem('draft-pr-and-in-review', 1, 'skipped', 'Draft PR + move to `in review`'),
+            statusItem('review', 1, 'skipped', 'Code Review'),
+            statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR'),
           ],
         }, logger);
       } catch {

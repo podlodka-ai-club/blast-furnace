@@ -10,6 +10,7 @@ import type {
   HandoffStatus,
   InputRecordRef,
   JobPayload,
+  RepositoryIdentity,
   RunId,
   RunFileSet,
   RunSummaryData,
@@ -196,6 +197,48 @@ export async function readRunSummary(root: string, runId: RunId): Promise<RunSum
         continue;
       }
       throw err;
+    }
+  }
+
+  return null;
+}
+
+export async function findActiveRunForIssue(
+  root: string,
+  repository: RepositoryIdentity,
+  issueNumber: number
+): Promise<RunSummaryData | null> {
+  const runsRoot = join(root, '.orchestrator', 'runs');
+  let entries: string[];
+  try {
+    entries = await readdir(runsRoot);
+  } catch (err) {
+    if (typeof err === 'object' && err !== null && 'code' in err && err.code === 'ENOENT') {
+      return null;
+    }
+    throw err;
+  }
+
+  for (const entry of entries.sort().reverse()) {
+    const summaryPath = join(runsRoot, entry, `${entry}_run.json`);
+    let summary: RunSummaryData;
+    try {
+      summary = JSON.parse(await readFile(summaryPath, 'utf8')) as RunSummaryData;
+    } catch (err) {
+      if (typeof err === 'object' && err !== null && 'code' in err && err.code === 'ENOENT') {
+        continue;
+      }
+      throw err;
+    }
+
+    const context = summary.stableContext ?? summary.initialContext;
+    if (
+      summary.status === 'running' &&
+      context?.issue.number === issueNumber &&
+      context.repository.owner === repository.owner &&
+      context.repository.repo === repository.repo
+    ) {
+      return summary;
     }
   }
 

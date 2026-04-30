@@ -66,7 +66,7 @@ function renderReviewLoop(checklist) {
         '',
         '### Review feedback loop',
         '',
-        '| Attempt | Develop | Quality Gate | Review |',
+        '| Attempt | Develop | Quality Gate | Code Review |',
         '|---|---|---|---|',
         ...attempts.map(row),
     ];
@@ -84,7 +84,7 @@ export function renderStatusComment(input) {
         '',
         `# ${input.status.heading ?? 'Blast Furnace status'}`,
         '',
-        '| Взято в работу | Последнее изменение |',
+        '| Picked up | Last update |',
         '|---|---|',
         `| ${formatTimestamp(input.status.pickedUpAt)} | ${formatTimestamp(input.status.lastChangedAt)} |`,
         '',
