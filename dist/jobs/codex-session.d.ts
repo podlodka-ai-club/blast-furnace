@@ -9,7 +9,6 @@ export interface CodexCliArgsOptions {
     enableHooks?: boolean;
     bypassSandbox?: boolean;
     sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access';
-    codexExecSubcommand?: string;
 }
 export interface RunCodexSessionOptions {
     prompt: string;
@@ -20,7 +19,6 @@ export interface RunCodexSessionOptions {
     enableHooks?: boolean;
     bypassSandbox?: boolean;
     sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access';
-    codexExecSubcommand?: string;
     env?: NodeJS.ProcessEnv;
     logPrefix: string;
     timeoutLabel: string;

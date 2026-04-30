@@ -61,12 +61,6 @@ export function buildCodexSessionArgs(options) {
         invocationArgs.push('exec');
     }
     if (isCodexCommand
-        && options.codexExecSubcommand
-        && invocationArgs.includes('exec')
-        && !invocationArgs.includes(options.codexExecSubcommand)) {
-        invocationArgs.splice(invocationArgs.indexOf('exec') + 1, 0, options.codexExecSubcommand);
-    }
-    if (isCodexCommand
         && options.resumeLastSession
         && invocationArgs.includes('exec')
         && !invocationArgs.includes('resume')) {
@@ -116,7 +110,6 @@ export async function runCodexSession(options) {
         enableHooks: options.enableHooks,
         bypassSandbox: options.bypassSandbox,
         sandboxMode: options.sandboxMode,
-        codexExecSubcommand: options.codexExecSubcommand,
     });
     await ensureNodePtySpawnHelperExecutable(options.logger);
     const ptyProcess = pty.spawn(cliCmd, cliArgs, {

@@ -37,15 +37,6 @@ export interface CodexCliArgsOptions {
   enableHooks?: boolean;
   bypassSandbox?: boolean;
   sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access';
-  codexExecSubcommand?: string;
-}
-
-export interface CodexReviewCliArgsOptions {
-  cliCmd: string;
-  cliArgs: string[];
-  prompt: string;
-  model: string;
-  sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access';
 }
 
 export interface RunCodexSessionOptions {
@@ -57,7 +48,6 @@ export interface RunCodexSessionOptions {
   enableHooks?: boolean;
   bypassSandbox?: boolean;
   sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access';
-  codexExecSubcommand?: string;
   env?: NodeJS.ProcessEnv;
   logPrefix: string;
   timeoutLabel: string;
@@ -100,10 +90,6 @@ function hasSandboxArg(args: string[]): boolean {
   return args.some((arg, index) => arg === '--sandbox' || arg.startsWith('--sandbox=') || args[index - 1] === '--sandbox');
 }
 
-function buildConfigOverride(key: string, value: string): string[] {
-  return ['-c', `${key}=${JSON.stringify(value)}`];
-}
-
 export function buildCodexSessionArgs(options: CodexCliArgsOptions): string[] {
   const invocationArgs = [...options.cliArgs];
   const hasExplicitSubcommand = invocationArgs.some((arg) => CODEX_SUBCOMMANDS.has(arg));
@@ -111,15 +97,6 @@ export function buildCodexSessionArgs(options: CodexCliArgsOptions): string[] {
 
   if (isCodexCommand && !hasExplicitSubcommand) {
     invocationArgs.push('exec');
-  }
-
-  if (
-    isCodexCommand
-    && options.codexExecSubcommand
-    && invocationArgs.includes('exec')
-    && !invocationArgs.includes(options.codexExecSubcommand)
-  ) {
-    invocationArgs.splice(invocationArgs.indexOf('exec') + 1, 0, options.codexExecSubcommand);
   }
 
   if (
@@ -156,107 +133,9 @@ export function buildCodexSessionArgs(options: CodexCliArgsOptions): string[] {
   return invocationArgs;
 }
 
-export function buildCodexReviewArgs(options: CodexReviewCliArgsOptions): string[] {
-  const invocationArgs = [...options.cliArgs];
-  const hasExplicitSubcommand = invocationArgs.some((arg) => CODEX_SUBCOMMANDS.has(arg));
-  const isCodexCommand = appearsToBeCodexCommand(options.cliCmd, invocationArgs);
-
-  if (isCodexCommand && !hasExplicitSubcommand) {
-    invocationArgs.push('review');
-  }
-
-  if (isCodexCommand && !invocationArgs.includes('--uncommitted')) {
-    invocationArgs.push('--uncommitted');
-  }
-
-  if (options.model && !hasExplicitModelArg(invocationArgs)) {
-    invocationArgs.push(...buildConfigOverride('model', options.model));
-  }
-
-  if (isCodexCommand && options.sandboxMode) {
-    invocationArgs.push(...buildConfigOverride('sandbox_mode', options.sandboxMode));
-  }
-
-  invocationArgs.push(options.prompt);
-  return invocationArgs;
-}
-
 export function stripAnsi(value: string): string {
   const ansiPattern = new RegExp(String.raw`\x1B\[[0-9;?]*[ -/]*[@-~]`, 'g');
   return value.replace(ansiPattern, '').trim();
-}
-
-interface RunCodexProcessOptions {
-  workspacePath: string;
-  logger: ReturnType<typeof createJobLogger>;
-  env?: NodeJS.ProcessEnv;
-  logPrefix: string;
-  timeoutLabel: string;
-  timeoutMs: number;
-  outputPath?: string;
-}
-
-async function runCodexProcess(
-  cliCmd: string,
-  cliArgs: string[],
-  options: RunCodexProcessOptions
-): Promise<RunCodexSessionResult> {
-  let captured = '';
-
-  await ensureNodePtySpawnHelperExecutable(options.logger);
-  const ptyProcess = pty.spawn(cliCmd, cliArgs, {
-    cwd: options.workspacePath,
-    name: 'xterm-color',
-    env: { ...process.env, ...options.env },
-  });
-
-  const loggedArgs = cliArgs.slice(0, -1).join(' ');
-  options.logger.info(`${options.logPrefix} command: ${cliCmd} ${loggedArgs}`.trim());
-  ptyProcess.onData((data: string) => {
-    captured += data;
-    const line = data.toString().trim();
-    if (line) {
-      options.logger.info(`[${options.logPrefix}] ${line}`);
-    }
-  });
-
-  try {
-    const exitCode = await new Promise<number>((resolve, reject) => {
-      let settled = false;
-      const settle = (fn: () => void) => {
-        if (!settled) {
-          settled = true;
-          fn();
-        }
-      };
-      const timer = setTimeout(() => {
-        ptyProcess.kill('SIGTERM');
-        settle(() => reject(new Error(`${options.timeoutLabel} timed out after ${options.timeoutMs}ms`)));
-      }, options.timeoutMs);
-
-      ptyProcess.onExit(({ exitCode }: { exitCode: number }) => {
-        clearTimeout(timer);
-        settle(() => resolve(exitCode));
-      });
-    });
-
-    if (exitCode !== 0) {
-      throw new Error(`${options.timeoutLabel} failed with exit code ${exitCode}`);
-    }
-
-    if (!options.outputPath) {
-      return { cliCmd, cliArgs, output: stripAnsi(captured) };
-    }
-
-    try {
-      const finalMessage = await readFile(options.outputPath, 'utf8');
-      return { cliCmd, cliArgs, output: finalMessage.trim() || stripAnsi(captured) };
-    } catch {
-      return { cliCmd, cliArgs, output: stripAnsi(captured) };
-    }
-  } finally {
-    // no-op
-  }
 }
 
 export async function runCodexSession(options: RunCodexSessionOptions): Promise<RunCodexSessionResult> {
@@ -284,53 +163,62 @@ export async function runCodexSession(options: RunCodexSessionOptions): Promise<
     enableHooks: options.enableHooks,
     bypassSandbox: options.bypassSandbox,
     sandboxMode: options.sandboxMode,
-    codexExecSubcommand: options.codexExecSubcommand,
+  });
+
+  await ensureNodePtySpawnHelperExecutable(options.logger);
+  const ptyProcess = pty.spawn(cliCmd, cliArgs, {
+    cwd: options.workspacePath,
+    name: 'xterm-color',
+    env: { ...process.env, ...options.env },
+  });
+  let captured = '';
+
+  options.logger.info(`${options.logPrefix} command: ${cliCmd} ${cliParts.slice(1).join(' ')}`.trim());
+  ptyProcess.onData((data: string) => {
+    captured += data;
+    const line = data.toString().trim();
+    if (line) {
+      options.logger.info(`[${options.logPrefix}] ${line}`);
+    }
   });
 
   try {
-    return await runCodexProcess(cliCmd, cliArgs, {
-      workspacePath: options.workspacePath,
-      logger: options.logger,
-      env: options.env,
-      logPrefix: options.logPrefix,
-      timeoutLabel: options.timeoutLabel,
-      timeoutMs,
-      outputPath,
+    const exitCode = await new Promise<number>((resolve, reject) => {
+      let settled = false;
+      const settle = (fn: () => void) => {
+        if (!settled) {
+          settled = true;
+          fn();
+        }
+      };
+      const timer = setTimeout(() => {
+        ptyProcess.kill('SIGTERM');
+        settle(() => reject(new Error(`${options.timeoutLabel} timed out after ${timeoutMs}ms`)));
+      }, timeoutMs);
+
+      ptyProcess.onExit(({ exitCode }: { exitCode: number }) => {
+        clearTimeout(timer);
+        settle(() => resolve(exitCode));
+      });
     });
+
+    if (exitCode !== 0) {
+      throw new Error(`${options.timeoutLabel} failed with exit code ${exitCode}`);
+    }
+
+    if (!outputPath) {
+      return { cliCmd, cliArgs, output: stripAnsi(captured) };
+    }
+
+    try {
+      const finalMessage = await readFile(outputPath, 'utf8');
+      return { cliCmd, cliArgs, output: finalMessage.trim() || stripAnsi(captured) };
+    } catch {
+      return { cliCmd, cliArgs, output: stripAnsi(captured) };
+    }
   } finally {
     if (outputDir) {
       await rm(outputDir, { recursive: true, force: true });
     }
   }
-}
-
-export async function runCodexReviewSession(options: RunCodexSessionOptions): Promise<RunCodexSessionResult> {
-  const codexCliPath = process.env['CODEX_CLI_PATH'] ?? config.codex?.cliPath ?? 'npx @openai/codex';
-  const codexModel = process.env['CODEX_MODEL'] ?? config.codex?.model ?? 'gpt-5.4';
-  const timeoutMs = parseInt(
-    process.env['CODEX_TIMEOUT_MS'] ?? String(config.codex?.timeoutMs ?? DEFAULT_TIMEOUT_MS),
-    10
-  );
-  const cliParts = codexCliPath.split(/\s+/).filter(Boolean);
-  if (cliParts.length === 0) {
-    throw new Error('CODEX_CLI_PATH must not be empty');
-  }
-
-  const cliCmd = cliParts[0];
-  const cliArgs = buildCodexReviewArgs({
-    cliCmd,
-    cliArgs: cliParts.slice(1),
-    prompt: options.prompt,
-    model: codexModel,
-    sandboxMode: options.sandboxMode,
-  });
-
-  return runCodexProcess(cliCmd, cliArgs, {
-    workspacePath: options.workspacePath,
-    logger: options.logger,
-    env: options.env,
-    logPrefix: options.logPrefix,
-    timeoutLabel: options.timeoutLabel,
-    timeoutMs,
-  });
 }

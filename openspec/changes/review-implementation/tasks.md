@@ -9,9 +9,9 @@
 ## 2. Codex Session Execution
 
 - [x] 2.1 Add executor options that allow callers to choose Codex sandbox mode, bypass behavior, hook enablement, and final-message capture without changing Develop defaults.
-- [x] 2.2 Add executor argument-building tests proving Develop still uses permissive hook-enabled execution and Review uses `codex review --uncommitted` with read-only config overrides.
+- [x] 2.2 Add executor argument-building tests proving Develop still uses permissive hook-enabled execution and Review uses read-only hook-disabled execution.
 - [x] 2.3 Implement Review Codex invocation in the prepared workspace using `prompts/review.md` without template substitutions.
-- [x] 2.4 Implement Review repair invocation that re-runs Codex review with `prompts/review-repair.md` after a malformed response.
+- [x] 2.4 Implement Review repair invocation that sends `prompts/review-repair.md` to the same logical Review Codex session after a malformed response.
 
 ## 3. Review Stage Behavior
 

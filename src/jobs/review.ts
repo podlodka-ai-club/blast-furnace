@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { Job } from 'bullmq';
 import type { DevelopJobData, MakePrJobData, ReviewJobData, ReviewOutput } from '../types/index.js';
 import { config } from '../config/index.js';
-import { runCodexReviewSession } from './codex-session.js';
+import { runCodexSession } from './codex-session.js';
 import { stageOutputSchemas, stagePayloadSchemas } from './handoff-contracts.js';
 import { resolveReviewContext } from './context-resolvers.js';
 import { createJobLogger } from './logger.js';
@@ -67,10 +67,14 @@ async function runReviewCodex(
   workspacePath: string
 ): Promise<string> {
   const prompt = await readFile(REVIEW_PROMPT_TEMPLATE_PATH, 'utf8');
-  const first = await runCodexReviewSession({
+  const first = await runCodexSession({
     prompt,
     workspacePath,
     logger,
+    resumeLastSession: false,
+    outputLastMessage: true,
+    enableHooks: false,
+    bypassSandbox: false,
     sandboxMode: 'read-only',
     logPrefix: 'review-codex',
     timeoutLabel: 'review codex process',
@@ -82,10 +86,14 @@ async function runReviewCodex(
 
   logger.warn(`Review response for run ${job.data.runId} was malformed; requesting repair`);
   const repairPrompt = await readFile(REVIEW_REPAIR_PROMPT_TEMPLATE_PATH, 'utf8');
-  const repaired = await runCodexReviewSession({
+  const repaired = await runCodexSession({
     prompt: repairPrompt,
     workspacePath,
     logger,
+    resumeLastSession: true,
+    outputLastMessage: true,
+    enableHooks: false,
+    bypassSandbox: false,
     sandboxMode: 'read-only',
     logPrefix: 'review-repair-codex',
     timeoutLabel: 'review repair codex process',
