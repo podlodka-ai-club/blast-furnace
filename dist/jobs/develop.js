@@ -10,6 +10,7 @@ import { jobQueue } from './queue.js';
 import { appendHandoffRecordAndUpdateSummary, resolveOrchestrationStorageRoot, scheduleNextJob, } from './orchestration.js';
 import { createForwardStagePayload } from './stage-payloads.js';
 export const DEVELOP_PROMPT_TEMPLATE_PATH = join(process.cwd(), 'prompts', 'develop.md');
+export const DEVELOP_REWORK_PROMPT_TEMPLATE_PATH = join(process.cwd(), 'prompts', 'develop-rework.md');
 const DEVELOPMENT_RESULT = {
     status: 'completed',
     summary: 'Codex completed successfully.',
@@ -35,6 +36,7 @@ export async function renderDevelopPrompt(templatePath, input) {
     const template = await readFile(templatePath, 'utf8');
     const replacements = {
         planContent: input.planContent,
+        reviewContent: input.reviewContent ?? '',
     };
     return template.replace(/\{\{([A-Za-z0-9_]+)\}\}/g, (match, key) => replacements[key] ?? match);
 }
@@ -45,8 +47,12 @@ export async function runDevelopWork(job, logger = createJobLogger(job)) {
     const qualityGateCommand = process.env['QUALITY_GATE_TEST_COMMAND'] ?? config.qualityGate?.testCommand;
     const qualityGateTimeoutMs = parseMinimumTimeout(process.env['QUALITY_GATE_TEST_TIMEOUT_MS'], config.qualityGate?.testTimeoutMs ?? 180000);
     logger.info(`Running develop for issue #${issue.number} on branch ${branchName}`);
-    const prompt = await renderDevelopPrompt(DEVELOP_PROMPT_TEMPLATE_PATH, {
+    const promptTemplatePath = context.inputKind === 'review-rework'
+        ? DEVELOP_REWORK_PROMPT_TEMPLATE_PATH
+        : DEVELOP_PROMPT_TEMPLATE_PATH;
+    const prompt = await renderDevelopPrompt(promptTemplatePath, {
         planContent: context.plan.content,
+        reviewContent: context.reviewFailureContent,
     });
     const stopHook = await prepareDevelopStopHook({
         runId: job.data.runId,
@@ -121,7 +127,9 @@ export async function runDevelopWork(job, logger = createJobLogger(job)) {
         toStage,
         stageAttempt: job.data.stageAttempt,
         reworkAttempt: job.data.reworkAttempt,
-        dependsOn: [job.data.inputRecordRef],
+        dependsOn: context.inputKind === 'review-rework'
+            ? [job.data.inputRecordRef, context.planRecord.recordId]
+            : [job.data.inputRecordRef],
         status: handoffStatus,
         output,
     }, toStage === null ? output.status : undefined);
@@ -135,7 +143,7 @@ export async function runDevelopWork(job, logger = createJobLogger(job)) {
     return {
         output,
         reviewJobData: toStage === 'review'
-            ? createForwardStagePayload(job.data, 'review', inputRecordRef)
+            ? createForwardStagePayload(job.data, 'review', inputRecordRef, job.data.stageAttempt)
             : undefined,
     };
 }

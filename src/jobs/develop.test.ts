@@ -208,7 +208,8 @@ describe('develop job', () => {
   });
 
   async function createJob(
-    issue = createIssue(42, 'Test Issue', 'Test body')
+    issue = createIssue(42, 'Test Issue', 'Test body'),
+    stageAttempt = 1
   ): Promise<Job<DevelopJobData>> {
     const workspacePath = await mkdtemp(join(tmpdir(), 'develop-ledger-'));
     tempRoots.push(workspacePath);
@@ -218,7 +219,7 @@ describe('develop job', () => {
       status: 'running',
       currentStage: 'plan',
       runStartedAt: '2026-04-26T08:07:30.000Z',
-      stageAttempt: 1,
+      stageAttempt,
       reworkAttempt: 0,
       latestHandoffRecord: null,
       stableContext: {
@@ -236,13 +237,13 @@ describe('develop job', () => {
       runId: 'run-123',
       fromStage: 'plan',
       toStage: 'develop',
-      stageAttempt: 1,
+      stageAttempt,
       reworkAttempt: 0,
       status: 'success',
       output: {
         status: 'success',
         runId: 'run-123',
-        stageAttempt: 1,
+        stageAttempt,
         reworkAttempt: 0,
         plan: {
           status: 'success',
@@ -259,7 +260,7 @@ describe('develop job', () => {
         type: 'develop',
         runId: 'run-123',
         stage: 'develop',
-        stageAttempt: 1,
+        stageAttempt,
         reworkAttempt: 0,
         inputRecordRef,
       },
@@ -417,6 +418,23 @@ describe('develop job', () => {
     }));
     expect(mockJobQueueAdd.mock.calls[0][1]).not.toHaveProperty('development');
     expect(mockJobQueueAdd).not.toHaveBeenCalledWith('quality-gate', expect.anything());
+  });
+
+  it('preserves the develop stage attempt when enqueueing review after rework', async () => {
+    const { runDevelopFlow } = await import('./develop.js');
+    vi.mocked(nodePty.spawn).mockReturnValue(createCodexMockProcess());
+    const job = await createJob(createIssue(42, 'Test Issue', 'Test body'), 2);
+
+    await runDevelopFlow(job);
+
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('review', expect.objectContaining({
+      stage: 'review',
+      stageAttempt: 2,
+      reworkAttempt: 0,
+      inputRecordRef: expect.objectContaining({
+        recordId: '000002_develop_to_review',
+      }),
+    }));
   });
 
   it('cleans successful quality artifacts after handoff and does not keep stale output paths', async () => {

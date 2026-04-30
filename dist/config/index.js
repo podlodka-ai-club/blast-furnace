@@ -27,6 +27,18 @@ function parseMinimumTimeout(value, defaultVal) {
     }
     return parsed;
 }
+function parseReviewAttemptLimit(value, defaultVal) {
+    if (value === undefined)
+        return defaultVal;
+    if (!/^\d+$/.test(value)) {
+        throw new Error('REVIEW_ATTEMPT_LIMIT must be an integer from 1 through 19');
+    }
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 19) {
+        throw new Error('REVIEW_ATTEMPT_LIMIT must be an integer from 1 through 19');
+    }
+    return parsed;
+}
 function loadConfig() {
     return {
         env: process.env['NODE_ENV'] ?? 'development',
@@ -50,6 +62,9 @@ function loadConfig() {
         qualityGate: {
             testCommand: process.env['QUALITY_GATE_TEST_COMMAND']?.trim() || undefined,
             testTimeoutMs: parseMinimumTimeout(process.env['QUALITY_GATE_TEST_TIMEOUT_MS'], 180000),
+        },
+        review: {
+            attemptLimit: parseReviewAttemptLimit(process.env['REVIEW_ATTEMPT_LIMIT'], 3),
         },
     };
 }

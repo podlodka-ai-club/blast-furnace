@@ -1,8 +1,5 @@
-# develop-job Specification
+## MODIFIED Requirements
 
-## Purpose
-Defines the target Develop stage that invokes the configured Codex executor inside the prepared workspace and owns deterministic Quality Gate execution through the Codex Stop hook.
-## Requirements
 ### Requirement: Develop Job Module
 The system SHALL provide a `develop` job handled by an isolated Develop module that reads stable run context from the run summary, accepts either a successful Plan handoff for initial work or a failed Review handoff for rework, owns Codex executor invocation and the deterministic Quality Gate Stop-hook loop, and appends formal development and quality output without owning repository or workspace preparation.
 

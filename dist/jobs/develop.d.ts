@@ -1,6 +1,7 @@
 import type { Job } from 'bullmq';
 import type { DevelopJobData, DevelopOutput, ReviewJobData } from '../types/index.js';
 export declare const DEVELOP_PROMPT_TEMPLATE_PATH: string;
+export declare const DEVELOP_REWORK_PROMPT_TEMPLATE_PATH: string;
 export interface DevelopWorkResult {
     output: DevelopOutput;
     reviewJobData?: ReviewJobData;
@@ -8,6 +9,7 @@ export interface DevelopWorkResult {
 export declare function buildCodexCliArgs(cliCmd: string, cliArgs: string[], prompt: string, model: string): string[];
 export interface DevelopPromptInput {
     planContent: string;
+    reviewContent?: string;
 }
 export declare function renderDevelopPrompt(templatePath: string, input: DevelopPromptInput): Promise<string>;
 export declare function runDevelopWork(job: Job<DevelopJobData>, logger?: import("./logger.js").JobLogger): Promise<DevelopWorkResult>;

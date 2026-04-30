@@ -42,8 +42,11 @@ export interface PlanContext {
 
 export interface DevelopContext {
   runContext: StableRunContext;
+  inputKind: 'plan' | 'review-rework';
   plan: Extract<PlanResult, { status: 'success' }>;
-  inputRecord: HandoffRecord<PlanOutput>;
+  reviewFailureContent?: string;
+  inputRecord: HandoffRecord<PlanOutput> | HandoffRecord<ReviewOutput>;
+  planRecord: HandoffRecord<PlanOutput>;
 }
 
 export interface ReviewContext {
@@ -181,6 +184,16 @@ function requirePassedQuality(output: DevelopOutput): QualityGateResult & { stat
   return output.quality as QualityGateResult & { status: 'passed' };
 }
 
+function requireFailedReviewOutput(record: HandoffRecord, output: ReviewOutput): ReviewResult & { status: 'failed' } {
+  if (record.toStage !== 'develop' || record.status !== 'rework-needed') {
+    throw new Error('review rework input must be a rework-needed handoff to develop');
+  }
+  if (output.status !== 'review-failed' || output.review.status !== 'failed') {
+    throw new Error('review rework input requires review-failed output');
+  }
+  return output.review;
+}
+
 export async function resolveAssessContext(payload: AssessJobData): Promise<AssessContext> {
   stagePayloadSchemas.assess.parse(payload);
   const [runContext, inputRecord] = await Promise.all([
@@ -209,13 +222,37 @@ export async function resolveDevelopContext(payload: DevelopJobData): Promise<De
     readStableRunContext(payload),
     readValidatedStageInputRecord(payload),
   ]);
-  ensureInputStage(inputRecord, 'plan');
-  const output = parseStageOutput('plan', inputRecord.output) as PlanOutput;
-  return {
-    runContext,
-    plan: requireAcceptedPlan(output),
-    inputRecord: inputRecord as HandoffRecord<PlanOutput>,
-  };
+  if (inputRecord.fromStage === 'plan') {
+    const output = parseStageOutput('plan', inputRecord.output) as PlanOutput;
+    return {
+      runContext,
+      inputKind: 'plan',
+      plan: requireAcceptedPlan(output),
+      inputRecord: inputRecord as HandoffRecord<PlanOutput>,
+      planRecord: inputRecord as HandoffRecord<PlanOutput>,
+    };
+  }
+
+  if (inputRecord.fromStage === 'review') {
+    const output = parseStageOutput('review', inputRecord.output) as ReviewOutput;
+    const review = requireFailedReviewOutput(inputRecord, output);
+    const planRecord = await loadRequiredDependencyRecord<PlanOutput>(
+      payload.inputRecordRef,
+      inputRecord,
+      'plan'
+    );
+    const planOutput = parseStageOutput('plan', planRecord.output) as PlanOutput;
+    return {
+      runContext,
+      inputKind: 'review-rework',
+      plan: requireAcceptedPlan(planOutput),
+      reviewFailureContent: review.content,
+      inputRecord: inputRecord as HandoffRecord<ReviewOutput>,
+      planRecord,
+    };
+  }
+
+  throw new Error(`develop input record expected stage plan or review but found ${inputRecord.fromStage}`);
 }
 
 export async function resolveReviewContext(payload: ReviewJobData): Promise<ReviewContext> {
@@ -250,6 +287,9 @@ export async function resolveMakePrContext(payload: MakePrJobData): Promise<Make
   ]);
   ensureInputStage(inputRecord, 'review');
   const reviewOutput = parseStageOutput('review', inputRecord.output) as ReviewOutput;
+  if (reviewOutput.status !== 'success' || reviewOutput.review.status !== 'passed') {
+    throw new Error('Make PR requires a passed Review input record');
+  }
   const developRecord = await loadRequiredDependencyRecord<DevelopOutput>(
     payload.inputRecordRef,
     inputRecord,

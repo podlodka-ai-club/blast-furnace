@@ -1,8 +1,5 @@
-# review-job Specification
+## ADDED Requirements
 
-## Purpose
-Defines the Review stage, including read-only Codex review execution, deterministic response validation, Review rework routing, and handoff behavior to Make PR or terminal failure states.
-## Requirements
 ### Requirement: Review Attempt Configuration
 The system SHALL load `REVIEW_ATTEMPT_LIMIT` as a startup configuration value that limits Review-failure rework loops.
 
@@ -18,6 +15,8 @@ The system SHALL load `REVIEW_ATTEMPT_LIMIT` as a startup configuration value th
 #### Scenario: Review attempt limit is invalid
 - **WHEN** `REVIEW_ATTEMPT_LIMIT` is present and is not an integer from `1` through `19`
 - **THEN** configuration loading SHALL fail startup with an error
+
+## MODIFIED Requirements
 
 ### Requirement: Review Job Module
 The system SHALL provide a `review` job handled by an isolated Review module in the target workflow that reads passed quality input from a Develop-produced JSONL handoff record, reads accepted plan output through explicit dependency record ids when needed, runs Codex review in read-only mode, validates Review output deterministically, appends formal review output, and either hands off to Make PR, routes Review failures back to Develop, or terminates the run.

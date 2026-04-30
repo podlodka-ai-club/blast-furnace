@@ -35,6 +35,8 @@ export interface CodexCliArgsOptions {
   resumeLastSession?: boolean;
   outputLastMessagePath?: string;
   enableHooks?: boolean;
+  bypassSandbox?: boolean;
+  sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access';
 }
 
 export interface RunCodexSessionOptions {
@@ -44,6 +46,8 @@ export interface RunCodexSessionOptions {
   resumeLastSession?: boolean;
   outputLastMessage?: boolean;
   enableHooks?: boolean;
+  bypassSandbox?: boolean;
+  sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access';
   env?: NodeJS.ProcessEnv;
   logPrefix: string;
   timeoutLabel: string;
@@ -82,6 +86,10 @@ function hasCodexHooksEnabled(args: string[]): boolean {
   });
 }
 
+function hasSandboxArg(args: string[]): boolean {
+  return args.some((arg, index) => arg === '--sandbox' || arg.startsWith('--sandbox=') || args[index - 1] === '--sandbox');
+}
+
 export function buildCodexSessionArgs(options: CodexCliArgsOptions): string[] {
   const invocationArgs = [...options.cliArgs];
   const hasExplicitSubcommand = invocationArgs.some((arg) => CODEX_SUBCOMMANDS.has(arg));
@@ -104,8 +112,13 @@ export function buildCodexSessionArgs(options: CodexCliArgsOptions): string[] {
     invocationArgs.push('--enable', 'codex_hooks');
   }
 
-  if (!invocationArgs.includes('--dangerously-bypass-approvals-and-sandbox')) {
+  const shouldBypassSandbox = options.bypassSandbox ?? true;
+  if (shouldBypassSandbox && !invocationArgs.includes('--dangerously-bypass-approvals-and-sandbox')) {
     invocationArgs.push('--dangerously-bypass-approvals-and-sandbox');
+  }
+
+  if (isCodexCommand && options.sandboxMode && !shouldBypassSandbox && !hasSandboxArg(invocationArgs)) {
+    invocationArgs.push('--sandbox', options.sandboxMode);
   }
 
   if (options.model && !hasExplicitModelArg(invocationArgs)) {
@@ -148,6 +161,8 @@ export async function runCodexSession(options: RunCodexSessionOptions): Promise<
     resumeLastSession: options.resumeLastSession,
     outputLastMessagePath: outputPath,
     enableHooks: options.enableHooks,
+    bypassSandbox: options.bypassSandbox,
+    sandboxMode: options.sandboxMode,
   });
 
   await ensureNodePtySpawnHelperExecutable(options.logger);

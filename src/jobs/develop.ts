@@ -22,6 +22,7 @@ import {
 import { createForwardStagePayload } from './stage-payloads.js';
 
 export const DEVELOP_PROMPT_TEMPLATE_PATH = join(process.cwd(), 'prompts', 'develop.md');
+export const DEVELOP_REWORK_PROMPT_TEMPLATE_PATH = join(process.cwd(), 'prompts', 'develop-rework.md');
 
 const DEVELOPMENT_RESULT = {
   status: 'completed',
@@ -54,12 +55,14 @@ function parseMinimumTimeout(value: string | undefined, defaultVal: number): num
 
 export interface DevelopPromptInput {
   planContent: string;
+  reviewContent?: string;
 }
 
 export async function renderDevelopPrompt(templatePath: string, input: DevelopPromptInput): Promise<string> {
   const template = await readFile(templatePath, 'utf8');
   const replacements: Record<string, string> = {
     planContent: input.planContent,
+    reviewContent: input.reviewContent ?? '',
   };
 
   return template.replace(/\{\{([A-Za-z0-9_]+)\}\}/g, (match, key: string) => replacements[key] ?? match);
@@ -80,8 +83,12 @@ export async function runDevelopWork(
 
   logger.info(`Running develop for issue #${issue.number} on branch ${branchName}`);
 
-  const prompt = await renderDevelopPrompt(DEVELOP_PROMPT_TEMPLATE_PATH, {
+  const promptTemplatePath = context.inputKind === 'review-rework'
+    ? DEVELOP_REWORK_PROMPT_TEMPLATE_PATH
+    : DEVELOP_PROMPT_TEMPLATE_PATH;
+  const prompt = await renderDevelopPrompt(promptTemplatePath, {
     planContent: context.plan.content,
+    reviewContent: context.reviewFailureContent,
   });
   const stopHook = await prepareDevelopStopHook({
     runId: job.data.runId,
@@ -159,7 +166,9 @@ export async function runDevelopWork(
     toStage,
     stageAttempt: job.data.stageAttempt,
     reworkAttempt: job.data.reworkAttempt,
-    dependsOn: [job.data.inputRecordRef],
+    dependsOn: context.inputKind === 'review-rework'
+      ? [job.data.inputRecordRef, context.planRecord.recordId]
+      : [job.data.inputRecordRef],
     status: handoffStatus,
     output,
   }, toStage === null ? output.status : undefined);
@@ -174,7 +183,7 @@ export async function runDevelopWork(
   return {
     output,
     reviewJobData: toStage === 'review'
-      ? createForwardStagePayload(job.data, 'review', inputRecordRef) as ReviewJobData
+      ? createForwardStagePayload(job.data, 'review', inputRecordRef, job.data.stageAttempt) as ReviewJobData
       : undefined,
   };
 }

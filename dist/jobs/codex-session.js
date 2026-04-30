@@ -50,6 +50,9 @@ function hasCodexHooksEnabled(args) {
         return arg === '--enable' && args[index + 1] === 'codex_hooks';
     });
 }
+function hasSandboxArg(args) {
+    return args.some((arg, index) => arg === '--sandbox' || arg.startsWith('--sandbox=') || args[index - 1] === '--sandbox');
+}
 export function buildCodexSessionArgs(options) {
     const invocationArgs = [...options.cliArgs];
     const hasExplicitSubcommand = invocationArgs.some((arg) => CODEX_SUBCOMMANDS.has(arg));
@@ -66,8 +69,12 @@ export function buildCodexSessionArgs(options) {
     if (isCodexCommand && options.enableHooks && !hasCodexHooksEnabled(invocationArgs)) {
         invocationArgs.push('--enable', 'codex_hooks');
     }
-    if (!invocationArgs.includes('--dangerously-bypass-approvals-and-sandbox')) {
+    const shouldBypassSandbox = options.bypassSandbox ?? true;
+    if (shouldBypassSandbox && !invocationArgs.includes('--dangerously-bypass-approvals-and-sandbox')) {
         invocationArgs.push('--dangerously-bypass-approvals-and-sandbox');
+    }
+    if (isCodexCommand && options.sandboxMode && !shouldBypassSandbox && !hasSandboxArg(invocationArgs)) {
+        invocationArgs.push('--sandbox', options.sandboxMode);
     }
     if (options.model && !hasExplicitModelArg(invocationArgs)) {
         invocationArgs.push('--model', options.model);
@@ -101,6 +108,8 @@ export async function runCodexSession(options) {
         resumeLastSession: options.resumeLastSession,
         outputLastMessagePath: outputPath,
         enableHooks: options.enableHooks,
+        bypassSandbox: options.bypassSandbox,
+        sandboxMode: options.sandboxMode,
     });
     await ensureNodePtySpawnHelperExecutable(options.logger);
     const ptyProcess = pty.spawn(cliCmd, cliArgs, {

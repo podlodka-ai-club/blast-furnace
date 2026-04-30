@@ -78,6 +78,15 @@ function requirePassedQuality(output) {
     }
     return output.quality;
 }
+function requireFailedReviewOutput(record, output) {
+    if (record.toStage !== 'develop' || record.status !== 'rework-needed') {
+        throw new Error('review rework input must be a rework-needed handoff to develop');
+    }
+    if (output.status !== 'review-failed' || output.review.status !== 'failed') {
+        throw new Error('review rework input requires review-failed output');
+    }
+    return output.review;
+}
 export async function resolveAssessContext(payload) {
     stagePayloadSchemas.assess.parse(payload);
     const [runContext, inputRecord] = await Promise.all([
@@ -104,13 +113,31 @@ export async function resolveDevelopContext(payload) {
         readStableRunContext(payload),
         readValidatedStageInputRecord(payload),
     ]);
-    ensureInputStage(inputRecord, 'plan');
-    const output = parseStageOutput('plan', inputRecord.output);
-    return {
-        runContext,
-        plan: requireAcceptedPlan(output),
-        inputRecord: inputRecord,
-    };
+    if (inputRecord.fromStage === 'plan') {
+        const output = parseStageOutput('plan', inputRecord.output);
+        return {
+            runContext,
+            inputKind: 'plan',
+            plan: requireAcceptedPlan(output),
+            inputRecord: inputRecord,
+            planRecord: inputRecord,
+        };
+    }
+    if (inputRecord.fromStage === 'review') {
+        const output = parseStageOutput('review', inputRecord.output);
+        const review = requireFailedReviewOutput(inputRecord, output);
+        const planRecord = await loadRequiredDependencyRecord(payload.inputRecordRef, inputRecord, 'plan');
+        const planOutput = parseStageOutput('plan', planRecord.output);
+        return {
+            runContext,
+            inputKind: 'review-rework',
+            plan: requireAcceptedPlan(planOutput),
+            reviewFailureContent: review.content,
+            inputRecord: inputRecord,
+            planRecord,
+        };
+    }
+    throw new Error(`develop input record expected stage plan or review but found ${inputRecord.fromStage}`);
 }
 export async function resolveReviewContext(payload) {
     stagePayloadSchemas.review.parse(payload);
@@ -139,6 +166,9 @@ export async function resolveMakePrContext(payload) {
     ]);
     ensureInputStage(inputRecord, 'review');
     const reviewOutput = parseStageOutput('review', inputRecord.output);
+    if (reviewOutput.status !== 'success' || reviewOutput.review.status !== 'passed') {
+        throw new Error('Make PR requires a passed Review input record');
+    }
     const developRecord = await loadRequiredDependencyRecord(payload.inputRecordRef, inputRecord, 'develop');
     const planRecord = await loadRequiredDependencyRecord(payload.inputRecordRef, inputRecord, 'plan');
     const developOutput = parseStageOutput('develop', developRecord.output);

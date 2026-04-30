@@ -196,6 +196,10 @@ export interface QualityGateConfig {
   testTimeoutMs: number;
 }
 
+export interface ReviewConfig {
+  attemptLimit: number;
+}
+
 export interface AppConfig {
   env: string;
   port: number;
@@ -203,6 +207,7 @@ export interface AppConfig {
   github: GitHubConfig;
   codex: CodexConfig;
   qualityGate: QualityGateConfig;
+  review: ReviewConfig;
 }
 
 // Server types
@@ -278,10 +283,28 @@ export interface QualityGateResult {
   outputPath?: string;
 }
 
-export interface ReviewResult {
-  status: 'stubbed';
-  summary: string;
-}
+export type ReviewOutputStatus = 'success' | 'review-failed' | 'review-malformed' | 'review-exhausted';
+
+export type ReviewResult =
+  | {
+    status: 'passed';
+    summary: 'Review Success';
+  }
+  | {
+    status: 'failed';
+    summary: string;
+    content: string;
+  }
+  | {
+    status: 'malformed';
+    summary: string;
+    rawResponse: string;
+  }
+  | {
+    status: 'exhausted';
+    summary: string;
+    content: string;
+  };
 
 export interface PrepareRunOutput {
   status: 'success';
@@ -316,7 +339,7 @@ export interface DevelopOutput {
 }
 
 export interface ReviewOutput {
-  status: 'success';
+  status: ReviewOutputStatus;
   runId: RunId;
   stageAttempt: number;
   reworkAttempt: number;

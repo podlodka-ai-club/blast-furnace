@@ -11,10 +11,13 @@ export interface PlanContext {
 }
 export interface DevelopContext {
     runContext: StableRunContext;
+    inputKind: 'plan' | 'review-rework';
     plan: Extract<PlanResult, {
         status: 'success';
     }>;
-    inputRecord: HandoffRecord<PlanOutput>;
+    reviewFailureContent?: string;
+    inputRecord: HandoffRecord<PlanOutput> | HandoffRecord<ReviewOutput>;
+    planRecord: HandoffRecord<PlanOutput>;
 }
 export interface ReviewContext {
     runContext: StableRunContext;
