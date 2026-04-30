@@ -83,6 +83,35 @@ export interface StableRunContext {
     branchName: string;
     workspacePath: string;
 }
+export interface InitialRunContext {
+    issue: GitHubIssue;
+    repository: RepositoryIdentity;
+}
+export type TrackerCommentKind = 'orchestrator-status' | 'orchestrator-plan' | 'orchestrator-rework-start';
+export type TrackerProvider = 'github' | string;
+export type StatusItemState = 'pending' | 'in-progress' | 'completed' | 'retrying' | 'blocked' | 'failed' | 'skipped';
+export type StatusItemStage = 'task-pickup' | 'prepare-run' | 'assess' | 'plan' | 'develop' | 'quality-gate' | 'review' | 'review-feedback-loop' | 'draft-pr-and-in-review';
+export interface StatusChecklistItem {
+    id: string;
+    stage: StatusItemStage;
+    attempt: number;
+    state: StatusItemState;
+    label: string;
+    detail?: string;
+}
+export interface RunStatusMetadata {
+    provider: TrackerProvider;
+    kind: TrackerCommentKind;
+    externalId?: string;
+    checklist: StatusChecklistItem[];
+    pickedUpAt: string;
+    lastChangedAt: string;
+    heading?: string;
+    focus?: string;
+    note?: string;
+    createdAt?: string;
+    updatedAt?: string;
+}
 export interface RunSummaryData {
     runId: RunId;
     status: string;
@@ -95,7 +124,9 @@ export interface RunSummaryData {
     stageAttempt?: number;
     reworkAttempt?: number;
     latestHandoffRecord?: InputRecordRef | null;
+    initialContext?: InitialRunContext;
     stableContext?: StableRunContext;
+    trackerStatus?: RunStatusMetadata;
     stages: Record<string, RunStageSummary>;
     createdAt?: string;
     updatedAt?: string;
@@ -291,6 +322,7 @@ export interface SyncTrackerStateOutput {
     stageAttempt: number;
     reworkAttempt: number;
     trackerLabels: string[];
+    trackerWarning?: string;
 }
 export interface IntakeJobData extends StageJobPayload<'intake'> {
     lastPollTimestamp?: string;

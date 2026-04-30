@@ -10,6 +10,7 @@ import {
   scheduleNextJob,
 } from './orchestration.js';
 import { createForwardStagePayload } from './stage-payloads.js';
+import { statusItem, updateRunStatus } from './status.js';
 
 const STUB_ASSESSMENT = {
   status: 'stubbed',
@@ -19,6 +20,12 @@ const STUB_ASSESSMENT = {
 export async function runAssessWork(job: Job<AssessJobData>): Promise<PlanJobData> {
   stagePayloadSchemas.assess.parse(job.data);
   await resolveAssessContext(job.data);
+  const orchestrationRoot = resolveOrchestrationStorageRoot(job.data.inputRecordRef);
+  await updateRunStatus(orchestrationRoot, job.data.runId, {
+    heading: 'Blast Furnace is assessing the issue',
+    focus: 'Current focus: Assess issue',
+    items: [statusItem('assess', 1, 'in-progress', 'Assess issue', 'In progress')],
+  });
   const output = stageOutputSchemas.assess.parse({
     status: 'success',
     runId: job.data.runId,
@@ -26,7 +33,6 @@ export async function runAssessWork(job: Job<AssessJobData>): Promise<PlanJobDat
     reworkAttempt: job.data.reworkAttempt,
     assessment: STUB_ASSESSMENT,
   }) as AssessOutput;
-  const orchestrationRoot = resolveOrchestrationStorageRoot(job.data.inputRecordRef);
   const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
     runId: job.data.runId,
     fromStage: 'assess',
@@ -36,6 +42,14 @@ export async function runAssessWork(job: Job<AssessJobData>): Promise<PlanJobDat
     dependsOn: [job.data.inputRecordRef],
     status: 'success',
     output,
+  });
+  await updateRunStatus(orchestrationRoot, job.data.runId, {
+    heading: 'Blast Furnace is planning the solution',
+    focus: 'Current focus: Plan solution',
+    items: [
+      statusItem('assess', 1, 'completed', 'Assess issue'),
+      statusItem('plan', 1, 'pending', 'Plan solution'),
+    ],
   });
 
   return createForwardStagePayload(job.data, 'plan', inputRecordRef) as PlanJobData;

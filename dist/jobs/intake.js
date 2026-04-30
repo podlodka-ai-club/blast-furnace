@@ -6,6 +6,8 @@ import { getConfiguredRepository } from '../github/repository.js';
 import { jobQueue } from './queue.js';
 import { createPrepareRunPayload } from './prepare-run.js';
 import { createJobLogger } from './logger.js';
+import { createRunFileSet, initializeRunSummary, readRunSummary, resolveOrchestrationStorageRoot, } from './orchestration.js';
+import { statusItem, updateRunStatus } from './status.js';
 const LAST_POLL_KEY = 'github:intake:last-poll';
 const LEGACY_LAST_POLL_KEY = 'github:issue-watcher:last-poll';
 const PROCESSING_LOCK_TTL_SECONDS = Math.max(Math.ceil((config.codex?.timeoutMs ?? 300000) / 1000) * 2, Math.ceil(config.github.pollIntervalMs / 1000) * 2);
@@ -80,6 +82,39 @@ export async function intakeHandler(job) {
         }
         eligibleIssueCount += 1;
         try {
+            const orchestrationRoot = resolveOrchestrationStorageRoot();
+            const runStartedAt = new Date().toISOString();
+            if (!await readRunSummary(orchestrationRoot, payload.runId)) {
+                const runFileSet = createRunFileSet(orchestrationRoot, payload.runId, new Date(runStartedAt));
+                await initializeRunSummary(orchestrationRoot, runFileSet, {
+                    runId: payload.runId,
+                    status: 'running',
+                    currentStage: 'prepare-run',
+                    runStartedAt,
+                    stageAttempt: payload.stageAttempt,
+                    reworkAttempt: payload.reworkAttempt,
+                    latestHandoffRecord: null,
+                    initialContext: {
+                        issue,
+                        repository,
+                    },
+                    stages: {
+                        intake: {
+                            attempts: 1,
+                            status: 'success',
+                            updatedAt: runStartedAt,
+                        },
+                    },
+                });
+            }
+            await updateRunStatus(orchestrationRoot, payload.runId, {
+                heading: 'Blast Furnace is starting work',
+                focus: 'Current focus: Prepare run',
+                items: [
+                    statusItem('task-pickup', 1, 'completed', 'Task picked up'),
+                    statusItem('prepare-run', 1, 'pending', 'Prepare run'),
+                ],
+            }, logger);
             await jobQueue.add('prepare-run', payload);
         }
         catch (err) {

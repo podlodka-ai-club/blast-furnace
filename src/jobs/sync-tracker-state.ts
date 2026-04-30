@@ -10,6 +10,7 @@ import {
   appendHandoffRecordAndUpdateSummary,
   resolveOrchestrationStorageRoot,
 } from './orchestration.js';
+import { statusItem, updateRunStatus } from './status.js';
 
 async function readSyncTrackerStateInput(job: Job<SyncTrackerStateJobData>): Promise<SyncTrackerStateContext> {
   stagePayloadSchemas['sync-tracker-state'].parse(job.data);
@@ -28,10 +29,12 @@ export async function runSyncTrackerStateWork(
 
   logger.info(`Synchronizing tracker state for PR #${pullRequest.number} on branch ${branchName}`);
   let trackerLabels: string[] = [];
+  let trackerWarning: string | undefined;
   try {
     trackerLabels = await moveIssueToInReview(issue.number);
     logger.info(`Issue #${issue.number} labels updated: ${trackerLabels.join(', ')}`);
   } catch (err) {
+    trackerWarning = `Pull request #${pullRequest.number} was created, but moving the issue to \`in review\` failed.`;
     logger.warn(`Failed to update labels for issue #${issue.number}: ${err}`);
   }
 
@@ -41,6 +44,7 @@ export async function runSyncTrackerStateWork(
     stageAttempt: job.data.stageAttempt,
     reworkAttempt: job.data.reworkAttempt,
     trackerLabels,
+    ...(trackerWarning !== undefined && { trackerWarning }),
   }) as SyncTrackerStateOutput;
   const orchestrationRoot = resolveOrchestrationStorageRoot(job.data.inputRecordRef);
   await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
@@ -53,6 +57,20 @@ export async function runSyncTrackerStateWork(
     status: 'success',
     output,
   }, 'completed');
+  await updateRunStatus(orchestrationRoot, job.data.runId, {
+    heading: 'Blast Furnace created a pull request',
+    focus: `Result: Pull request #${pullRequest.number} created`,
+    note: trackerWarning,
+    items: [
+      statusItem(
+        'draft-pr-and-in-review',
+        1,
+        'completed',
+        'Draft PR + move to `in review`',
+        trackerWarning ? 'PR created, tracker warning' : 'PR created, issue moved to `in review`'
+      ),
+    ],
+  }, logger);
 
   return pullRequest;
 }

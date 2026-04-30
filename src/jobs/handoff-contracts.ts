@@ -263,6 +263,9 @@ function parseSyncTrackerStateOutput(value: unknown): SyncTrackerStateOutput {
   if (!Array.isArray(value['trackerLabels'])) {
     throw new Error('trackerLabels must be an array');
   }
+  if (value['trackerWarning'] !== undefined && typeof value['trackerWarning'] !== 'string') {
+    throw new Error('trackerWarning must be a string');
+  }
   return value as unknown as SyncTrackerStateOutput;
 }
 
