@@ -1,7 +1,7 @@
 # run-handoff-ledger Specification
 
 ## Purpose
-TBD - created by archiving change run-handoff-jsonl-contracts. Update Purpose after archive.
+Defines the timestamped run file set, append-only JSONL handoff ledger, validation contracts, and mutable run summary pointer index used to carry stage outputs through the pipeline.
 ## Requirements
 ### Requirement: Timestamped Run File Set
 The system SHALL create a timestamped run file set for every accepted run.
@@ -22,7 +22,7 @@ The system SHALL create a timestamped run file set for every accepted run.
 - **AND** later path resolution for the run SHALL use the persisted timestamp prefix rather than recomputing the current time
 
 ### Requirement: Single JSONL Handoff Ledger
-The system SHALL use one append-only JSONL handoff ledger per run as the durable carrier for stage-local output and transition data.
+The system SHALL use one append-only JSONL handoff ledger per run as the durable carrier for stage-local output and transition data, including Review success, Review terminal failure, malformed Review response, and Review-to-Develop rework transitions.
 
 #### Scenario: Handoff record is appended
 - **WHEN** a pipeline stage finishes with a handoff-relevant result
@@ -63,6 +63,45 @@ The system SHALL use one append-only JSONL handoff ledger per run as the durable
 - **AND** the record output SHALL NOT include `assessment`, `plan`, `review`, `pullRequest`, issue data, repository identity, branch name, or workspace path
 - **AND** `quality.status` SHALL be `passed`
 - **AND** the record output SHALL NOT include `quality.outputPath`
+
+#### Scenario: Rework Develop handoff includes Review and Plan dependencies
+- **WHEN** Develop appends a successful handoff to Review after consuming a Review rework handoff
+- **THEN** the record's `fromStage` SHALL be `develop`
+- **AND** the record's `toStage` SHALL be `review`
+- **AND** the record's `status` SHALL be `success`
+- **AND** the record's `dependsOn` SHALL include the consumed Review record id
+- **AND** the record's `dependsOn` SHALL include the accepted Plan record id resolved for rework
+- **AND** the record output SHALL include `development` and `quality`
+- **AND** the record output SHALL NOT include `assessment`, `plan`, `review`, `pullRequest`, issue data, repository identity, branch name, or workspace path
+
+#### Scenario: Review success handoff includes passed review
+- **WHEN** Review appends a successful handoff to Make PR
+- **THEN** the record's `fromStage` SHALL be `review`
+- **AND** the record's `toStage` SHALL be `make-pr`
+- **AND** the record's `status` SHALL be `success`
+- **AND** the record output SHALL include `status: "success"`
+- **AND** the record output SHALL include `review.status: "passed"`
+- **AND** the record output SHALL NOT include `assessment`, `plan`, `development`, `quality`, `pullRequest`, issue data, repository identity, branch name, or workspace path
+
+#### Scenario: Review rework handoff includes failed review
+- **WHEN** Review appends a rework handoff to Develop
+- **THEN** the record's `fromStage` SHALL be `review`
+- **AND** the record's `toStage` SHALL be `develop`
+- **AND** the record's `status` SHALL be `rework-needed`
+- **AND** the record's `dependsOn` SHALL include the consumed Develop record id
+- **AND** the record's `dependsOn` SHALL include the accepted Plan record id used by Review
+- **AND** the record output SHALL include `status: "review-failed"`
+- **AND** the record output SHALL include `review.status: "failed"`
+- **AND** the record output SHALL NOT include `assessment`, `plan`, `development`, `quality`, `pullRequest`, issue data, repository identity, branch name, or workspace path
+
+#### Scenario: Review terminal handoff includes review failure outcome
+- **WHEN** Review appends a terminal handoff for malformed Review output or exhausted Review rework attempts
+- **THEN** the record's `fromStage` SHALL be `review`
+- **AND** the record's `toStage` SHALL be `null`
+- **AND** the record's `status` SHALL be `failure`
+- **AND** the record output SHALL include either `status: "review-malformed"` or `status: "review-exhausted"`
+- **AND** the record output SHALL include Review-owned result data only
+- **AND** the record output SHALL NOT include `assessment`, `plan`, `development`, `quality`, `pullRequest`, issue data, repository identity, branch name, or workspace path
 
 #### Scenario: Develop terminal handoff includes failed quality
 - **WHEN** Develop appends a terminal handoff for `failed`, `timed-out`, or `misconfigured` quality
@@ -118,6 +157,28 @@ The system SHALL validate transport payloads, input handoff records, explicit de
 - **AND** the referenced output SHALL include `quality.status: "passed"`
 - **AND** validation SHALL reject missing quality data or non-passed quality data before Review appends output
 
+#### Scenario: Review output schema is validated
+- **WHEN** Review appends any handoff record
+- **THEN** the Review output schema SHALL require `status` to be one of `success`, `review-failed`, `review-malformed`, or `review-exhausted`
+- **AND** SHALL require `runId`, `stageAttempt`, `reworkAttempt`, and `review`
+- **AND** SHALL require successful review output to include `review.status: "passed"` and `review.summary: "Review Success"`
+- **AND** SHALL require failed review output to include `review.status: "failed"` and failed review content
+- **AND** SHALL require malformed review output to include `review.status: "malformed"` and the raw Codex response
+- **AND** SHALL require exhausted review output to include `review.status: "exhausted"` and failed review content
+- **AND** SHALL reject Review output containing plan, development, quality, pull request, or stable run context data
+
+#### Scenario: Develop rework input schema is validated
+- **WHEN** Develop receives a handoff record reference from Review
+- **THEN** the referenced record SHALL have `fromStage: "review"`, `toStage: "develop"`, and `status: "rework-needed"`
+- **AND** the referenced output SHALL include `status: "review-failed"` and `review.status: "failed"`
+- **AND** Develop SHALL validate that the accepted Plan dependency can be resolved from the Review record's `dependsOn` values before launching Codex
+
+#### Scenario: Make PR input review schema is validated
+- **WHEN** Make PR receives a handoff record reference from Review
+- **THEN** the referenced record SHALL have `fromStage: "review"` and `toStage: "make-pr"`
+- **AND** the referenced Review output SHALL include `status: "success"` and `review.status: "passed"`
+- **AND** validation SHALL reject `review-failed`, `review-malformed`, `review-exhausted`, and any other non-passed Review output before Make PR finalizes repository changes
+
 ### Requirement: Run Summary Pointer Index
 The timestamped run summary SHALL remain a mutable status, stable run context, and pointer index over the handoff ledger.
 
@@ -144,3 +205,10 @@ The timestamped run summary SHALL remain a mutable status, stable run context, a
 - **AND** the run summary status SHALL be `quality-failed`, `quality-timed-out`, or `quality-misconfigured` according to the quality result
 - **AND** the latest handoff record reference SHALL point to the terminal Develop record
 - **AND** the run summary SHALL NOT include a full copy of the quality command output
+
+#### Scenario: Run summary records terminal Review outcome
+- **WHEN** Review appends a terminal handoff for malformed Review output or exhausted Review rework attempts
+- **THEN** the run summary SHALL set `currentStage` to `null`
+- **AND** the run summary status SHALL be `review-malformed` or `review-exhausted` according to the Review result
+- **AND** the latest handoff record reference SHALL point to the terminal Review record
+- **AND** the run summary SHALL NOT include a full copy of Review output text

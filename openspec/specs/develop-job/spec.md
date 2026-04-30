@@ -4,15 +4,33 @@
 Defines the target Develop stage that invokes the configured Codex executor inside the prepared workspace and owns deterministic Quality Gate execution through the Codex Stop hook.
 ## Requirements
 ### Requirement: Develop Job Module
-The system SHALL provide a `develop` job handled by an isolated Develop module that reads stable run context from the run summary, reads accepted plan output from the JSONL ledger, owns Codex executor invocation and the deterministic Quality Gate Stop-hook loop, and appends formal development and quality output without owning repository or workspace preparation.
+The system SHALL provide a `develop` job handled by an isolated Develop module that reads stable run context from the run summary, accepts either a successful Plan handoff for initial work or a failed Review handoff for rework, owns Codex executor invocation and the deterministic Quality Gate Stop-hook loop, and appends formal development and quality output without owning repository or workspace preparation.
 
 #### Scenario: Develop receives planned run data
-- **WHEN** a `develop` job runs
+- **WHEN** a `develop` job runs with a handoff record reference from `plan`
 - **THEN** the payload SHALL include `runId`, `stage`, `stageAttempt`, `reworkAttempt`, and an input handoff record reference
 - **AND** `stage` SHALL be `develop`
 - **AND** Develop SHALL read issue data, configured repository identity, branch name, and workspace path from stable run context in the run summary
 - **AND** Develop SHALL read accepted plan data from the referenced Plan handoff record
+- **AND** the referenced Plan output SHALL have `status: "success"` and `plan.status: "success"`
 - **AND** Develop SHALL NOT require assessment data in its stage input context
+
+#### Scenario: Develop receives Review rework data
+- **WHEN** a `develop` job runs with a handoff record reference from `review`
+- **THEN** the payload SHALL include `runId`, `stage`, `stageAttempt`, `reworkAttempt`, and an input handoff record reference
+- **AND** `stage` SHALL be `develop`
+- **AND** Develop SHALL read issue data, configured repository identity, branch name, and workspace path from stable run context in the run summary
+- **AND** the referenced Review handoff record SHALL have `toStage: "develop"` and `status: "rework-needed"`
+- **AND** the referenced Review output SHALL have `status: "review-failed"` and `review.status: "failed"`
+- **AND** Develop SHALL read the review failure text from the referenced Review handoff record
+- **AND** Develop SHALL resolve the accepted Plan record from the Review handoff record's explicit dependency ids
+- **AND** Develop SHALL NOT receive plan content or review content through queue payload fields
+
+#### Scenario: Develop rejects unsupported input
+- **WHEN** a `develop` job runs with an input handoff record that is neither an accepted Plan handoff nor a Review rework handoff
+- **THEN** Develop SHALL fail before launching Codex
+- **AND** Develop SHALL NOT append a Develop handoff record
+- **AND** Develop SHALL NOT enqueue `review`, `make-pr`, or `sync-tracker-state`
 
 #### Scenario: Repository preparation is not repeated
 - **WHEN** Develop starts
@@ -72,8 +90,15 @@ The system SHALL provide a `develop` job handled by an isolated Develop module t
 - **AND** the handoff `quality` object SHALL NOT include `outputPath` for a passed Quality Gate result
 - **AND** Develop SHALL remove run-scoped Quality Gate runtime artifacts after the successful Develop handoff is written
 - **AND** Develop SHALL enqueue a `review` job with `runId`, `stage`, `stageAttempt`, `reworkAttempt`, and an input handoff record reference
+- **AND** the queued Review job SHALL use the same `stageAttempt` and `reworkAttempt` values as the Develop job that produced the handoff
 - **AND** SHALL NOT enqueue a `quality-gate` job
 - **AND** SHALL NOT commit changes, push changes, create pull requests, transition tracker state, or perform workspace terminal cleanup
+
+#### Scenario: Rework Develop passes quality
+- **WHEN** a Develop job that consumed a Review rework handoff passes Quality Gate
+- **THEN** the Develop handoff record to Review SHALL depend on the consumed Review record and the accepted Plan record
+- **AND** the Develop handoff record SHALL preserve the same `stageAttempt` and `reworkAttempt` values as the Develop job
+- **AND** the queued Review job SHALL preserve the same `stageAttempt` and `reworkAttempt` values as the Develop job
 
 #### Scenario: Quality Gate failure is returned to Codex
 - **WHEN** Codex attempts to stop and Quality Gate exits non-zero or times out before the terminal failed attempt
@@ -119,22 +144,35 @@ The system SHALL provide a `develop` job handled by an isolated Develop module t
 - **AND** worker routing SHALL call that module for `develop` jobs
 
 ### Requirement: Develop prompt template rendering
-The Develop module SHALL render its executor prompt from a repository-owned Develop prompt template and SHALL use the accepted Plan result content as the plan context.
+The Develop module SHALL render its executor prompt from repository-owned Develop prompt templates, using the accepted Plan result content as the plan context for initial work and both the accepted Plan result content and latest Review failure text for review-triggered rework.
 
-#### Scenario: Develop prompt is rendered from repository template
-- **WHEN** the Develop module prepares the Codex executor prompt
+#### Scenario: Initial Develop prompt is rendered from repository template
+- **WHEN** the Develop module prepares the Codex executor prompt from an accepted Plan handoff
 - **THEN** Develop SHALL load a hardcoded repository-owned Develop prompt template
 - **AND** render an explicit placeholder for plan content
 - **AND** render `PlanOutput.plan.content` as the plan content
 - **AND** SHALL NOT add issue number, issue title, or issue description outside the accepted Plan content
+
+#### Scenario: Rework Develop prompt is rendered from repository template
+- **WHEN** the Develop module prepares the Codex executor prompt from a Review rework handoff
+- **THEN** Develop SHALL load `prompts/develop-rework.md`
+- **AND** render the accepted Plan content from the resolved Plan dependency
+- **AND** render the Review result content from the consumed Review handoff record
+- **AND** SHALL NOT add issue number, issue title, or issue description outside the accepted Plan and Review result content
 
 #### Scenario: Develop executor receives accepted plan text
 - **WHEN** Develop launches the configured Codex executor after a successful Plan handoff
 - **THEN** the prompt appended to the Codex arguments SHALL contain the accepted Plan content
 - **AND** SHALL NOT substitute serialized Plan handoff metadata for the accepted Plan content
 
+#### Scenario: Rework Develop executor receives review context
+- **WHEN** Develop launches the configured Codex executor after a Review rework handoff
+- **THEN** the prompt appended to the Codex arguments SHALL contain the accepted Plan content
+- **AND** SHALL contain the latest Review failure text
+- **AND** SHALL NOT substitute serialized Plan or Review handoff metadata for the prompt context
+
 #### Scenario: Development starts a new Codex session
-- **WHEN** Develop launches the configured Codex executor after a successful Plan handoff
+- **WHEN** Develop launches the configured Codex executor after a successful Plan handoff or Review rework handoff
 - **THEN** Develop SHALL start a new Codex session for Development
-- **AND** SHALL NOT resume or continue the Codex session used by Plan
-- **AND** SHALL rely on the accepted Plan content from the handoff ledger as the cross-stage context
+- **AND** SHALL NOT resume or continue the Codex session used by Plan or Review
+- **AND** SHALL rely on the accepted Plan content and, for rework, the Review result content from the handoff ledger as the cross-stage context
