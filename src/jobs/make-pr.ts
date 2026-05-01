@@ -4,6 +4,7 @@ import type {
   MakePrJobData,
   MakePrOutput,
   NoChangeOutput,
+  PullRequestCreationFailureOutput,
   PullRequestOutput,
   SyncTrackerStateJobData,
 } from '../types/index.js';
@@ -78,11 +79,19 @@ async function pushWithRetry(
 
 export type MakePrWorkResult =
   | { status: 'no-changes'; output: NoChangeOutput; workspacePath: string }
+  | { status: PullRequestCreationFailureOutput['status']; output: PullRequestCreationFailureOutput }
   | {
     status: 'pull-request-created';
     output: PullRequestOutput;
     syncTrackerStateJobData: SyncTrackerStateJobData;
   };
+
+type PullRequestCreationFailureStatus = PullRequestCreationFailureOutput['status'];
+
+interface PullRequestFailureClassification {
+  status: PullRequestCreationFailureStatus;
+  errorMessage: string;
+}
 
 function sanitizeForGit(text: string, maxLength = 200): string {
   return text.replace(/[\r\n]/g, ' ').slice(0, maxLength);
@@ -107,6 +116,134 @@ function parseGitStatusPaths(status: string): string[] {
     paths.add(rawPath);
   }
   return [...paths];
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function boundedErrorMessage(message: string): string {
+  const normalized = message.replace(/\s+/g, ' ').trim();
+  return normalized.length > 500 ? `${normalized.slice(0, 497)}...` : normalized;
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return boundedErrorMessage(error.message);
+  }
+  if (typeof error === 'string') {
+    return boundedErrorMessage(error);
+  }
+  return 'Unknown pull request creation error';
+}
+
+function githubErrorMessages(error: unknown): string[] {
+  const messages = new Set<string>();
+  if (!isObject(error)) {
+    if (error instanceof Error && error.message) {
+      messages.add(error.message);
+    }
+    return [...messages];
+  }
+  const response = isObject(error.response) ? error.response : undefined;
+  const data = response && isObject(response.data) ? response.data : undefined;
+  const errors = Array.isArray(data?.errors) ? data.errors : [];
+  for (const entry of errors) {
+    if (isObject(entry) && typeof entry.message === 'string') {
+      messages.add(entry.message);
+    }
+  }
+  if (typeof data?.message === 'string') {
+    messages.add(data.message);
+  }
+  if (error instanceof Error && error.message) {
+    messages.add(error.message);
+  }
+  return [...messages];
+}
+
+function isPullRequestAlreadyExistsError(error: unknown): boolean {
+  const status = isObject(error) && typeof error.status === 'number' ? error.status : undefined;
+  const responseStatus = isObject(error) && isObject(error.response) && typeof error.response.status === 'number'
+    ? error.response.status
+    : undefined;
+  const httpStatus = status ?? responseStatus;
+  if (httpStatus !== undefined && httpStatus !== 422) {
+    return false;
+  }
+  return githubErrorMessages(error).some((message) => message.includes('A pull request already exists'));
+}
+
+function classifyPullRequestCreationError(error: unknown): PullRequestFailureClassification {
+  if (isPullRequestAlreadyExistsError(error)) {
+    const duplicateMessage = githubErrorMessages(error).find((message) => (
+      message.includes('A pull request already exists')
+    ));
+    return {
+      status: 'pull-request-already-exists',
+      errorMessage: boundedErrorMessage(duplicateMessage ?? errorMessage(error)),
+    };
+  }
+  return {
+    status: 'pull-request-creation-failed',
+    errorMessage: errorMessage(error),
+  };
+}
+
+async function recordPullRequestCreationFailure(
+  orchestrationRoot: string,
+  job: Job<MakePrJobData>,
+  context: Awaited<ReturnType<typeof resolveMakePrContext>>,
+  failure: PullRequestFailureClassification,
+  logger: ReturnType<typeof createJobLogger>
+): Promise<MakePrWorkResult> {
+  const output = stageOutputSchemas['make-pr'].parse({
+    status: failure.status,
+    errorMessage: failure.errorMessage,
+    runId: job.data.runId,
+    stageAttempt: job.data.stageAttempt,
+    reworkAttempt: job.data.reworkAttempt,
+  }) as MakePrOutput;
+  if (output.status !== 'pull-request-already-exists' && output.status !== 'pull-request-creation-failed') {
+    throw new Error('Expected pull request creation failure make-pr output');
+  }
+
+  await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
+    runId: job.data.runId,
+    fromStage: 'make-pr',
+    toStage: null,
+    stageAttempt: job.data.stageAttempt,
+    reworkAttempt: job.data.reworkAttempt,
+    dependsOn: [
+      job.data.inputRecordRef,
+      context.developRecord.recordId,
+      context.planRecord.recordId,
+    ],
+    status: 'failure',
+    output,
+  }, failure.status);
+
+  const isDuplicate = failure.status === 'pull-request-already-exists';
+  await updateRunStatus(orchestrationRoot, job.data.runId, {
+    heading: isDuplicate
+      ? 'Blast Furnace found an existing pull request'
+      : 'Blast Furnace could not create a pull request',
+    focus: isDuplicate
+      ? 'Final state: Pull request already exists'
+      : 'Final state: Pull request creation failed',
+    note: failure.errorMessage,
+    items: [
+      statusItem(
+        'draft-pr-and-in-review',
+        1,
+        'failed',
+        'Make PR',
+        isDuplicate ? 'A pull request already exists' : 'PR creation failed'
+      ),
+    ],
+  }, logger);
+
+  return { status: output.status, output };
 }
 
 export async function runMakePrWork(
@@ -183,12 +320,19 @@ export async function runMakePrWork(
   logger.info(`Changes pushed to ${branchName}`);
 
   logger.info('Creating pull request...');
-  const prResult = await createPullRequest({
-    title: `Process issue #${issue.number}: ${sanitizedTitle}`,
-    head: branchName,
-    base: 'main',
-    body: `Closes #${issue.number}`,
-  });
+  let prResult: Awaited<ReturnType<typeof createPullRequest>>;
+  try {
+    prResult = await createPullRequest({
+      title: `Process issue #${issue.number}: ${sanitizedTitle}`,
+      head: branchName,
+      base: 'main',
+      body: `Closes #${issue.number}`,
+    });
+  } catch (err) {
+    const failure = classifyPullRequestCreationError(err);
+    logger.error(`Pull request creation failed with ${failure.status}: ${failure.errorMessage}`);
+    return recordPullRequestCreationFailure(orchestrationRoot, job, context, failure, logger);
+  }
   logger.info(`Pull request created: ${prResult.htmlUrl}`);
 
   const output = stageOutputSchemas['make-pr'].parse({
@@ -247,13 +391,19 @@ export async function runMakePrFlow(job: Job<MakePrJobData>): Promise<void> {
   try {
     const result = await runMakePrWork(job, logger);
 
-    if (result.status === 'no-changes') {
-      logger.info(`Cleaning up temp working directory: ${result.workspacePath}`);
-      await cleanupWorkingDir(result.workspacePath);
-      return;
+    switch (result.status) {
+      case 'no-changes':
+        logger.info(`Cleaning up temp working directory: ${result.workspacePath}`);
+        await cleanupWorkingDir(result.workspacePath);
+        return;
+      case 'pull-request-already-exists':
+      case 'pull-request-creation-failed':
+        logger.info(`Make PR stopped with terminal status: ${result.status}`);
+        return;
+      case 'pull-request-created':
+        await scheduleNextJob(jobQueue, 'sync-tracker-state', result.syncTrackerStateJobData);
+        return;
     }
-
-    await scheduleNextJob(jobQueue, 'sync-tracker-state', result.syncTrackerStateJobData);
   } catch (err) {
     logger.error(`Make PR operation failed: ${err}`);
     try {

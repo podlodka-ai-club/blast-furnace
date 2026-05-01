@@ -405,7 +405,15 @@ export interface NoChangeOutput {
   reworkAttempt: number;
 }
 
-export type MakePrOutput = PullRequestOutput | NoChangeOutput;
+export interface PullRequestCreationFailureOutput {
+  status: 'pull-request-already-exists' | 'pull-request-creation-failed';
+  runId: RunId;
+  stageAttempt: number;
+  reworkAttempt: number;
+  errorMessage: string;
+}
+
+export type MakePrOutput = PullRequestOutput | NoChangeOutput | PullRequestCreationFailureOutput;
 
 export interface SyncTrackerStateOutput {
   status: 'tracker-synced';

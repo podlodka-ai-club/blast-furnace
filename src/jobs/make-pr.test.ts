@@ -11,6 +11,8 @@ import {
   createRunFileSet,
   initializeRunSummary,
   readHandoffRecords,
+  readRunSummary,
+  resolveOrchestrationStorageRoot,
 } from './orchestration.js';
 
 const { mockCreateJobLogger } = vi.hoisted(() => ({
@@ -436,6 +438,105 @@ describe('make-pr job', () => {
         recordId: '000004_make-pr_to_sync-tracker-state',
       }),
     }));
+  });
+
+  it('records a pull-request-already-exists output when GitHub rejects duplicate PR creation', async () => {
+    const mockSpawn = vi.mocked(spawn);
+    mockSpawn.mockImplementation((cmd: string, args: readonly string[]) => {
+      if (cmd === 'git' && args[0] === 'status') {
+        return createGitMockProcess(0, 'M modified-file.txt');
+      }
+      return createGitMockProcess();
+    });
+    mockCreatePullRequest.mockRejectedValue(Object.assign(
+      new Error('Validation Failed: A pull request already exists for test-owner:issue-42-test-issue.'),
+      {
+        status: 422,
+        response: {
+          data: {
+            errors: [{
+              resource: 'PullRequest',
+              code: 'custom',
+              message: 'A pull request already exists for test-owner:issue-42-test-issue.',
+            }],
+          },
+        },
+      }
+    ));
+    const job = await createJob();
+
+    await runMakePrFlow(job);
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
+    const summary = await readRunSummary(resolveOrchestrationStorageRoot(job.data.inputRecordRef), job.data.runId);
+
+    expect(records[3]).toMatchObject({
+      fromStage: 'make-pr',
+      toStage: null,
+      status: 'failure',
+      output: {
+        status: 'pull-request-already-exists',
+        errorMessage: 'A pull request already exists for test-owner:issue-42-test-issue.',
+      },
+    });
+    expect(summary).toMatchObject({
+      status: 'pull-request-already-exists',
+      stages: {
+        'make-pr': {
+          status: 'failure',
+        },
+      },
+      trackerStatus: {
+        heading: 'Blast Furnace found an existing pull request',
+        focus: 'Final state: Pull request already exists',
+      },
+    });
+    expect(summary?.trackerStatus?.checklist).toContainEqual(expect.objectContaining({
+      id: 'draft-pr-and-in-review:attempt-1',
+      state: 'failed',
+      detail: 'A pull request already exists',
+    }));
+    expect(mockJobQueueAdd).not.toHaveBeenCalled();
+    expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
+  });
+
+  it('records a pull-request-creation-failed output for generic PR creation errors', async () => {
+    const mockSpawn = vi.mocked(spawn);
+    mockSpawn.mockImplementation((cmd: string, args: readonly string[]) => {
+      if (cmd === 'git' && args[0] === 'status') {
+        return createGitMockProcess(0, 'M modified-file.txt');
+      }
+      return createGitMockProcess();
+    });
+    mockCreatePullRequest.mockRejectedValue(new Error('GitHub unavailable'));
+    const job = await createJob();
+
+    await runMakePrFlow(job);
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
+    const summary = await readRunSummary(resolveOrchestrationStorageRoot(job.data.inputRecordRef), job.data.runId);
+
+    expect(records[3]).toMatchObject({
+      fromStage: 'make-pr',
+      toStage: null,
+      status: 'failure',
+      output: {
+        status: 'pull-request-creation-failed',
+        errorMessage: 'GitHub unavailable',
+      },
+    });
+    expect(summary).toMatchObject({
+      status: 'pull-request-creation-failed',
+      trackerStatus: {
+        heading: 'Blast Furnace could not create a pull request',
+        focus: 'Final state: Pull request creation failed',
+      },
+    });
+    expect(summary?.trackerStatus?.checklist).toContainEqual(expect.objectContaining({
+      id: 'draft-pr-and-in-review:attempt-1',
+      state: 'failed',
+      detail: 'PR creation failed',
+    }));
+    expect(mockJobQueueAdd).not.toHaveBeenCalled();
+    expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
   });
 
   it('treats target workspace orchestration and Codex hook files as non-committable state', async () => {

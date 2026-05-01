@@ -210,7 +210,14 @@ function parseMakePrOutput(value) {
         }
         return value;
     }
-    throw new Error('make-pr status must be pull-request-created or no-changes');
+    if (value['status'] === 'pull-request-already-exists' || value['status'] === 'pull-request-creation-failed') {
+        requireString(value, 'errorMessage');
+        if ('pullRequest' in value) {
+            throw new Error('failed make-pr output must not include pullRequest');
+        }
+        return value;
+    }
+    throw new Error('make-pr status must be pull-request-created, no-changes, pull-request-already-exists, or pull-request-creation-failed');
 }
 function parseSyncTrackerStateOutput(value) {
     assertObject(value, 'sync-tracker-state output');
