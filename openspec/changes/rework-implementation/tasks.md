@@ -43,15 +43,15 @@
 - [x] 6.2 Implement Make PR rework finalization against the existing pull request branch.
 - [x] 6.3 Add failing Make PR branch-safety tests for fork PR rejection, unexpected head repository, unexpected branch, unexpected head SHA, and non-fast-forward refetch/retry exhaustion.
 - [x] 6.4 Implement existing-PR head repository/branch/SHA validation and bounded non-fast-forward refetch/retry handling.
-- [ ] 6.5 Add failing Sync Tracker State tests for post-initial-PR scheduling of PR Rework Intake, rework label removal, source issue `in review` transition, no-change rework cleanup, and not closing the run itself.
-- [ ] 6.6 Implement Sync Tracker State rework side effects, workspace cleanup, tracker-sync handoff updates, and PR Rework Intake scheduling.
+- [x] 6.5 Add failing Sync Tracker State tests for post-initial-PR scheduling of PR Rework Intake, rework label removal, source issue `in review` transition, no-change rework cleanup, and not closing the run itself.
+- [x] 6.6 Implement Sync Tracker State rework side effects, workspace cleanup, tracker-sync handoff updates, and PR Rework Intake scheduling.
 
 ## 7. End-To-End Verification
 
-- [ ] 7.1 Add failing orchestration tests for initial PR creation leading to PR Rework Intake polling instead of terminal completion.
-- [ ] 7.2 Add failing orchestration tests for Rework label to Prepare Run to Plan route to Develop to Review to Make PR to Sync Tracker State.
-- [ ] 7.3 Add failing orchestration tests for Rework label to direct Develop route through Quality Gate and Review.
-- [ ] 7.4 Add failing orchestration tests for merged PR success closure, closed-without-merge termination, too-many-reworks termination, and no-comment trigger consumption.
-- [ ] 7.5 Implement any remaining orchestration wiring needed for end-to-end rework flows.
-- [ ] 7.6 Run `npm test` and `npm run build`; fix failures while preserving the red-test-before-implementation order captured in the tasks above.
-- [ ] 7.7 Run `openspec validate rework-implementation --strict` and confirm the change remains valid.
+- [x] 7.1 Add failing orchestration tests for initial PR creation leading to PR Rework Intake polling instead of terminal completion.
+- [x] 7.2 Add failing orchestration tests for Rework label to Prepare Run to Plan route to Develop to Review to Make PR to Sync Tracker State.
+- [x] 7.3 Add failing orchestration tests for Rework label to direct Develop route through Quality Gate and Review.
+- [x] 7.4 Add failing orchestration tests for merged PR success closure, closed-without-merge termination, too-many-reworks termination, and no-comment trigger consumption.
+- [x] 7.5 Implement any remaining orchestration wiring needed for end-to-end rework flows.
+- [x] 7.6 Run `npm test` and `npm run build`; fix failures while preserving the red-test-before-implementation order captured in the tasks above.
+- [x] 7.7 Run `openspec validate rework-implementation --strict` and confirm the change remains valid.

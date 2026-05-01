@@ -1,4 +1,4 @@
-import type { AssessJobData, AssessOutput, DevelopJobData, DevelopOutput, DevelopmentResult, HandoffRecord, HandoffRecordDependency, InputRecordRef, MakePrJobData, PlanJobData, PlanOutput, PlanResult, PrepareRunOutput, PrReworkIntakeOutput, PullRequestOutput, QualityGateResult, ReviewJobData, ReviewOutput, ReviewResult, StableRunContext, SyncTrackerStateJobData, WorkflowStage } from '../types/index.js';
+import type { AssessJobData, AssessOutput, DevelopJobData, DevelopOutput, DevelopmentResult, HandoffRecord, HandoffRecordDependency, InputRecordRef, MakePrOutput, MakePrJobData, PlanJobData, PlanOutput, PlanResult, PrepareRunOutput, PrReworkIntakeOutput, PullRequestIdentity, QualityGateResult, ReviewJobData, ReviewOutput, ReviewResult, StableRunContext, SyncTrackerStateJobData, WorkflowStage } from '../types/index.js';
 export interface AssessContext {
     runContext: StableRunContext;
     prepareRun: unknown;
@@ -55,8 +55,8 @@ export interface MakePrContext {
 }
 export interface SyncTrackerStateContext {
     runContext: StableRunContext;
-    pullRequest: PullRequestOutput['pullRequest'];
-    inputRecord: HandoffRecord<PullRequestOutput>;
+    pullRequest: PullRequestIdentity;
+    inputRecord: HandoffRecord<MakePrOutput>;
 }
 export declare function loadDependencyRecord<TOutput>(inputRecordRef: InputRecordRef, dependency: HandoffRecordDependency, expectedStage: Exclude<WorkflowStage, 'intake'>): Promise<HandoffRecord<TOutput>>;
 export declare function resolveAssessContext(payload: AssessJobData): Promise<AssessContext>;

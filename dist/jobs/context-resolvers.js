@@ -237,12 +237,19 @@ export async function resolveSyncTrackerStateContext(payload) {
     ]);
     ensureInputStage(inputRecord, 'make-pr');
     const output = parseStageOutput('make-pr', inputRecord.output);
-    if (output.status !== 'pull-request-created') {
-        throw new Error('Sync Tracker State requires a pull-request-created input record');
+    let pullRequest;
+    if (output.status === 'pull-request-created') {
+        pullRequest = output.pullRequest;
+    }
+    else if (output.status === 'no-changes' && output.pullRequest) {
+        pullRequest = output.pullRequest;
+    }
+    else {
+        throw new Error('Sync Tracker State requires pull request input data');
     }
     return {
         runContext,
-        pullRequest: output.pullRequest,
+        pullRequest,
         inputRecord: inputRecord,
     };
 }

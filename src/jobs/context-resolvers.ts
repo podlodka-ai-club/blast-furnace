@@ -7,13 +7,14 @@ import type {
   HandoffRecord,
   HandoffRecordDependency,
   InputRecordRef,
+  MakePrOutput,
   MakePrJobData,
   PlanJobData,
   PlanOutput,
   PlanResult,
   PrepareRunOutput,
   PrReworkIntakeOutput,
-  PullRequestOutput,
+  PullRequestIdentity,
   QualityGateResult,
   ReviewJobData,
   ReviewOutput,
@@ -79,8 +80,8 @@ export interface MakePrContext {
 
 export interface SyncTrackerStateContext {
   runContext: StableRunContext;
-  pullRequest: PullRequestOutput['pullRequest'];
-  inputRecord: HandoffRecord<PullRequestOutput>;
+  pullRequest: PullRequestIdentity;
+  inputRecord: HandoffRecord<MakePrOutput>;
 }
 
 type DownstreamPayload =
@@ -395,13 +396,18 @@ export async function resolveSyncTrackerStateContext(
     readValidatedStageInputRecord(payload),
   ]);
   ensureInputStage(inputRecord, 'make-pr');
-  const output = parseStageOutput('make-pr', inputRecord.output) as PullRequestOutput;
-  if (output.status !== 'pull-request-created') {
-    throw new Error('Sync Tracker State requires a pull-request-created input record');
+  const output = parseStageOutput('make-pr', inputRecord.output) as MakePrOutput;
+  let pullRequest: PullRequestIdentity;
+  if (output.status === 'pull-request-created') {
+    pullRequest = output.pullRequest;
+  } else if (output.status === 'no-changes' && output.pullRequest) {
+    pullRequest = output.pullRequest;
+  } else {
+    throw new Error('Sync Tracker State requires pull request input data');
   }
   return {
     runContext,
-    pullRequest: output.pullRequest,
-    inputRecord: inputRecord as HandoffRecord<PullRequestOutput>,
+    pullRequest,
+    inputRecord: inputRecord as HandoffRecord<MakePrOutput>,
   };
 }
