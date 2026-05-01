@@ -11,6 +11,7 @@ import { createForwardStagePayload } from './stage-payloads.js';
 import { statusItem, updateRunStatus } from './status.js';
 const MAX_PLAN_ATTEMPTS = 3;
 export const PLAN_PROMPT_TEMPLATE_PATH = join(process.cwd(), 'prompts', 'plan.md');
+export const PLAN_REWORK_PROMPT_TEMPLATE_PATH = join(process.cwd(), 'prompts', 'plan-rework.md');
 export const PLAN_CHECKS_PATH = join(process.cwd(), 'config', 'plan-checks.yaml');
 export const PLAN_CONTINUATION_PROMPT = [
     'Rewrite the full implementation plan and include every required Markdown section title.',
@@ -44,6 +45,8 @@ export async function renderPlanPrompt(templatePath, input) {
         issueNumber: String(input.issue.number),
         issueTitle: input.issue.title,
         issueDescription: input.issue.body?.trim() ? input.issue.body : '(No description provided)',
+        latestPlanContent: input.latestPlanContent ?? '',
+        commentsMarkdown: input.commentsMarkdown ?? '',
     };
     return template.replace(/\{\{([A-Za-z0-9_]+)\}\}/g, (match, key) => replacements[key] ?? match);
 }
@@ -94,14 +97,22 @@ export async function runPlanWork(job, options = {}) {
         items: [statusItem('plan', 1, 'in-progress', 'Plan solution', 'In progress')],
     }, logger);
     const checks = await loadPlanChecks(options.checksPath ?? PLAN_CHECKS_PATH);
-    const initialPrompt = await renderPlanPrompt(options.promptTemplatePath ?? PLAN_PROMPT_TEMPLATE_PATH, {
-        issue: context.runContext.issue,
-    });
+    const initialPrompt = context.inputKind === 'pr-rework'
+        ? await renderPlanPrompt(options.promptTemplatePath ?? PLAN_REWORK_PROMPT_TEMPLATE_PATH, {
+            issue: context.runContext.issue,
+            latestPlanContent: context.latestPlan?.content,
+            commentsMarkdown: context.commentsMarkdown,
+        })
+        : await renderPlanPrompt(options.promptTemplatePath ?? PLAN_PROMPT_TEMPLATE_PATH, {
+            issue: context.runContext.issue,
+        });
     const session = await (options.createPlanningSession ?? createDefaultPlanningSession)({
         workspacePath: context.runContext.workspacePath,
         logger,
     });
-    let dependencies = [job.data.inputRecordRef];
+    let dependencies = context.inputKind === 'pr-rework' && context.latestPlanRecord
+        ? [job.data.inputRecordRef, context.latestPlanRecord.recordId]
+        : [job.data.inputRecordRef];
     let latestOutput;
     try {
         for (let attempt = 1; attempt <= MAX_PLAN_ATTEMPTS; attempt += 1) {

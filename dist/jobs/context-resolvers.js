@@ -103,9 +103,35 @@ export async function resolvePlanContext(payload) {
         readStableRunContext(payload),
         readValidatedStageInputRecord(payload),
     ]);
-    ensureInputStage(inputRecord, 'assess');
-    const output = parseStageOutput('assess', inputRecord.output);
-    return { runContext, assessment: output.assessment, inputRecord: inputRecord };
+    if (inputRecord.fromStage === 'assess') {
+        const output = parseStageOutput('assess', inputRecord.output);
+        return {
+            runContext,
+            inputKind: 'assess',
+            assessment: output.assessment,
+            inputRecord: inputRecord,
+        };
+    }
+    if (inputRecord.fromStage === 'prepare-run') {
+        parseStageOutput('prepare-run', inputRecord.output);
+        const prReworkRecord = await loadRequiredDependencyRecord(payload.inputRecordRef, inputRecord, 'pr-rework-intake');
+        const prReworkOutput = parseStageOutput('pr-rework-intake', prReworkRecord.output);
+        if (prReworkOutput.status !== 'rework-needed' || prReworkOutput.selectedNextStage !== 'plan') {
+            throw new Error('Plan rework input requires a pr-rework-intake route to plan');
+        }
+        const latestPlanRecord = await loadDependencyRecord(payload.inputRecordRef, prReworkOutput.latestPlanRecordId, 'plan');
+        const latestPlanOutput = parseStageOutput('plan', latestPlanRecord.output);
+        return {
+            runContext,
+            inputKind: 'pr-rework',
+            inputRecord: inputRecord,
+            prReworkRecord,
+            latestPlanRecord,
+            latestPlan: requireAcceptedPlan(latestPlanOutput),
+            commentsMarkdown: prReworkOutput.commentsMarkdown,
+        };
+    }
+    throw new Error(`plan input record expected stage assess or prepare-run but found ${inputRecord.fromStage}`);
 }
 export async function resolveDevelopContext(payload) {
     stagePayloadSchemas.develop.parse(payload);
@@ -137,7 +163,26 @@ export async function resolveDevelopContext(payload) {
             planRecord,
         };
     }
-    throw new Error(`develop input record expected stage plan or review but found ${inputRecord.fromStage}`);
+    if (inputRecord.fromStage === 'prepare-run') {
+        parseStageOutput('prepare-run', inputRecord.output);
+        const prReworkRecord = await loadRequiredDependencyRecord(payload.inputRecordRef, inputRecord, 'pr-rework-intake');
+        const prReworkOutput = parseStageOutput('pr-rework-intake', prReworkRecord.output);
+        if (prReworkOutput.status !== 'rework-needed' || prReworkOutput.selectedNextStage !== 'develop') {
+            throw new Error('Direct Develop rework input requires a pr-rework-intake route to develop');
+        }
+        const planRecord = await loadDependencyRecord(payload.inputRecordRef, prReworkOutput.latestPlanRecordId, 'plan');
+        const planOutput = parseStageOutput('plan', planRecord.output);
+        return {
+            runContext,
+            inputKind: 'human-pr-rework',
+            plan: requireAcceptedPlan(planOutput),
+            reviewFailureContent: prReworkOutput.commentsMarkdown,
+            inputRecord: inputRecord,
+            prReworkRecord,
+            planRecord,
+        };
+    }
+    throw new Error(`develop input record expected stage plan, review, or prepare-run but found ${inputRecord.fromStage}`);
 }
 export async function resolveReviewContext(payload) {
     stagePayloadSchemas.review.parse(payload);

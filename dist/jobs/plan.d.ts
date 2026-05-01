@@ -2,6 +2,7 @@ import type { Job } from 'bullmq';
 import type { DevelopJobData, GitHubIssue, PlanJobData, PlanOutput } from '../types/index.js';
 import { createJobLogger } from './logger.js';
 export declare const PLAN_PROMPT_TEMPLATE_PATH: string;
+export declare const PLAN_REWORK_PROMPT_TEMPLATE_PATH: string;
 export declare const PLAN_CHECKS_PATH: string;
 export declare const PLAN_CONTINUATION_PROMPT: string;
 export interface PlanChecks {
@@ -14,6 +15,8 @@ export interface PlanResponseValidation {
 }
 export interface PlanPromptInput {
     issue: Pick<GitHubIssue, 'number' | 'title' | 'body'>;
+    latestPlanContent?: string;
+    commentsMarkdown?: string;
 }
 export interface PlanningSession {
     send(prompt: string): Promise<string>;

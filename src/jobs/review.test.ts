@@ -72,7 +72,8 @@ describe('review job', () => {
 
   async function createJob(
     qualityStatus: 'passed' | 'failed' | 'misconfigured' | 'timed-out' = 'passed',
-    stageAttempt = 1
+    stageAttempt = 1,
+    reworkAttempt = 0
   ): Promise<Job<ReviewJobData>> {
     const workspacePath = await mkdtemp(join(tmpdir(), 'review-ledger-'));
     tempRoots.push(workspacePath);
@@ -83,7 +84,7 @@ describe('review job', () => {
       currentStage: 'develop',
       runStartedAt: '2026-04-26T08:07:30.000Z',
       stageAttempt,
-      reworkAttempt: 0,
+      reworkAttempt,
       latestHandoffRecord: null,
       stableContext: {
         issue: createIssue(),
@@ -101,13 +102,13 @@ describe('review job', () => {
       fromStage: 'plan',
       toStage: 'develop',
       stageAttempt,
-      reworkAttempt: 0,
+      reworkAttempt,
       status: 'success',
       output: {
         status: 'success',
         runId: 'run-123',
         stageAttempt,
-        reworkAttempt: 0,
+        reworkAttempt,
         plan: {
           status: 'success',
           summary: 'Plan validated successfully.',
@@ -120,7 +121,7 @@ describe('review job', () => {
       fromStage: 'develop',
       toStage: 'review',
       stageAttempt,
-      reworkAttempt: 0,
+      reworkAttempt,
       dependsOn: [plan.inputRecordRef],
       status: 'success',
       output: {
@@ -133,7 +134,7 @@ describe('review job', () => {
               : 'quality-misconfigured',
         runId: 'run-123',
         stageAttempt,
-        reworkAttempt: 0,
+        reworkAttempt,
         development: {
           status: 'completed',
           summary: 'Codex completed successfully.',
@@ -157,7 +158,7 @@ describe('review job', () => {
         runId: 'run-123',
         stage: 'review',
         stageAttempt,
-        reworkAttempt: 0,
+        reworkAttempt,
         inputRecordRef,
       },
     } as unknown as Job<ReviewJobData>;
@@ -239,6 +240,23 @@ describe('review job', () => {
       stage: 'make-pr',
       stageAttempt: 2,
       reworkAttempt: 0,
+      inputRecordRef: expect.objectContaining({
+        recordId: '000003_review_to_make-pr',
+      }),
+    }));
+  });
+
+  it('preserves stageAttempt 1 and reworkAttempt 1 when rework Review passes to Make PR', async () => {
+    const { runReviewFlow } = await import('./review.js');
+    const job = await createJob('passed', 1, 1);
+
+    await runReviewFlow(job);
+
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('make-pr', expect.objectContaining({
+      type: 'make-pr',
+      stage: 'make-pr',
+      stageAttempt: 1,
+      reworkAttempt: 1,
       inputRecordRef: expect.objectContaining({
         recordId: '000003_review_to_make-pr',
       }),

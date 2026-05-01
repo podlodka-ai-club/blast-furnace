@@ -4,6 +4,7 @@ export type MakePrWorkResult = {
     status: 'no-changes';
     output: NoChangeOutput;
     workspacePath: string;
+    syncTrackerStateJobData?: SyncTrackerStateJobData;
 } | {
     status: PullRequestCreationFailureOutput['status'];
     output: PullRequestCreationFailureOutput;

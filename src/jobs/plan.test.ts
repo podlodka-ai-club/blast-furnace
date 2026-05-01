@@ -131,6 +131,108 @@ describe('plan job', () => {
     } as unknown as Job<PlanJobData>;
   }
 
+  async function createReworkJob(): Promise<Job<PlanJobData>> {
+    const workspacePath = await mkdtemp(join(tmpdir(), 'plan-rework-ledger-'));
+    tempRoots.push(workspacePath);
+    const issue = createIssue();
+    const fileSet = createRunFileSet(workspacePath, 'run-123', new Date('2026-04-26T08:07:30.000Z'));
+    await initializeRunSummary(workspacePath, fileSet, {
+      runId: 'run-123',
+      status: 'running',
+      currentStage: 'prepare-run',
+      runStartedAt: '2026-04-26T08:07:30.000Z',
+      stageAttempt: 1,
+      reworkAttempt: 1,
+      latestHandoffRecord: null,
+      stableContext: {
+        issue,
+        repository: {
+          owner: 'test-owner',
+          repo: 'test-repo',
+        },
+        branchName: 'issue-42-test-issue',
+        workspacePath,
+      },
+      stages: {},
+    });
+    const originalPlan = await appendHandoffRecordAndUpdateSummary(workspacePath, {
+      runId: 'run-123',
+      fromStage: 'plan',
+      toStage: 'develop',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      status: 'success',
+      output: {
+        status: 'success',
+        runId: 'run-123',
+        stageAttempt: 1,
+        reworkAttempt: 0,
+        plan: {
+          status: 'success',
+          summary: 'Plan validated successfully.',
+          content: '## Summary\nOriginal accepted plan.',
+        },
+      },
+    });
+    const prRework = await appendHandoffRecordAndUpdateSummary(workspacePath, {
+      runId: 'run-123',
+      fromStage: 'pr-rework-intake',
+      toStage: 'prepare-run',
+      stageAttempt: 1,
+      reworkAttempt: 1,
+      dependsOn: [originalPlan.inputRecordRef],
+      status: 'rework-needed',
+      output: {
+        status: 'rework-needed',
+        runId: 'run-123',
+        stageAttempt: 1,
+        reworkAttempt: 1,
+        pullRequest: {
+          number: 7,
+          htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+        },
+        commentsMarkdown: '## Review Comments\n\nPlease simplify the implementation.',
+        routeAnalysis: 'ROUTE: PLAN\nNeeds planning.',
+        selectedNextStage: 'plan',
+        pullRequestHead: {
+          owner: 'test-owner',
+          repo: 'test-repo',
+          branch: 'issue-42-test-issue',
+          sha: 'abc123',
+        },
+        latestPlanRecordId: originalPlan.inputRecordRef.recordId,
+      },
+    });
+    const prepareRun = await appendHandoffRecordAndUpdateSummary(workspacePath, {
+      runId: 'run-123',
+      fromStage: 'prepare-run',
+      toStage: 'plan',
+      stageAttempt: 1,
+      reworkAttempt: 1,
+      dependsOn: [prRework.inputRecordRef],
+      status: 'success',
+      output: {
+        status: 'success',
+        runId: 'run-123',
+        stageAttempt: 1,
+        reworkAttempt: 1,
+      },
+    });
+
+    return {
+      id: 'job-plan-rework',
+      data: {
+        taskId: 'task-plan',
+        type: 'plan',
+        runId: 'run-123',
+        stage: 'plan',
+        stageAttempt: 1,
+        reworkAttempt: 1,
+        inputRecordRef: prepareRun.inputRecordRef,
+      },
+    } as unknown as Job<PlanJobData>;
+  }
+
   async function writePlanAssets(root: string, checks = 'requiredTitles:\n  - Summary\n  - Implementation Plan\n  - Risks\n') {
     const promptPath = join(root, 'plan.md');
     const checksPath = join(root, 'plan-checks.yaml');
@@ -357,6 +459,48 @@ describe('plan job', () => {
       }),
     }));
     expect(mockJobQueueAdd.mock.calls[0][1]).not.toHaveProperty('issue');
+  });
+
+  it('renders plan-rework prompt from PR comments and latest accepted Plan, then hands off to Develop', async () => {
+    const { runPlanWork } = await import('./plan.js');
+    const job = await createReworkJob();
+    const assets = await writePlanAssets(job.data.inputRecordRef.runDir);
+    const session = {
+      prompts: [] as string[],
+      send: vi.fn(async (prompt: string) => {
+        session.prompts.push(prompt);
+        return '## Summary\nReady.\n\n## Implementation Plan\nUpdate tests.\n\n## Risks\nNone.';
+      }),
+      close: vi.fn(async () => undefined),
+    };
+
+    const result = await runPlanWork(job, {
+      checksPath: assets.checksPath,
+      createPlanningSession: async () => session,
+    });
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
+
+    expect(session.prompts[0]).toContain('Test issue');
+    expect(session.prompts[0]).toContain('Original accepted plan.');
+    expect(session.prompts[0]).toContain('Please simplify the implementation.');
+    expect(result.developJobData).toMatchObject({
+      stage: 'develop',
+      stageAttempt: 1,
+      reworkAttempt: 1,
+      inputRecordRef: {
+        stage: 'plan',
+      },
+    });
+    expect(records.at(-1)).toMatchObject({
+      fromStage: 'plan',
+      toStage: 'develop',
+      dependsOn: ['000003_prepare-run_to_plan', '000001_plan_to_develop'],
+      output: {
+        plan: {
+          content: '## Summary\nReady.\n\n## Implementation Plan\nUpdate tests.\n\n## Risks\nNone.',
+        },
+      },
+    });
   });
 
   it('does not enqueue develop when Plan validation is terminally blocked', async () => {

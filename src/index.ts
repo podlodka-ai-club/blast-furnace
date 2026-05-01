@@ -9,6 +9,7 @@ import { developHandler } from './jobs/develop.js';
 import { reviewHandler } from './jobs/review.js';
 import { makePrHandler } from './jobs/make-pr.js';
 import { syncTrackerStateHandler } from './jobs/sync-tracker-state.js';
+import { prReworkIntakeHandler } from './jobs/pr-rework-intake.js';
 import type { Job, Worker } from 'bullmq';
 import type {
   AssessJobData,
@@ -17,6 +18,7 @@ import type {
   JobPayload,
   MakePrJobData,
   PlanJobData,
+  PrReworkIntakeJobData,
   PrepareRunJobData,
   ReviewJobData,
   SyncTrackerStateJobData,
@@ -47,6 +49,8 @@ export async function multiHandler(job: Job<JobPayload>): Promise<void> {
       return makePrHandler(job as Job<MakePrJobData>);
     case 'sync-tracker-state':
       return syncTrackerStateHandler(job as Job<SyncTrackerStateJobData>);
+    case 'pr-rework-intake':
+      return prReworkIntakeHandler(job as Job<PrReworkIntakeJobData>);
     default:
       throw new Error(`Unknown job type: ${job.data.type}`);
   }

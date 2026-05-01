@@ -48,7 +48,7 @@ export async function runDevelopWork(job, logger = createJobLogger(job)) {
     const orchestrationRoot = resolveOrchestrationStorageRoot(job.data.inputRecordRef);
     const attempt = job.data.stageAttempt;
     await updateRunStatus(orchestrationRoot, job.data.runId, {
-        heading: context.inputKind === 'review-rework'
+        heading: context.inputKind !== 'plan'
             ? 'Blast Furnace is applying review feedback'
             : 'Blast Furnace is building a solution',
         focus: `Current focus: ${attempt === 1 ? 'Develop changes' : `Develop rework ${attempt - 1}`}`,
@@ -61,7 +61,7 @@ export async function runDevelopWork(job, logger = createJobLogger(job)) {
     const qualityGateCommand = process.env['QUALITY_GATE_TEST_COMMAND'] ?? config.qualityGate?.testCommand;
     const qualityGateTimeoutMs = parseMinimumTimeout(process.env['QUALITY_GATE_TEST_TIMEOUT_MS'], config.qualityGate?.testTimeoutMs ?? 180000);
     logger.info(`Running develop for issue #${issue.number} on branch ${branchName}`);
-    const promptTemplatePath = context.inputKind === 'review-rework'
+    const promptTemplatePath = context.inputKind !== 'plan'
         ? DEVELOP_REWORK_PROMPT_TEMPLATE_PATH
         : DEVELOP_PROMPT_TEMPLATE_PATH;
     const prompt = await renderDevelopPrompt(promptTemplatePath, {
@@ -142,7 +142,9 @@ export async function runDevelopWork(job, logger = createJobLogger(job)) {
         reworkAttempt: job.data.reworkAttempt,
         dependsOn: context.inputKind === 'review-rework'
             ? [job.data.inputRecordRef, context.planRecord.recordId]
-            : [job.data.inputRecordRef],
+            : context.inputKind === 'human-pr-rework' && context.prReworkRecord
+                ? [job.data.inputRecordRef, context.prReworkRecord.recordId, context.planRecord.recordId]
+                : [job.data.inputRecordRef],
         status: handoffStatus,
         output,
     }, toStage === null ? output.status : undefined);

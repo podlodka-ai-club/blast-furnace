@@ -297,6 +297,7 @@ const PRIOR_OUTPUT_FIELDS_BY_STAGE = {
     review: ['assessment', 'plan', 'development', 'quality', 'pullRequest', 'trackerLabels'],
     'make-pr': ['assessment', 'plan', 'development', 'quality', 'review', 'trackerLabels'],
     'sync-tracker-state': ['assessment', 'plan', 'development', 'quality', 'review', 'pullRequest'],
+    'pr-rework-intake': ['assessment', 'plan', 'development', 'quality', 'review', 'trackerLabels'],
 };
 function validateStageLocalOutput(stage, output) {
     if (typeof output !== 'object' || output === null || Array.isArray(output)) {
@@ -379,6 +380,12 @@ export async function updateRunSummaryForHandoff(root, record, ref, status = rec
                 updatedAt: record.createdAt,
             },
         },
+    }));
+}
+export async function updateRunSummaryPendingNextStage(root, runId, pendingNextStage) {
+    return updateRunSummary(root, runId, (summary) => ({
+        ...summary,
+        pendingNextStage,
     }));
 }
 export async function updateStableRunContext(root, runId, stableContext) {

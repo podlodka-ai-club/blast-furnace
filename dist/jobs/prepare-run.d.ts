@@ -1,5 +1,5 @@
 import type { Job } from 'bullmq';
-import type { AssessJobData, GitHubIssue, PrepareRunJobData, RepositoryIdentity } from '../types/index.js';
+import type { AssessJobData, DevelopJobData, GitHubIssue, PlanJobData, PrepareRunJobData, RepositoryIdentity } from '../types/index.js';
 interface PrepareRunState {
     branchName: string | null;
     branchCreated: boolean;
@@ -7,7 +7,8 @@ interface PrepareRunState {
     cleaned: boolean;
 }
 export interface PrepareRunWorkResult {
-    assessJobData: AssessJobData;
+    assessJobData?: AssessJobData;
+    nextJobData?: PlanJobData | DevelopJobData;
 }
 export interface CreatePrepareRunPayloadInput {
     issue: GitHubIssue;

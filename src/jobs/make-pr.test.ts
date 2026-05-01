@@ -19,8 +19,9 @@ const { mockCreateJobLogger } = vi.hoisted(() => ({
   mockCreateJobLogger: vi.fn(),
 }));
 
-const { mockCreatePullRequest } = vi.hoisted(() => ({
+const { mockCreatePullRequest, mockGetPullRequestState } = vi.hoisted(() => ({
   mockCreatePullRequest: vi.fn(),
+  mockGetPullRequestState: vi.fn(),
 }));
 
 const { mockMoveIssueToInReview } = vi.hoisted(() => ({
@@ -45,6 +46,7 @@ vi.mock('./logger.js', () => ({
 
 vi.mock('../github/pullRequests.js', () => ({
   createPullRequest: mockCreatePullRequest,
+  getPullRequestState: mockGetPullRequestState,
 }));
 
 vi.mock('../github/issue-labels.js', () => ({
@@ -133,12 +135,26 @@ describe('make-pr job', () => {
       number: 7,
       htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
     });
+    mockGetPullRequestState.mockResolvedValue({
+      number: 7,
+      state: 'open',
+      merged: false,
+      htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+      head: {
+        owner: 'test-owner',
+        repo: 'test-repo',
+        branch: 'issue-42-test-issue',
+        sha: 'abc123',
+      },
+      labels: ['Rework'],
+    });
     mockMoveIssueToInReview.mockResolvedValue(['in review']);
     mockCleanupWorkingDir.mockResolvedValue(undefined);
     mockJobQueueAdd.mockResolvedValue(undefined);
   });
 
   afterEach(async () => {
+    vi.useRealTimers();
     await Promise.all(tempRoots.map((root) => rm(root, { recursive: true, force: true })));
     tempRoots.length = 0;
   });
@@ -249,6 +265,155 @@ describe('make-pr job', () => {
         stage: 'make-pr',
         stageAttempt,
         reworkAttempt: 0,
+        inputRecordRef,
+      },
+    } as unknown as Job<MakePrJobData>;
+  }
+
+  async function createReworkJob(): Promise<Job<MakePrJobData>> {
+    const workspacePath = await mkdtemp(join(tmpdir(), 'make-pr-ledger-'));
+    tempRoots.push(workspacePath);
+    const orchestrationRoot = await mkdtemp(join(tmpdir(), 'make-pr-orchestration-'));
+    tempRoots.push(orchestrationRoot);
+    const fileSet = createRunFileSet(orchestrationRoot, 'run-123', new Date('2026-04-26T08:07:30.000Z'));
+    await initializeRunSummary(orchestrationRoot, fileSet, {
+      runId: 'run-123',
+      status: 'running',
+      currentStage: 'review',
+      runStartedAt: '2026-04-26T08:07:30.000Z',
+      stageAttempt: 1,
+      reworkAttempt: 1,
+      latestHandoffRecord: null,
+      stableContext: {
+        issue: createIssue(),
+        repository: {
+          owner: 'test-owner',
+          repo: 'test-repo',
+        },
+        branchName: 'issue-42-test-issue',
+        workspacePath,
+      },
+      stages: {},
+    });
+    const originalPlan = await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
+      runId: 'run-123',
+      fromStage: 'plan',
+      toStage: 'develop',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      status: 'success',
+      output: {
+        status: 'success',
+        runId: 'run-123',
+        stageAttempt: 1,
+        reworkAttempt: 0,
+        plan: {
+          status: 'success',
+          summary: 'Plan validated successfully.',
+          content: '## Summary\nReady.',
+        },
+      },
+    });
+    const prRework = await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
+      runId: 'run-123',
+      fromStage: 'pr-rework-intake',
+      toStage: 'prepare-run',
+      stageAttempt: 1,
+      reworkAttempt: 1,
+      dependsOn: [originalPlan.inputRecordRef],
+      status: 'rework-needed',
+      output: {
+        status: 'rework-needed',
+        runId: 'run-123',
+        stageAttempt: 1,
+        reworkAttempt: 1,
+        pullRequest: {
+          number: 7,
+          htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+        },
+        commentsMarkdown: 'comments',
+        routeAnalysis: 'ROUTE: DEVELOP',
+        selectedNextStage: 'develop',
+        pullRequestHead: {
+          owner: 'test-owner',
+          repo: 'test-repo',
+          branch: 'issue-42-test-issue',
+          sha: 'abc123',
+        },
+        latestPlanRecordId: originalPlan.inputRecordRef.recordId,
+      },
+    });
+    const prepareRun = await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
+      runId: 'run-123',
+      fromStage: 'prepare-run',
+      toStage: 'develop',
+      stageAttempt: 1,
+      reworkAttempt: 1,
+      dependsOn: [prRework.inputRecordRef],
+      status: 'success',
+      output: {
+        status: 'success',
+        runId: 'run-123',
+        stageAttempt: 1,
+        reworkAttempt: 1,
+      },
+    });
+    const develop = await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
+      runId: 'run-123',
+      fromStage: 'develop',
+      toStage: 'review',
+      stageAttempt: 1,
+      reworkAttempt: 1,
+      dependsOn: [prepareRun.inputRecordRef, prRework.inputRecordRef, originalPlan.inputRecordRef],
+      status: 'success',
+      output: {
+        status: 'success',
+        runId: 'run-123',
+        stageAttempt: 1,
+        reworkAttempt: 1,
+        development: {
+          status: 'completed',
+          summary: 'Codex completed successfully.',
+        },
+        quality: {
+          status: 'passed',
+          command: 'npm test',
+          exitCode: 0,
+          attempts: 1,
+          durationMs: 25,
+          summary: 'Quality gate passed.',
+        },
+      },
+    });
+    const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
+      runId: 'run-123',
+      fromStage: 'review',
+      toStage: 'make-pr',
+      stageAttempt: 1,
+      reworkAttempt: 1,
+      dependsOn: [develop.inputRecordRef, originalPlan.inputRecordRef],
+      status: 'success',
+      output: {
+        status: 'success',
+        runId: 'run-123',
+        stageAttempt: 1,
+        reworkAttempt: 1,
+        review: {
+          status: 'passed',
+          summary: 'Review Success',
+        },
+      },
+    });
+
+    return {
+      id: 'job-make-pr-rework',
+      data: {
+        taskId: 'task-make-pr',
+        type: 'make-pr',
+        runId: 'run-123',
+        stage: 'make-pr',
+        stageAttempt: 1,
+        reworkAttempt: 1,
         inputRecordRef,
       },
     } as unknown as Job<MakePrJobData>;
@@ -438,6 +603,133 @@ describe('make-pr job', () => {
         recordId: '000004_make-pr_to_sync-tracker-state',
       }),
     }));
+  });
+
+  it('finalizes rework by pushing the existing PR branch without creating a new pull request', async () => {
+    const mockSpawn = vi.mocked(spawn);
+    mockSpawn.mockImplementation((cmd: string, args: readonly string[]) => {
+      if (cmd === 'git' && args[0] === 'status') {
+        return createGitMockProcess(0, 'M modified-file.txt');
+      }
+      return createGitMockProcess();
+    });
+    const job = await createReworkJob();
+
+    await runMakePrFlow(job);
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'git',
+      ['push', 'https://github.com/test-owner/test-repo.git', 'issue-42-test-issue'],
+      expectGitSpawnOptions()
+    );
+    expect(mockCreatePullRequest).not.toHaveBeenCalled();
+    expect(records.at(-1)).toMatchObject({
+      fromStage: 'make-pr',
+      toStage: 'sync-tracker-state',
+      reworkAttempt: 1,
+      output: {
+        status: 'pull-request-created',
+        pullRequest: {
+          number: 7,
+          htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+        },
+      },
+    });
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('sync-tracker-state', expect.objectContaining({
+      stage: 'sync-tracker-state',
+      reworkAttempt: 1,
+    }));
+  });
+
+  it('hands no-change rework to Sync Tracker State without cleaning up inside Make PR', async () => {
+    const mockSpawn = vi.mocked(spawn);
+    mockSpawn.mockReturnValue(createGitMockProcess(0, ''));
+    const job = await createReworkJob();
+
+    await runMakePrFlow(job);
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
+
+    expect(mockCreatePullRequest).not.toHaveBeenCalled();
+    expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
+    expect(records.at(-1)).toMatchObject({
+      fromStage: 'make-pr',
+      toStage: 'sync-tracker-state',
+      output: {
+        status: 'no-changes',
+        pullRequest: {
+          number: 7,
+        },
+      },
+    });
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('sync-tracker-state', expect.objectContaining({
+      reworkAttempt: 1,
+    }));
+  });
+
+  it('rejects rework fork pull requests before commit or push side effects', async () => {
+    const mockSpawn = vi.mocked(spawn);
+    mockSpawn.mockImplementation((cmd: string, args: readonly string[]) => {
+      if (cmd === 'git' && args[0] === 'status') {
+        return createGitMockProcess(0, 'M modified-file.txt');
+      }
+      return createGitMockProcess();
+    });
+    mockGetPullRequestState.mockResolvedValue({
+      number: 7,
+      state: 'open',
+      merged: false,
+      htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+      head: {
+        owner: 'other-owner',
+        repo: 'other-repo',
+        branch: 'issue-42-test-issue',
+        sha: 'abc123',
+      },
+      labels: ['Rework'],
+    });
+    const job = await createReworkJob();
+
+    await expect(runMakePrFlow(job)).rejects.toThrow('Rework pull request head repository mismatch');
+
+    expect(mockSpawn).not.toHaveBeenCalledWith('git', expect.arrayContaining(['commit']), expect.anything());
+    expect(mockSpawn).not.toHaveBeenCalledWith('git', expect.arrayContaining(['push']), expect.anything());
+    expect(mockCreatePullRequest).not.toHaveBeenCalled();
+  });
+
+  it('rejects rework when the current PR branch or SHA no longer matches the captured head', async () => {
+    const job = await createReworkJob();
+    mockGetPullRequestState.mockResolvedValueOnce({
+      number: 7,
+      state: 'open',
+      merged: false,
+      htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+      head: {
+        owner: 'test-owner',
+        repo: 'test-repo',
+        branch: 'other-branch',
+        sha: 'abc123',
+      },
+      labels: ['Rework'],
+    });
+
+    await expect(runMakePrWork(job)).rejects.toThrow('Rework pull request head branch mismatch');
+
+    mockGetPullRequestState.mockResolvedValueOnce({
+      number: 7,
+      state: 'open',
+      merged: false,
+      htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+      head: {
+        owner: 'test-owner',
+        repo: 'test-repo',
+        branch: 'issue-42-test-issue',
+        sha: 'different-sha',
+      },
+      labels: ['Rework'],
+    });
+
+    await expect(runMakePrWork(job)).rejects.toThrow('Rework pull request head SHA mismatch');
   });
 
   it('records a pull-request-already-exists output when GitHub rejects duplicate PR creation', async () => {
@@ -636,6 +928,28 @@ describe('make-pr job', () => {
     expect(mockJobQueueAdd).not.toHaveBeenCalled();
     expect(mockCleanupWorkingDir).not.toHaveBeenCalled();
   });
+
+  it('refetches the PR branch before retrying non-fast-forward rework pushes and fails after retries exhaust', async () => {
+    const mockSpawn = vi.mocked(spawn);
+    mockSpawn.mockImplementation((cmd: string, args: readonly string[]) => {
+      if (cmd === 'git' && args[0] === 'status') {
+        return createGitMockProcess(0, 'M modified-file.txt');
+      }
+      if (cmd === 'git' && args[0] === 'push') {
+        return createGitMockProcess(1, '', 'Updates were rejected because the tip of your current branch is behind');
+      }
+      return createGitMockProcess();
+    });
+    const job = await createReworkJob();
+
+    await expect(runMakePrFlow(job)).rejects.toThrow('git command failed');
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'git',
+      ['fetch', 'https://github.com/test-owner/test-repo.git', 'heads/issue-42-test-issue'],
+      expectGitSpawnOptions()
+    );
+    expect(mockJobQueueAdd).not.toHaveBeenCalled();
+  }, 10000);
 
   it('should export makePrHandler', async () => {
     const { makePrHandler } = await import('./make-pr.js');

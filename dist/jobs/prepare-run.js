@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'child_process';
 import { getRef, pushBranch, deleteBranch } from '../github/branches.js';
-import { assertConfiguredRepository } from '../github/repository.js';
+import { assertConfiguredRepository, isConfiguredRepository } from '../github/repository.js';
 import { cloneRepoInto, cleanupWorkingDir, createGitCommandEnv, createTempWorkingDir, getRepoRemoteUrl, } from '../utils/working-dir.js';
 import { stageOutputSchemas } from './handoff-contracts.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
-import { appendHandoffRecordAndUpdateSummary, createRunFileSet, initializeRunSummary, readRunSummary, resolveOrchestrationStorageRoot, scheduleNextJob, updateRunSummary, } from './orchestration.js';
+import { appendHandoffRecordAndUpdateSummary, createRunFileSet, initializeRunSummary, readHandoffRecord, readRunSummary, resolveOrchestrationStorageRoot, scheduleNextJob, updateRunSummary, } from './orchestration.js';
 import { createForwardStagePayload } from './stage-payloads.js';
 import { statusItem, updateRunStatus } from './status.js';
 export function createPrepareRunPayload(input) {
@@ -113,6 +113,19 @@ async function checkoutPreparedBranch(branchName, workspacePath, logger) {
     }
     await execGitCommand(['reset', '--hard', `origin/${branchName}`], workspacePath);
 }
+async function checkoutReworkBranch(branchName, expectedSha, workspacePath, logger) {
+    await fetchBranchWithRetry(branchName, workspacePath, logger);
+    const branchExists = await execGitCommand(['rev-parse', '--verify', '--quiet', branchName], workspacePath)
+        .then(() => true)
+        .catch(() => false);
+    if (branchExists) {
+        await execGitCommand(['checkout', branchName], workspacePath);
+    }
+    else {
+        await execGitCommand(['checkout', '-b', branchName, '--track', `origin/${branchName}`], workspacePath);
+    }
+    await execGitCommand(['reset', '--hard', expectedSha], workspacePath);
+}
 async function cleanupPrepareRunFailure(state, logger) {
     if (state.cleaned)
         return;
@@ -136,12 +149,111 @@ async function cleanupPrepareRunFailure(state, logger) {
         }
     }
 }
+function assertObject(value, label) {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        throw new Error(`${label} must be an object`);
+    }
+}
+function readReworkContext(record) {
+    if (record.fromStage !== 'pr-rework-intake') {
+        throw new Error('Rework Prepare Run input must be produced by pr-rework-intake');
+    }
+    assertObject(record.output, 'PR Rework Intake output');
+    if (record.output['status'] !== 'rework-needed') {
+        throw new Error('Rework Prepare Run input must have rework-needed status');
+    }
+    const selectedNextStage = record.output['selectedNextStage'];
+    if (selectedNextStage !== 'plan' && selectedNextStage !== 'develop') {
+        throw new Error('PR Rework Intake selectedNextStage must be plan or develop');
+    }
+    const pullRequestHead = record.output['pullRequestHead'];
+    assertObject(pullRequestHead, 'pullRequestHead');
+    for (const field of ['owner', 'repo', 'branch', 'sha']) {
+        if (typeof pullRequestHead[field] !== 'string' || pullRequestHead[field].length === 0) {
+            throw new Error(`pullRequestHead.${field} must be a non-empty string`);
+        }
+    }
+    return {
+        selectedNextStage,
+        pullRequestHead: {
+            owner: String(pullRequestHead['owner']),
+            repo: String(pullRequestHead['repo']),
+            branch: String(pullRequestHead['branch']),
+            sha: String(pullRequestHead['sha']),
+        },
+    };
+}
+async function runPrepareRunReworkWork(job, logger, state) {
+    if (!job.data.inputRecordRef) {
+        throw new Error('Rework Prepare Run requires an input handoff record reference');
+    }
+    const inputRecord = await readHandoffRecord(job.data.inputRecordRef);
+    const reworkContext = readReworkContext(inputRecord);
+    const headRepository = {
+        owner: reworkContext.pullRequestHead.owner,
+        repo: reworkContext.pullRequestHead.repo,
+    };
+    if (!isConfiguredRepository(headRepository)) {
+        throw new Error('Rework pull request head repository mismatch');
+    }
+    assertConfiguredRepository(job.data.repository);
+    const branchName = reworkContext.pullRequestHead.branch;
+    state.branchName = branchName;
+    const orchestrationRoot = resolveOrchestrationStorageRoot(job.data.inputRecordRef);
+    const workspacePath = await createTempWorkingDir('prepare-run');
+    state.workspacePath = workspacePath;
+    logger.info(`Preparing rework run ${job.data.runId} from PR branch ${branchName}`);
+    await cloneRepoInto(workspacePath, getRepoRemoteUrl());
+    await checkoutReworkBranch(branchName, reworkContext.pullRequestHead.sha, workspacePath, logger);
+    await updateRunSummary(orchestrationRoot, job.data.runId, (summary) => ({
+        ...summary,
+        status: 'running',
+        currentStage: 'prepare-run',
+        stageAttempt: 1,
+        reworkAttempt: job.data.reworkAttempt,
+        stableContext: {
+            issue: summary.stableContext?.issue ?? job.data.issue,
+            repository: summary.stableContext?.repository ?? job.data.repository,
+            branchName,
+            workspacePath,
+        },
+        stages: {
+            ...summary.stages,
+            'prepare-run': {
+                attempts: 1,
+                status: 'running',
+            },
+        },
+    }));
+    const output = stageOutputSchemas['prepare-run'].parse({
+        status: 'success',
+        runId: job.data.runId,
+        stageAttempt: 1,
+        reworkAttempt: job.data.reworkAttempt,
+    });
+    const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
+        runId: job.data.runId,
+        fromStage: 'prepare-run',
+        toStage: reworkContext.selectedNextStage,
+        stageAttempt: 1,
+        reworkAttempt: job.data.reworkAttempt,
+        dependsOn: [job.data.inputRecordRef],
+        status: 'success',
+        output,
+    });
+    return {
+        nextJobData: createForwardStagePayload(job.data, reworkContext.selectedNextStage, inputRecordRef, 1),
+    };
+}
 export async function runPrepareRunWork(job, logger = createJobLogger(job), state = {
     branchName: null,
     branchCreated: false,
     workspacePath: null,
     cleaned: false,
 }) {
+    if (job.data.inputRecordRef) {
+        return runPrepareRunReworkWork(job, logger, state);
+    }
     const { issue, repository, runId, stageAttempt } = job.data;
     assertConfiguredRepository(repository);
     const branchName = prepareIssueBranchName(issue);
@@ -267,10 +379,14 @@ export async function runPrepareRunFlow(job) {
     let handoffCompleted = false;
     try {
         const result = await runPrepareRunWork(job, logger, state);
-        await job.updateProgress?.({ step: 'enqueueing-assess', issue: job.data.issue.number });
-        await scheduleNextJob(jobQueue, 'assess', result.assessJobData);
+        const nextJobData = result.nextJobData ?? result.assessJobData;
+        if (!nextJobData) {
+            throw new Error('Prepare Run did not produce a next job payload');
+        }
+        await job.updateProgress?.({ step: `enqueueing-${nextJobData.stage}`, issue: job.data.issue.number });
+        await scheduleNextJob(jobQueue, nextJobData.stage, nextJobData);
         handoffCompleted = true;
-        logger.info(`Assess job enqueued for run: ${result.assessJobData.runId}`);
+        logger.info(`${nextJobData.stage} job enqueued for run: ${nextJobData.runId}`);
     }
     catch (err) {
         if (!handoffCompleted) {

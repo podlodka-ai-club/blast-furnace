@@ -1,4 +1,4 @@
-import type { AssessJobData, AssessOutput, DevelopJobData, DevelopOutput, DevelopmentResult, HandoffRecord, HandoffRecordDependency, InputRecordRef, MakePrJobData, PlanJobData, PlanOutput, PlanResult, PullRequestOutput, QualityGateResult, ReviewJobData, ReviewOutput, ReviewResult, StableRunContext, SyncTrackerStateJobData, WorkflowStage } from '../types/index.js';
+import type { AssessJobData, AssessOutput, DevelopJobData, DevelopOutput, DevelopmentResult, HandoffRecord, HandoffRecordDependency, InputRecordRef, MakePrJobData, PlanJobData, PlanOutput, PlanResult, PrepareRunOutput, PrReworkIntakeOutput, PullRequestOutput, QualityGateResult, ReviewJobData, ReviewOutput, ReviewResult, StableRunContext, SyncTrackerStateJobData, WorkflowStage } from '../types/index.js';
 export interface AssessContext {
     runContext: StableRunContext;
     prepareRun: unknown;
@@ -6,17 +6,25 @@ export interface AssessContext {
 }
 export interface PlanContext {
     runContext: StableRunContext;
-    assessment: AssessOutput['assessment'];
-    inputRecord: HandoffRecord<AssessOutput>;
+    inputKind: 'assess' | 'pr-rework';
+    assessment?: AssessOutput['assessment'];
+    inputRecord: HandoffRecord<AssessOutput> | HandoffRecord<PrepareRunOutput>;
+    prReworkRecord?: HandoffRecord<PrReworkIntakeOutput>;
+    latestPlanRecord?: HandoffRecord<PlanOutput>;
+    latestPlan?: Extract<PlanResult, {
+        status: 'success';
+    }>;
+    commentsMarkdown?: string;
 }
 export interface DevelopContext {
     runContext: StableRunContext;
-    inputKind: 'plan' | 'review-rework';
+    inputKind: 'plan' | 'review-rework' | 'human-pr-rework';
     plan: Extract<PlanResult, {
         status: 'success';
     }>;
     reviewFailureContent?: string;
-    inputRecord: HandoffRecord<PlanOutput> | HandoffRecord<ReviewOutput>;
+    inputRecord: HandoffRecord<PlanOutput> | HandoffRecord<ReviewOutput> | HandoffRecord<PrepareRunOutput>;
+    prReworkRecord?: HandoffRecord<PrReworkIntakeOutput>;
     planRecord: HandoffRecord<PlanOutput>;
 }
 export interface ReviewContext {

@@ -18,6 +18,7 @@ import {
   readRunSummary,
   writeRunSummary,
   updateRunSummary,
+  updateRunSummaryPendingNextStage,
   updateStableRunContext,
   scheduleNextJob,
 } from './orchestration.js';
@@ -354,5 +355,69 @@ describe('job orchestration infrastructure', () => {
     await scheduleNextJob(queue, 'plan', data);
 
     expect(queue.add).toHaveBeenCalledWith('plan', data);
+  });
+
+  it('persists recoverable pending next-stage metadata after a handoff append', async () => {
+    const root = await createTempRoot();
+    const fileSet = createRunFileSet(root, 'run-123', new Date('2026-04-26T08:07:30.000Z'));
+    await writeRunSummary(root, {
+      runId: 'run-123',
+      status: 'running',
+      currentStage: 'pr-rework-intake',
+      runStartedAt: '2026-04-26T08:07:30.000Z',
+      timestampPrefix: fileSet.timestampPrefix,
+      runDirectory: fileSet.runDirectory,
+      runSummaryPath: fileSet.runSummaryPath,
+      handoffLedgerPath: fileSet.handoffLedgerPath,
+      stageAttempt: 1,
+      reworkAttempt: 1,
+      latestHandoffRecord: null,
+      stages: {},
+    });
+
+    const handoff = await appendHandoffRecord(root, {
+      runId: 'run-123',
+      fromStage: 'pr-rework-intake',
+      toStage: 'prepare-run',
+      stageAttempt: 1,
+      reworkAttempt: 1,
+      status: 'rework-needed',
+      output: {
+        status: 'rework-needed',
+        runId: 'run-123',
+        stageAttempt: 1,
+        reworkAttempt: 1,
+        commentsMarkdown: 'comments',
+        routeAnalysis: 'ROUTE: DEVELOP',
+        selectedNextStage: 'develop',
+        pullRequest: {
+          number: 7,
+          htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+        },
+        pullRequestHead: {
+          owner: 'test-owner',
+          repo: 'test-repo',
+          branch: 'issue-42-test-issue',
+          sha: 'abc123',
+        },
+        latestPlanRecordId: '000003_assess_to_plan',
+      },
+    });
+
+    await updateRunSummaryPendingNextStage(root, 'run-123', {
+      stage: 'prepare-run',
+      inputRecordRef: handoff.inputRecordRef,
+      stageAttempt: 1,
+      reworkAttempt: 1,
+    });
+
+    await expect(readRunSummary(root, 'run-123')).resolves.toMatchObject({
+      pendingNextStage: {
+        stage: 'prepare-run',
+        inputRecordRef: handoff.inputRecordRef,
+        stageAttempt: 1,
+        reworkAttempt: 1,
+      },
+    });
   });
 });

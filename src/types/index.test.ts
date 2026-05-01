@@ -23,6 +23,7 @@ import type {
   AssessJobData,
   DevelopJobData,
   SyncTrackerStateJobData,
+  PrReworkIntakeJobData,
   PlanJobData,
   ReviewJobData,
   MakePrJobData,
@@ -282,9 +283,10 @@ describe('types', () => {
         'review',
         'make-pr',
         'sync-tracker-state',
+        'pr-rework-intake',
       ];
 
-      expect(stages).toHaveLength(8);
+      expect(stages).toHaveLength(9);
       expect(stages).not.toContain('quality-gate');
     });
   });
@@ -425,6 +427,20 @@ describe('types', () => {
             stage: 'make-pr',
           },
         } satisfies SyncTrackerStateJobData,
+        {
+          taskId: 'task-pr-rework-intake',
+          type: 'pr-rework-intake',
+          runId: 'run-123',
+          stage: 'pr-rework-intake',
+          stageAttempt: 1,
+          reworkAttempt: 0,
+          inputRecordRef: {
+            ...inputRecordRef,
+            recordId: '000008_sync-tracker-state_to_pr-rework-intake',
+            sequence: 8,
+            stage: 'sync-tracker-state',
+          },
+        } satisfies PrReworkIntakeJobData,
       ];
 
       expect(payloads.map((payload) => payload.stage)).toEqual([
@@ -436,6 +452,7 @@ describe('types', () => {
         'review',
         'make-pr',
         'sync-tracker-state',
+        'pr-rework-intake',
       ]);
     });
   });

@@ -7,4 +7,5 @@ export const WORKFLOW_STAGES = [
     'review',
     'make-pr',
     'sync-tracker-state',
+    'pr-rework-intake',
 ];

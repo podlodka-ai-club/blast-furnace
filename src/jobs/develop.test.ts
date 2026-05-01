@@ -267,6 +267,108 @@ describe('develop job', () => {
     } as unknown as Job<DevelopJobData>;
   }
 
+  async function createDirectPrReworkJob(): Promise<Job<DevelopJobData>> {
+    const workspacePath = await mkdtemp(join(tmpdir(), 'develop-pr-rework-ledger-'));
+    tempRoots.push(workspacePath);
+    const issue = createIssue(42, 'Test Issue', 'Test body');
+    const fileSet = createRunFileSet(workspacePath, 'run-123', new Date('2026-04-26T08:07:30.000Z'));
+    await initializeRunSummary(workspacePath, fileSet, {
+      runId: 'run-123',
+      status: 'running',
+      currentStage: 'prepare-run',
+      runStartedAt: '2026-04-26T08:07:30.000Z',
+      stageAttempt: 1,
+      reworkAttempt: 1,
+      latestHandoffRecord: null,
+      stableContext: {
+        issue,
+        repository: {
+          owner: 'test-owner',
+          repo: 'test-repo',
+        },
+        branchName: 'issue-42-test-issue',
+        workspacePath,
+      },
+      stages: {},
+    });
+    const originalPlan = await appendHandoffRecordAndUpdateSummary(workspacePath, {
+      runId: 'run-123',
+      fromStage: 'plan',
+      toStage: 'develop',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      status: 'success',
+      output: {
+        status: 'success',
+        runId: 'run-123',
+        stageAttempt: 1,
+        reworkAttempt: 0,
+        plan: {
+          status: 'success',
+          summary: 'Plan validated successfully.',
+          content: '## Summary\nOriginal accepted plan.',
+        },
+      },
+    });
+    const prRework = await appendHandoffRecordAndUpdateSummary(workspacePath, {
+      runId: 'run-123',
+      fromStage: 'pr-rework-intake',
+      toStage: 'prepare-run',
+      stageAttempt: 1,
+      reworkAttempt: 1,
+      dependsOn: [originalPlan.inputRecordRef],
+      status: 'rework-needed',
+      output: {
+        status: 'rework-needed',
+        runId: 'run-123',
+        stageAttempt: 1,
+        reworkAttempt: 1,
+        pullRequest: {
+          number: 7,
+          htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+        },
+        commentsMarkdown: '## Review Comments\n\nPlease simplify the implementation.',
+        routeAnalysis: 'ROUTE: DEVELOP\nImplementation-only.',
+        selectedNextStage: 'develop',
+        pullRequestHead: {
+          owner: 'test-owner',
+          repo: 'test-repo',
+          branch: 'issue-42-test-issue',
+          sha: 'abc123',
+        },
+        latestPlanRecordId: originalPlan.inputRecordRef.recordId,
+      },
+    });
+    const prepareRun = await appendHandoffRecordAndUpdateSummary(workspacePath, {
+      runId: 'run-123',
+      fromStage: 'prepare-run',
+      toStage: 'develop',
+      stageAttempt: 1,
+      reworkAttempt: 1,
+      dependsOn: [prRework.inputRecordRef],
+      status: 'success',
+      output: {
+        status: 'success',
+        runId: 'run-123',
+        stageAttempt: 1,
+        reworkAttempt: 1,
+      },
+    });
+
+    return {
+      id: 'job-develop-pr-rework',
+      data: {
+        taskId: 'task-develop',
+        type: 'develop',
+        runId: 'run-123',
+        stage: 'develop',
+        stageAttempt: 1,
+        reworkAttempt: 1,
+        inputRecordRef: prepareRun.inputRecordRef,
+      },
+    } as unknown as Job<DevelopJobData>;
+  }
+
   it('renders the Develop prompt with accepted Plan content only', async () => {
     const { renderDevelopPrompt } = await import('./develop.js');
     const root = await mkdtemp(join(tmpdir(), 'develop-prompt-'));
@@ -435,6 +537,44 @@ describe('develop job', () => {
         recordId: '000002_develop_to_review',
       }),
     }));
+  });
+
+  it('renders direct PR rework Develop prompt from latest Plan and review comments', async () => {
+    const { runDevelopFlow } = await import('./develop.js');
+    vi.mocked(nodePty.spawn).mockReturnValue(createCodexMockProcess());
+    const job = await createDirectPrReworkJob();
+
+    await runDevelopFlow(job);
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
+    const prompt = vi.mocked(nodePty.spawn).mock.calls[0][1].at(-1);
+
+    expect(prompt).toContain('Original accepted plan.');
+    expect(prompt).toContain('Please simplify the implementation.');
+    expect(records.at(-1)).toMatchObject({
+      fromStage: 'develop',
+      toStage: 'review',
+      stageAttempt: 1,
+      reworkAttempt: 1,
+      dependsOn: ['000003_prepare-run_to_develop', '000002_pr-rework-intake_to_prepare-run', '000001_plan_to_develop'],
+    });
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('review', expect.objectContaining({
+      stageAttempt: 1,
+      reworkAttempt: 1,
+    }));
+  });
+
+  it('rejects unsupported direct Prepare Run input before launching Codex', async () => {
+    const { runDevelopWork } = await import('./develop.js');
+    const job = await createDirectPrReworkJob();
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
+    const prepareRun = records.at(-1);
+    if (!prepareRun) throw new Error('Expected prepare-run record');
+    prepareRun.dependsOn = [];
+    await writeFile(job.data.inputRecordRef.handoffPath, `${records.map((record) => JSON.stringify(record)).join('\n')}\n`);
+
+    await expect(runDevelopWork(job)).rejects.toThrow('Missing required pr-rework-intake dependency');
+
+    expect(nodePty.spawn).not.toHaveBeenCalled();
   });
 
   it('cleans successful quality artifacts after handoff and does not keep stale output paths', async () => {

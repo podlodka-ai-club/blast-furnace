@@ -10,6 +10,7 @@ import type {
   HandoffStatus,
   InputRecordRef,
   JobPayload,
+  PendingNextStage,
   RepositoryIdentity,
   RunId,
   RunFileSet,
@@ -416,6 +417,7 @@ const PRIOR_OUTPUT_FIELDS_BY_STAGE: Partial<Record<WorkflowStage, readonly strin
   review: ['assessment', 'plan', 'development', 'quality', 'pullRequest', 'trackerLabels'],
   'make-pr': ['assessment', 'plan', 'development', 'quality', 'review', 'trackerLabels'],
   'sync-tracker-state': ['assessment', 'plan', 'development', 'quality', 'review', 'pullRequest'],
+  'pr-rework-intake': ['assessment', 'plan', 'development', 'quality', 'review', 'trackerLabels'],
 };
 
 function validateStageLocalOutput(stage: WorkflowStage, output: unknown): void {
@@ -509,6 +511,17 @@ export async function updateRunSummaryForHandoff(
         updatedAt: record.createdAt,
       },
     },
+  }));
+}
+
+export async function updateRunSummaryPendingNextStage(
+  root: string,
+  runId: RunId,
+  pendingNextStage: PendingNextStage | null
+): Promise<RunSummaryData> {
+  return updateRunSummary(root, runId, (summary) => ({
+    ...summary,
+    pendingNextStage,
   }));
 }
 
