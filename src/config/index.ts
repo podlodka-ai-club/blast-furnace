@@ -63,7 +63,7 @@ function loadConfig(): AppConfig {
     codex: {
       cliPath: process.env['CODEX_CLI_PATH'] ?? 'npx @openai/codex',
       model: process.env['CODEX_MODEL'] ?? 'gpt-5.4',
-      timeoutMs: parseTimeout(process.env['CODEX_TIMEOUT_MS'], 300000),
+      timeoutMs: parseTimeout(process.env['CODEX_TIMEOUT_MS'], 600000),
     },
     qualityGate: {
       testCommand: process.env['QUALITY_GATE_TEST_COMMAND']?.trim() || undefined,

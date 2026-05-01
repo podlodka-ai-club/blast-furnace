@@ -20,7 +20,7 @@ import { statusItem, updateRunStatus } from './status.js';
 const LAST_POLL_KEY = 'github:intake:last-poll';
 const LEGACY_LAST_POLL_KEY = 'github:issue-watcher:last-poll';
 const PROCESSING_LOCK_TTL_SECONDS = Math.max(
-  Math.ceil((config.codex?.timeoutMs ?? 300000) / 1000) * 2,
+  Math.ceil((config.codex?.timeoutMs ?? 600000) / 1000) * 2,
   Math.ceil(config.github.pollIntervalMs / 1000) * 2
 );
 
