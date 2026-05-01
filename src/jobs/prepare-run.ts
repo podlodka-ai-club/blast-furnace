@@ -24,10 +24,13 @@ import {
   appendHandoffRecordAndUpdateSummary,
   createRunFileSet,
   initializeRunSummary,
+  readRunSummary,
   resolveOrchestrationStorageRoot,
   scheduleNextJob,
+  updateRunSummary,
 } from './orchestration.js';
 import { createForwardStagePayload } from './stage-payloads.js';
+import { statusItem, updateRunStatus } from './status.js';
 
 interface PrepareRunState {
   branchName: string | null;
@@ -222,7 +225,25 @@ export async function runPrepareRunWork(
   state.workspacePath = workspacePath;
   const orchestrationRoot = resolveOrchestrationStorageRoot();
   const runStartedAt = new Date().toISOString();
-  const runFileSet = createRunFileSet(orchestrationRoot, runId, new Date(runStartedAt));
+  if (!await readRunSummary(orchestrationRoot, runId)) {
+    const runFileSet = createRunFileSet(orchestrationRoot, runId, new Date(runStartedAt));
+    await initializeRunSummary(orchestrationRoot, runFileSet, {
+      runId,
+      status: 'running',
+      currentStage: 'prepare-run',
+      runStartedAt,
+      stageAttempt,
+      reworkAttempt: job.data.reworkAttempt,
+      latestHandoffRecord: null,
+      initialContext: { issue, repository },
+      stages: {},
+    });
+  }
+  await updateRunStatus(orchestrationRoot, runId, {
+    heading: 'Blast Furnace is preparing the workspace',
+    focus: 'Current focus: Prepare run',
+    items: [statusItem('prepare-run', 1, 'in-progress', 'Prepare run', 'Preparing workspace')],
+  }, logger);
 
   let sha: string;
   try {
@@ -261,14 +282,13 @@ export async function runPrepareRunWork(
   logger.info(`Checking out prepared branch: ${branchName}`);
   await checkoutPreparedBranch(branchName, workspacePath, logger);
 
-  await initializeRunSummary(orchestrationRoot, runFileSet, {
-    runId,
+  await updateRunSummary(orchestrationRoot, runId, (summary) => ({
+    ...summary,
     status: 'running',
     currentStage: 'prepare-run',
-    runStartedAt,
     stageAttempt,
     reworkAttempt: job.data.reworkAttempt,
-    latestHandoffRecord: null,
+    initialContext: summary.initialContext ?? { issue, repository },
     stableContext: {
       issue,
       repository,
@@ -276,12 +296,13 @@ export async function runPrepareRunWork(
       workspacePath,
     },
     stages: {
+      ...summary.stages,
       'prepare-run': {
         attempts: stageAttempt,
         status: 'running',
       },
     },
-  });
+  }));
 
   const output = stageOutputSchemas['prepare-run'].parse({
     status: 'success',
@@ -299,6 +320,15 @@ export async function runPrepareRunWork(
     status: 'success',
     output,
   });
+
+  await updateRunStatus(orchestrationRoot, runId, {
+    heading: 'Blast Furnace is assessing the issue',
+    focus: 'Current focus: Assess issue',
+    items: [
+      statusItem('prepare-run', 1, 'completed', 'Prepare run'),
+      statusItem('assess', 1, 'pending', 'Assess issue'),
+    ],
+  }, logger);
 
   const assessJobData = createForwardStagePayload(job.data, 'assess', inputRecordRef) as AssessJobData;
 
@@ -325,6 +355,23 @@ export async function runPrepareRunFlow(job: Job<PrepareRunJobData>): Promise<vo
     logger.info(`Assess job enqueued for run: ${result.assessJobData.runId}`);
   } catch (err) {
     if (!handoffCompleted) {
+      try {
+        await updateRunStatus(resolveOrchestrationStorageRoot(), job.data.runId, {
+          heading: 'Blast Furnace stopped during preparation',
+          focus: 'Final state: Prepare run failed',
+          items: [
+            statusItem('prepare-run', 1, 'failed', 'Prepare run', 'Preparation failed'),
+            statusItem('assess', 1, 'skipped', 'Assess issue'),
+            statusItem('plan', 1, 'skipped', 'Plan solution'),
+            statusItem('develop', 1, 'skipped', 'Develop changes'),
+            statusItem('quality-gate', 1, 'skipped', 'Quality Gate'),
+            statusItem('review', 1, 'skipped', 'Code Review'),
+            statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR'),
+          ],
+        }, logger);
+      } catch {
+        // Preserve the original Prepare Run failure.
+      }
       await cleanupPrepareRunFailure(state, logger);
     }
     throw err;

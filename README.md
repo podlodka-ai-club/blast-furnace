@@ -66,7 +66,7 @@ All application configuration is loaded from environment variables. For local de
 | `GITHUB_POLL_INTERVAL_MS` | `60000` | Intake polling interval in milliseconds, minimum `1000` |
 | `CODEX_CLI_PATH` | `npx @openai/codex` | Command used to launch Codex CLI |
 | `CODEX_MODEL` | `gpt-5.4` | Model passed to Codex CLI with `--model` when the CLI path does not already specify a model |
-| `CODEX_TIMEOUT_MS` | `300000` | Codex CLI timeout in milliseconds, capped at 10 minutes |
+| `CODEX_TIMEOUT_MS` | `600000` | Codex CLI timeout in milliseconds, capped at 10 minutes |
 | `QUALITY_GATE_TEST_COMMAND` | (none) | Deterministic target-repository test command run by the Develop Stop hook |
 | `QUALITY_GATE_TEST_TIMEOUT_MS` | `180000` | Quality Gate command timeout in milliseconds, minimum `1` |
 | `ORCHESTRATION_STORAGE_ROOT` | current process working directory | Root where `.orchestrator/runs/...` run files are written |

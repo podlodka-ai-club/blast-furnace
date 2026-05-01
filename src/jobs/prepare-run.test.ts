@@ -6,7 +6,7 @@ import type { Job } from 'bullmq';
 import type { GitHubIssue, PrepareRunJobData } from '../types/index.js';
 import { spawn } from 'child_process';
 import { createPrepareRunPayload, runPrepareRunFlow, runPrepareRunWork } from './prepare-run.js';
-import { readHandoffRecords, readRunSummary } from './orchestration.js';
+import { createRunFileSet, initializeRunSummary, readHandoffRecords, readRunSummary } from './orchestration.js';
 
 const TEMP_DIR = '/tmp/prepare-run-abc123';
 let orchestrationRoot: string;
@@ -268,6 +268,51 @@ describe('prepare-run job', () => {
     expect(summary?.runSummaryPath).not.toContain(TEMP_DIR);
     expect(await pathExists(join(result.assessJobData.inputRecordRef.runDir, 'run.log'))).toBe(false);
     expect(await pathExists(join(TEMP_DIR, '.orchestrator'))).toBe(false);
+  });
+
+  it('continues from a pre-initialized run summary created by Intake', async () => {
+    const issue = createIssue();
+    const fileSet = createRunFileSet(orchestrationRoot, 'run-123', new Date('2026-04-30T10:00:00.000Z'));
+    await initializeRunSummary(orchestrationRoot, fileSet, {
+      runId: 'run-123',
+      status: 'running',
+      currentStage: 'prepare-run',
+      runStartedAt: '2026-04-30T10:00:00.000Z',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      latestHandoffRecord: null,
+      initialContext: {
+        issue,
+        repository: {
+          owner: 'test-owner',
+          repo: 'test-repo',
+        },
+      },
+      stages: {
+        intake: {
+          attempts: 1,
+          status: 'success',
+        },
+      },
+    });
+
+    await runPrepareRunWork(createJob(issue));
+
+    await expect(readRunSummary(orchestrationRoot, 'run-123')).resolves.toMatchObject({
+      initialContext: {
+        issue,
+      },
+      stableContext: {
+        issue,
+        branchName: 'issue-42-test-issue',
+        workspacePath: TEMP_DIR,
+      },
+      trackerStatus: {
+        checklist: expect.arrayContaining([
+          expect.objectContaining({ id: 'prepare-run:attempt-1', state: 'completed' }),
+        ]),
+      },
+    });
   });
 
   it('slugifies and validates the issue branch before creating it when absent', async () => {

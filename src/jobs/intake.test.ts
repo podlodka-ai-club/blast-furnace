@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Job } from 'bullmq';
 import type { IntakeJobData } from '../types/index.js';
 
@@ -62,13 +65,24 @@ vi.mock('../config/index.js', () => ({
 }));
 
 describe('intake job', () => {
-  beforeEach(() => {
+  const tempRoots: string[] = [];
+
+  beforeEach(async () => {
     vi.resetAllMocks();
+    const root = await mkdtemp(join(tmpdir(), 'blast-intake-test-'));
+    tempRoots.push(root);
+    process.env['ORCHESTRATION_STORAGE_ROOT'] = root;
     mockJobQueueAdd.mockResolvedValue({ id: 'new-job-id' });
     mockCreateJobLogger.mockReturnValue(mockJobLogger);
     mockRedisClient.set.mockResolvedValue('OK');
     mockRedisClient.del.mockResolvedValue(1);
     mockRedisClient.smembers.mockResolvedValue([]);
+  });
+
+  afterEach(async () => {
+    delete process.env['ORCHESTRATION_STORAGE_ROOT'];
+    await Promise.all(tempRoots.map((root) => rm(root, { recursive: true, force: true })));
+    tempRoots.length = 0;
   });
 
   describe('startIntake', () => {
@@ -249,6 +263,48 @@ describe('intake job', () => {
       );
     });
 
+    it('should initialize run summary and status before enqueueing prepare-run', async () => {
+      const { intakeHandler } = await import('./intake.js');
+      const { readRunSummary } = await import('./orchestration.js');
+
+      const mockIssue = {
+        id: 1,
+        number: 42,
+        title: 'Issue 1',
+        body: 'Body 1',
+        state: 'open' as const,
+        labels: [],
+        assignee: null,
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+      };
+
+      mockFetchIssues.mockResolvedValue([mockIssue]);
+      mockRedisClient.get.mockResolvedValue(null);
+
+      await intakeHandler(createMockJob());
+
+      const payload = mockJobQueueAdd.mock.calls[0][1];
+      await expect(readRunSummary(process.env['ORCHESTRATION_STORAGE_ROOT']!, payload.runId)).resolves.toMatchObject({
+        runId: payload.runId,
+        currentStage: 'prepare-run',
+        initialContext: {
+          issue: mockIssue,
+          repository: {
+            owner: 'test-owner',
+            repo: 'test-repo',
+          },
+        },
+        trackerStatus: {
+          externalId: 'test-status-comment',
+          checklist: expect.arrayContaining([
+            expect.objectContaining({ id: 'task-pickup:attempt-1', state: 'completed' }),
+            expect.objectContaining({ id: 'prepare-run:attempt-1', state: 'pending' }),
+          ]),
+        },
+      });
+    });
+
     it('should handle empty issues list', async () => {
       const { intakeHandler } = await import('./intake.js');
 
@@ -340,6 +396,66 @@ describe('intake job', () => {
         'NX'
       );
       expect(mockJobQueueAdd).not.toHaveBeenCalled();
+    });
+
+    it('should skip issues that already have an active orchestration run after the Redis claim expires', async () => {
+      const { intakeHandler } = await import('./intake.js');
+      const { createRunFileSet, initializeRunSummary } = await import('./orchestration.js');
+
+      const mockIssue = {
+        id: 1,
+        number: 42,
+        title: 'Issue 1',
+        body: 'Body 1',
+        state: 'open' as const,
+        labels: ['ready'],
+        assignee: null,
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+      };
+
+      const orchestrationRoot = process.env['ORCHESTRATION_STORAGE_ROOT']!;
+      const activeRunId = 'active-run-123';
+      const runStartedAt = '2024-01-01T00:00:00.000Z';
+      await initializeRunSummary(
+        orchestrationRoot,
+        createRunFileSet(orchestrationRoot, activeRunId, new Date(runStartedAt)),
+        {
+          runId: activeRunId,
+          status: 'running',
+          currentStage: 'develop',
+          runStartedAt,
+          stageAttempt: 1,
+          reworkAttempt: 0,
+          latestHandoffRecord: null,
+          initialContext: {
+            issue: mockIssue,
+            repository: {
+              owner: 'test-owner',
+              repo: 'test-repo',
+            },
+          },
+          stages: {},
+        }
+      );
+
+      mockFetchIssues.mockResolvedValue([mockIssue]);
+      mockRedisClient.get.mockResolvedValue(null);
+      mockRedisClient.set.mockResolvedValue('OK');
+
+      await intakeHandler(createMockJob());
+
+      expect(mockRedisClient.set).not.toHaveBeenCalledWith(
+        'github:intake:processing:test-owner:test-repo:42',
+        expect.any(String),
+        'EX',
+        expect.any(Number),
+        'NX'
+      );
+      expect(mockJobQueueAdd).not.toHaveBeenCalled();
+      expect(mockJobLogger.info).toHaveBeenCalledWith(
+        'GitHub intake fetched 1 issue(s); 0 issue(s) eligible for processing'
+      );
     });
 
     it('should log total fetched issues and claimed issues eligible for processing', async () => {

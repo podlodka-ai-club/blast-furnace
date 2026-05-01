@@ -8,6 +8,7 @@ import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
 import { appendHandoffRecordAndUpdateSummary, resolveOrchestrationStorageRoot, scheduleNextJob, } from './orchestration.js';
 import { createForwardStagePayload } from './stage-payloads.js';
+import { developStatusItem, qualityStatusItem, reviewStatusItem, statusItem, updateRunStatus, } from './status.js';
 export const REVIEW_PROMPT_TEMPLATE_PATH = join(process.cwd(), 'prompts', 'review.md');
 export const REVIEW_REPAIR_PROMPT_TEMPLATE_PATH = join(process.cwd(), 'prompts', 'review-repair.md');
 function parseReviewAttemptLimit(value, defaultValue) {
@@ -76,9 +77,14 @@ async function runReviewCodex(job, logger, workspacePath) {
 export async function runReviewWork(job, logger = createJobLogger(job)) {
     stagePayloadSchemas.review.parse(job.data);
     const context = await resolveReviewContext(job.data);
+    const orchestrationRoot = resolveOrchestrationStorageRoot(job.data.inputRecordRef);
+    await updateRunStatus(orchestrationRoot, job.data.runId, {
+        heading: 'Blast Furnace is reviewing the changes',
+        focus: `Current focus: ${job.data.stageAttempt === 1 ? 'Code Review' : `Code Review attempt ${job.data.stageAttempt}`}`,
+        items: [reviewStatusItem(job.data.stageAttempt, 'in-progress', 'In progress')],
+    }, logger);
     const response = await runReviewCodex(job, logger, context.runContext.workspacePath);
     const parsed = parseReviewResponse(response);
-    const orchestrationRoot = resolveOrchestrationStorageRoot(job.data.inputRecordRef);
     const dependsOn = [
         job.data.inputRecordRef,
         context.planRecord.recordId,
@@ -104,6 +110,14 @@ export async function runReviewWork(job, logger = createJobLogger(job)) {
             status: 'success',
             output,
         });
+        await updateRunStatus(orchestrationRoot, job.data.runId, {
+            heading: 'Blast Furnace is creating a pull request',
+            focus: 'Current focus: Make PR',
+            items: [
+                reviewStatusItem(job.data.stageAttempt, 'completed'),
+                statusItem('draft-pr-and-in-review', 1, 'pending', 'Make PR'),
+            ],
+        }, logger);
         return {
             status: 'success',
             output,
@@ -133,6 +147,14 @@ export async function runReviewWork(job, logger = createJobLogger(job)) {
                 status: 'failure',
                 output,
             }, 'review-exhausted');
+            await updateRunStatus(orchestrationRoot, job.data.runId, {
+                heading: 'Blast Furnace stopped after review',
+                focus: 'Final state: Review limit reached',
+                items: [
+                    reviewStatusItem(job.data.stageAttempt, 'failed', 'Limit reached'),
+                    statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR'),
+                ],
+            }, logger);
             return { status: 'review-exhausted', output };
         }
         const nextStageAttempt = job.data.stageAttempt + 1;
@@ -157,6 +179,16 @@ export async function runReviewWork(job, logger = createJobLogger(job)) {
             status: 'rework-needed',
             output,
         });
+        await updateRunStatus(orchestrationRoot, job.data.runId, {
+            heading: 'Blast Furnace is applying review feedback',
+            focus: `Current focus: Develop rework ${nextStageAttempt - 1}`,
+            items: [
+                reviewStatusItem(job.data.stageAttempt, 'retrying', 'Changes requested'),
+                developStatusItem(nextStageAttempt, 'pending'),
+                qualityStatusItem(nextStageAttempt, 'pending'),
+                reviewStatusItem(nextStageAttempt, 'pending'),
+            ],
+        }, logger);
         return {
             status: 'review-failed',
             output,
@@ -188,6 +220,14 @@ export async function runReviewWork(job, logger = createJobLogger(job)) {
         status: 'failure',
         output,
     }, 'review-malformed');
+    await updateRunStatus(orchestrationRoot, job.data.runId, {
+        heading: 'Blast Furnace stopped after review',
+        focus: 'Final state: Review response malformed',
+        items: [
+            reviewStatusItem(job.data.stageAttempt, 'failed', 'Malformed response'),
+            statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR'),
+        ],
+    }, logger);
     return { status: 'review-malformed', output };
 }
 export async function runReviewFlow(job) {

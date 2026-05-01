@@ -14,6 +14,7 @@ import {
   scheduleNextJob,
 } from './orchestration.js';
 import { createForwardStagePayload } from './stage-payloads.js';
+import { statusItem, updateRunStatus } from './status.js';
 
 const MAX_PLAN_ATTEMPTS = 3;
 export const PLAN_PROMPT_TEMPLATE_PATH = join(process.cwd(), 'prompts', 'plan.md');
@@ -147,6 +148,11 @@ export async function runPlanWork(job: Job<PlanJobData>, options: PlanRunOptions
   const context = await resolvePlanContext(job.data);
   const orchestrationRoot = resolveOrchestrationStorageRoot(job.data.inputRecordRef);
   const logger = createJobLogger(job);
+  await updateRunStatus(orchestrationRoot, job.data.runId, {
+    heading: 'Blast Furnace is planning the solution',
+    focus: 'Current focus: Plan solution',
+    items: [statusItem('plan', 1, 'in-progress', 'Plan solution', 'In progress')],
+  }, logger);
   const checks = await loadPlanChecks(options.checksPath ?? PLAN_CHECKS_PATH);
   const initialPrompt = await renderPlanPrompt(options.promptTemplatePath ?? PLAN_PROMPT_TEMPLATE_PATH, {
     issue: context.runContext.issue,
@@ -195,6 +201,14 @@ export async function runPlanWork(job: Job<PlanJobData>, options: PlanRunOptions
           status: 'success',
           output,
         });
+        await updateRunStatus(orchestrationRoot, job.data.runId, {
+          heading: 'Blast Furnace is building a solution',
+          focus: 'Current focus: Develop changes',
+          items: [
+            statusItem('plan', 1, 'completed', 'Plan solution'),
+            statusItem('develop', 1, 'pending', 'Develop changes'),
+          ],
+        }, logger);
 
         return {
           output,
@@ -212,6 +226,19 @@ export async function runPlanWork(job: Job<PlanJobData>, options: PlanRunOptions
         status: isFinalAttempt ? 'blocked' : 'rework-needed',
         output,
       }, isFinalAttempt ? 'blocked' : undefined);
+      await updateRunStatus(orchestrationRoot, job.data.runId, {
+        heading: isFinalAttempt ? 'Blast Furnace stopped during planning' : 'Blast Furnace is refining the plan',
+        focus: isFinalAttempt ? 'Final state: Plan validation exhausted' : 'Current focus: Plan solution',
+        items: isFinalAttempt
+          ? [
+              statusItem('plan', 1, 'blocked', 'Plan solution', 'Validation limit reached'),
+              statusItem('develop', 1, 'skipped', 'Develop changes'),
+              statusItem('quality-gate', 1, 'skipped', 'Quality Gate'),
+              statusItem('review', 1, 'skipped', 'Code Review'),
+              statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR'),
+            ]
+          : [statusItem('plan', 1, 'retrying', 'Plan solution', 'Validation retry')],
+      }, logger);
       dependencies = [inputRecordRef];
 
       if (isFinalAttempt) {

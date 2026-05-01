@@ -20,6 +20,7 @@ import {
   scheduleNextJob,
 } from './orchestration.js';
 import { createForwardStagePayload } from './stage-payloads.js';
+import { statusItem, updateRunStatus } from './status.js';
 
 const TARGET_REPO_PATHS = [
   '.',
@@ -120,6 +121,11 @@ export async function runMakePrWork(
   logger.info(`Finalizing issue #${issue.number} on branch ${branchName}`);
 
   const orchestrationRoot = resolveOrchestrationStorageRoot(job.data.inputRecordRef);
+  await updateRunStatus(orchestrationRoot, job.data.runId, {
+    heading: 'Blast Furnace is creating a pull request',
+    focus: 'Current focus: Make PR',
+    items: [statusItem('draft-pr-and-in-review', 1, 'in-progress', 'Make PR', 'In progress')],
+  }, logger);
   const status = await execGitCommand(
     ['status', '--porcelain', '--untracked-files=all', '--', ...TARGET_REPO_PATHS],
     workspacePath
@@ -150,6 +156,11 @@ export async function runMakePrWork(
       status: 'success',
       output,
     }, 'completed');
+    await updateRunStatus(orchestrationRoot, job.data.runId, {
+      heading: 'Blast Furnace finished with no changes',
+      focus: 'Final state: No repository changes',
+      items: [statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR', 'No changes')],
+    }, logger);
     return { status: 'no-changes', output, workspacePath };
   }
 
@@ -204,6 +215,19 @@ export async function runMakePrWork(
     status: 'success',
     output,
   });
+  await updateRunStatus(orchestrationRoot, job.data.runId, {
+    heading: 'Blast Furnace created a pull request',
+    focus: `Result: Pull request #${output.pullRequest.number} created`,
+    items: [
+      statusItem(
+        'draft-pr-and-in-review',
+        1,
+        'completed',
+        'Make PR',
+        `PR #${output.pullRequest.number} created`
+      ),
+    ],
+  }, logger);
 
   return {
     status: 'pull-request-created',
@@ -232,6 +256,17 @@ export async function runMakePrFlow(job: Job<MakePrJobData>): Promise<void> {
     await scheduleNextJob(jobQueue, 'sync-tracker-state', result.syncTrackerStateJobData);
   } catch (err) {
     logger.error(`Make PR operation failed: ${err}`);
+    try {
+      await updateRunStatus(resolveOrchestrationStorageRoot(job.data.inputRecordRef), job.data.runId, {
+        heading: 'Blast Furnace stopped before creating a pull request',
+        focus: 'Final state: Pull request creation failed',
+        items: [
+          statusItem('draft-pr-and-in-review', 1, 'failed', 'Make PR', 'PR was not created'),
+        ],
+      }, logger);
+    } catch {
+      // Preserve original Make PR failure.
+    }
     throw err;
   }
 }

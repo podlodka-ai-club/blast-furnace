@@ -6,7 +6,7 @@ import { config } from '../config/index.js';
 import { ensureNodePtySpawnHelperExecutable } from '../utils/node-pty.js';
 import type { createJobLogger } from './logger.js';
 
-const DEFAULT_TIMEOUT_MS = 300000;
+const DEFAULT_TIMEOUT_MS = 600000;
 const CODEX_SUBCOMMANDS = new Set([
   'exec',
   'review',

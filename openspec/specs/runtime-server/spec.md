@@ -17,7 +17,7 @@ The system SHALL load runtime configuration from environment variables with docu
 - **AND** default `GITHUB_POLL_INTERVAL_MS` to `60000`
 - **AND** default `CODEX_CLI_PATH` to `npx @openai/codex`
 - **AND** default `CODEX_MODEL` to `gpt-5.4`
-- **AND** default `CODEX_TIMEOUT_MS` to `300000`
+- **AND** default `CODEX_TIMEOUT_MS` to `600000`
 - **AND** default `QUALITY_GATE_TEST_TIMEOUT_MS` to `180000`
 - **AND** leave `QUALITY_GATE_TEST_COMMAND` unset when absent
 
@@ -38,7 +38,7 @@ The system SHALL load runtime configuration from environment variables with docu
 - **WHEN** `GITHUB_POLL_INTERVAL_MS` is less than `1000` or invalid
 - **THEN** the system SHALL use `60000`
 - **WHEN** `CODEX_TIMEOUT_MS` is less than `1`, greater than `600000`, or invalid
-- **THEN** the system SHALL use `300000`
+- **THEN** the system SHALL use `600000`
 - **WHEN** `QUALITY_GATE_TEST_TIMEOUT_MS` is less than `1` or invalid
 - **THEN** the system SHALL use `180000`
 
