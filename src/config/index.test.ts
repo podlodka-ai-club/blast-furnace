@@ -49,7 +49,7 @@ describe('config', () => {
     expect(config.github).not.toHaveProperty('webhookSecret');
     expect(config.codex.cliPath).toBe('npx @openai/codex');
     expect(config.codex.model).toBe('gpt-5.4');
-    expect(config.codex.timeoutMs).toBe(300000);
+    expect(config.codex.timeoutMs).toBe(600000);
     expect(config.qualityGate.testCommand).toBeUndefined();
     expect(config.qualityGate.testTimeoutMs).toBe(180000);
     expect(config.review.attemptLimit).toBe(3);
@@ -133,7 +133,7 @@ describe('config', () => {
     vi.resetModules();
     const { config } = await import('./index.js');
 
-    expect(config.codex.timeoutMs).toBe(300000);
+    expect(config.codex.timeoutMs).toBe(600000);
   });
 
   it('should use default timeout for values less than 1ms', async () => {
@@ -142,7 +142,7 @@ describe('config', () => {
     vi.resetModules();
     const { config } = await import('./index.js');
 
-    expect(config.codex.timeoutMs).toBe(300000);
+    expect(config.codex.timeoutMs).toBe(600000);
   });
 
   it('should use default quality gate timeout for invalid or too-small values without requiring a command', async () => {

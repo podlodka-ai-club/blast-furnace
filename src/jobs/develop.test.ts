@@ -57,7 +57,7 @@ vi.mock('../config/index.js', () => ({
     codex: {
       cliPath: 'npx @openai/codex',
       model: 'gpt-5.4',
-      timeoutMs: 300000,
+      timeoutMs: 600000,
     },
     qualityGate: {
       testCommand: 'npm test',

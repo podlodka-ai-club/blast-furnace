@@ -88,7 +88,7 @@ Longer-term product direction is an agent development pipeline with deterministi
 - GitHub support is the current scope; GitLab and other trackers are out of scope.
 - Secrets such as `GITHUB_TOKEN` and local environment files must not be committed.
 - `GITHUB_POLL_INTERVAL_MS` has a minimum of 1000 milliseconds.
-- Codex execution uses `CODEX_MODEL`, defaulting to `gpt-5.4`, and is bounded by `CODEX_TIMEOUT_MS`, defaulting to 300000 milliseconds.
+- Codex execution uses `CODEX_MODEL`, defaulting to `gpt-5.4`, and is bounded by `CODEX_TIMEOUT_MS`, defaulting to 600000 milliseconds.
 - Agent execution should not directly own repository-level git actions; deterministic orchestrator code should own those actions.
 
 ## External Dependencies
@@ -121,5 +121,5 @@ Longer-term product direction is an agent development pipeline with deterministi
 - `GITHUB_POLL_INTERVAL_MS`: defaults to `60000`.
 - `CODEX_CLI_PATH`: defaults to `npx @openai/codex`.
 - `CODEX_MODEL`: defaults to `gpt-5.4`.
-- `CODEX_TIMEOUT_MS`: defaults to `300000`.
+- `CODEX_TIMEOUT_MS`: defaults to `600000`.
 - `CORS_ORIGIN`: used by the server, defaulting to permissive development behavior.

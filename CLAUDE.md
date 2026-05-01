@@ -85,7 +85,7 @@ Most configuration is loaded from environment variables in `src/config/index.ts`
 - `GITHUB_POLL_INTERVAL_MS` (default: 60000) - polling interval in milliseconds
 - `CODEX_CLI_PATH` (optional, default: npx @openai/codex) - command used to launch codex CLI
 - `CODEX_MODEL` (optional, default: gpt-5.4) - model passed to codex CLI
-- `CODEX_TIMEOUT_MS` (optional, default: 300000 = 5 minutes) - timeout for codex CLI execution
+- `CODEX_TIMEOUT_MS` (optional, default: 600000 = 10 minutes) - timeout for codex CLI execution
 
 Additional configuration read directly from environment:
 - `CORS_ORIGIN` (used in `src/server/index.ts`, default: true for development)
