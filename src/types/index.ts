@@ -126,8 +126,10 @@ export interface InitialRunContext {
 export type TrackerCommentKind = 'orchestrator-status' | 'orchestrator-plan' | 'orchestrator-rework-start';
 export type TrackerProvider = 'github' | string;
 export type StatusItemState = 'pending' | 'in-progress' | 'completed' | 'retrying' | 'blocked' | 'failed' | 'skipped';
+// Tracker presentation row kind. Workflow routing must use WorkflowStage, queue payloads, and handoff records.
 export type StatusItemStage =
   | 'task-pickup'
+  | 'human-review'
   | 'prepare-run'
   | 'assess'
   | 'plan'
@@ -141,6 +143,7 @@ export interface StatusChecklistItem {
   id: string;
   stage: StatusItemStage;
   attempt: number;
+  reworkAttempt?: number;
   state: StatusItemState;
   label: string;
   detail?: string;

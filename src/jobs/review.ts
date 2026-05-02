@@ -118,7 +118,7 @@ export async function runReviewWork(
   await updateRunStatus(orchestrationRoot, job.data.runId, {
     heading: 'Blast Furnace is reviewing the changes',
     focus: `Current focus: ${job.data.stageAttempt === 1 ? 'Code Review' : `Code Review attempt ${job.data.stageAttempt}`}`,
-    items: [reviewStatusItem(job.data.stageAttempt, 'in-progress', 'In progress')],
+    items: [reviewStatusItem(job.data.stageAttempt, 'in-progress', 'In progress', job.data.reworkAttempt)],
   }, logger);
   const response = await runReviewCodex(job, logger, context.runContext.workspacePath);
   const parsed = parseReviewResponse(response);
@@ -152,8 +152,8 @@ export async function runReviewWork(
       heading: 'Blast Furnace is creating a pull request',
       focus: 'Current focus: Make PR',
       items: [
-        reviewStatusItem(job.data.stageAttempt, 'completed'),
-        statusItem('draft-pr-and-in-review', 1, 'pending', 'Make PR'),
+        reviewStatusItem(job.data.stageAttempt, 'completed', undefined, job.data.reworkAttempt),
+        statusItem('draft-pr-and-in-review', 1, 'pending', 'Make PR', undefined, job.data.reworkAttempt),
       ],
     }, logger);
     return {
@@ -190,8 +190,8 @@ export async function runReviewWork(
         heading: 'Blast Furnace stopped after review',
         focus: 'Final state: Review limit reached',
         items: [
-          reviewStatusItem(job.data.stageAttempt, 'failed', 'Limit reached'),
-          statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR'),
+          reviewStatusItem(job.data.stageAttempt, 'failed', 'Limit reached', job.data.reworkAttempt),
+          statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR', undefined, job.data.reworkAttempt),
         ],
       }, logger);
       return { status: 'review-exhausted', output };
@@ -223,10 +223,10 @@ export async function runReviewWork(
       heading: 'Blast Furnace is applying review feedback',
       focus: `Current focus: Develop rework ${nextStageAttempt - 1}`,
       items: [
-        reviewStatusItem(job.data.stageAttempt, 'retrying', 'Changes requested'),
-        developStatusItem(nextStageAttempt, 'pending'),
-        qualityStatusItem(nextStageAttempt, 'pending'),
-        reviewStatusItem(nextStageAttempt, 'pending'),
+        reviewStatusItem(job.data.stageAttempt, 'retrying', 'Changes requested', job.data.reworkAttempt),
+        developStatusItem(nextStageAttempt, 'pending', undefined, job.data.reworkAttempt),
+        qualityStatusItem(nextStageAttempt, 'pending', undefined, job.data.reworkAttempt),
+        reviewStatusItem(nextStageAttempt, 'pending', undefined, job.data.reworkAttempt),
       ],
     }, logger);
     return {
@@ -265,8 +265,8 @@ export async function runReviewWork(
     heading: 'Blast Furnace stopped after review',
     focus: 'Final state: Review response malformed',
     items: [
-      reviewStatusItem(job.data.stageAttempt, 'failed', 'Malformed response'),
-      statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR'),
+      reviewStatusItem(job.data.stageAttempt, 'failed', 'Malformed response', job.data.reworkAttempt),
+      statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR', undefined, job.data.reworkAttempt),
     ],
   }, logger);
   return { status: 'review-malformed', output };

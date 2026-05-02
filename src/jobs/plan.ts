@@ -156,7 +156,7 @@ export async function runPlanWork(job: Job<PlanJobData>, options: PlanRunOptions
   await updateRunStatus(orchestrationRoot, job.data.runId, {
     heading: 'Blast Furnace is planning the solution',
     focus: 'Current focus: Plan solution',
-    items: [statusItem('plan', 1, 'in-progress', 'Plan solution', 'In progress')],
+    items: [statusItem('plan', 1, 'in-progress', 'Plan solution', 'In progress', job.data.reworkAttempt)],
   }, logger);
   const checks = await loadPlanChecks(options.checksPath ?? PLAN_CHECKS_PATH);
   const initialPrompt = context.inputKind === 'pr-rework'
@@ -218,8 +218,8 @@ export async function runPlanWork(job: Job<PlanJobData>, options: PlanRunOptions
           heading: 'Blast Furnace is building a solution',
           focus: 'Current focus: Develop changes',
           items: [
-            statusItem('plan', 1, 'completed', 'Plan solution'),
-            statusItem('develop', 1, 'pending', 'Develop changes'),
+            statusItem('plan', 1, 'completed', 'Plan solution', undefined, job.data.reworkAttempt),
+            statusItem('develop', 1, 'pending', 'Develop changes', undefined, job.data.reworkAttempt),
           ],
         }, logger);
 
@@ -244,13 +244,13 @@ export async function runPlanWork(job: Job<PlanJobData>, options: PlanRunOptions
         focus: isFinalAttempt ? 'Final state: Plan validation exhausted' : 'Current focus: Plan solution',
         items: isFinalAttempt
           ? [
-              statusItem('plan', 1, 'blocked', 'Plan solution', 'Validation limit reached'),
-              statusItem('develop', 1, 'skipped', 'Develop changes'),
-              statusItem('quality-gate', 1, 'skipped', 'Quality Gate'),
-              statusItem('review', 1, 'skipped', 'Code Review'),
-              statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR'),
+              statusItem('plan', 1, 'blocked', 'Plan solution', 'Validation limit reached', job.data.reworkAttempt),
+              statusItem('develop', 1, 'skipped', 'Develop changes', undefined, job.data.reworkAttempt),
+              statusItem('quality-gate', 1, 'skipped', 'Quality Gate', undefined, job.data.reworkAttempt),
+              statusItem('review', 1, 'skipped', 'Code Review', undefined, job.data.reworkAttempt),
+              statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR', undefined, job.data.reworkAttempt),
             ]
-          : [statusItem('plan', 1, 'retrying', 'Plan solution', 'Validation retry')],
+          : [statusItem('plan', 1, 'retrying', 'Plan solution', 'Validation retry', job.data.reworkAttempt)],
       }, logger);
       dependencies = [inputRecordRef];
 

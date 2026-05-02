@@ -16,10 +16,22 @@ const BASE_STAGES: Array<{ stage: StatusItemStage; label: string }> = [
   { stage: 'draft-pr-and-in-review', label: 'Make PR' },
 ];
 
-const STAGE_ORDER = new Map(BASE_STAGES.map((entry, index) => [entry.stage, index]));
+const REWORK_STAGES: Array<{ stage: StatusItemStage; label: string }> = [
+  { stage: 'human-review', label: 'Human Review' },
+  { stage: 'prepare-run', label: 'Prepare run' },
+  { stage: 'plan', label: 'Plan solution' },
+  { stage: 'develop', label: 'Develop changes' },
+  { stage: 'quality-gate', label: 'Quality Gate' },
+  { stage: 'review', label: 'Code Review' },
+  { stage: 'draft-pr-and-in-review', label: 'Make PR' },
+];
 
-export function statusItemId(stage: StatusItemStage, attempt: number): string {
-  return `${stage}:attempt-${attempt}`;
+const STAGE_ORDER = new Map(BASE_STAGES.map((entry, index) => [entry.stage, index]));
+STAGE_ORDER.set('human-review', -1);
+
+export function statusItemId(stage: StatusItemStage, attempt: number, reworkAttempt = 0): string {
+  const base = `${stage}:attempt-${attempt}`;
+  return reworkAttempt > 0 ? `rework-${reworkAttempt}:${base}` : base;
 }
 
 export function createInitialStatusMetadata(now: string): RunStatusMetadata {
@@ -41,9 +53,10 @@ export function createInitialStatusMetadata(now: string): RunStatusMetadata {
 }
 
 function itemSortKey(item: StatusChecklistItem): string {
+  const reworkAttempt = String(item.reworkAttempt ?? 0).padStart(4, '0');
   const order = STAGE_ORDER.get(item.stage) ?? 99;
   const attempt = String(item.attempt).padStart(4, '0');
-  return `${attempt}:${String(order).padStart(2, '0')}:${item.id}`;
+  return `${reworkAttempt}:${attempt}:${String(order).padStart(2, '0')}:${item.id}`;
 }
 
 export function upsertStatusItems(
@@ -62,16 +75,29 @@ export function makeStatusItem(
   attempt: number,
   state: StatusItemState,
   label: string,
-  detail?: string
+  detail?: string,
+  reworkAttempt = 0
 ): StatusChecklistItem {
   return {
-    id: statusItemId(stage, attempt),
+    id: statusItemId(stage, attempt, reworkAttempt),
     stage,
     attempt,
+    ...(reworkAttempt > 0 && { reworkAttempt }),
     state,
     label,
     ...(detail !== undefined && { detail }),
   };
+}
+
+export function createReworkStatusItems(reworkAttempt: number): StatusChecklistItem[] {
+  return REWORK_STAGES.map(({ stage, label }) => makeStatusItem(
+    stage,
+    1,
+    stage === 'human-review' ? 'retrying' : 'pending',
+    label,
+    stage === 'human-review' ? 'Rework needed' : undefined,
+    reworkAttempt
+  ));
 }
 
 export function statusIcon(state: StatusItemState): string {

@@ -546,6 +546,21 @@ describe('human PR rework orchestration', () => {
     expect(mockRemoveReworkLabelFromPullRequest).toHaveBeenCalledWith(7);
   });
 
+  it('shows the ROUTE: PLAN rework status path in scoped rows', async () => {
+    const run = await runReworkRoute('plan');
+    const summary = await readRunSummary(run.root, 'run-123');
+
+    expect(summary?.trackerStatus?.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'plan:attempt-1', state: 'pending' }),
+      expect.objectContaining({ id: 'rework-1:human-review:attempt-1', state: 'retrying', detail: 'Rework needed' }),
+      expect.objectContaining({ id: 'rework-1:plan:attempt-1', reworkAttempt: 1, state: 'completed' }),
+      expect.objectContaining({ id: 'rework-1:develop:attempt-1', reworkAttempt: 1, state: 'completed' }),
+      expect.objectContaining({ id: 'rework-1:quality-gate:attempt-1', reworkAttempt: 1, state: 'completed' }),
+      expect.objectContaining({ id: 'rework-1:review:attempt-1', reworkAttempt: 1, state: 'completed' }),
+      expect.objectContaining({ id: 'rework-1:draft-pr-and-in-review:attempt-1', reworkAttempt: 1, state: 'completed' }),
+    ]));
+  });
+
   it('routes a Rework label directly through Develop, Quality Gate, Review, Make PR, Sync Tracker State, and back to polling', async () => {
     const run = await runReworkRoute('develop');
     const records = await readHandoffRecords(run.syncInput.handoffPath);
@@ -567,6 +582,21 @@ describe('human PR rework orchestration', () => {
       toStage: 'pr-rework-intake',
       reworkAttempt: 1,
     });
+  });
+
+  it('shows the ROUTE: DEVELOP rework status path with Plan skipped', async () => {
+    const run = await runReworkRoute('develop');
+    const summary = await readRunSummary(run.root, 'run-123');
+
+    expect(summary?.trackerStatus?.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'plan:attempt-1', state: 'pending' }),
+      expect.objectContaining({ id: 'rework-1:human-review:attempt-1', state: 'retrying', detail: 'Rework needed' }),
+      expect.objectContaining({ id: 'rework-1:plan:attempt-1', reworkAttempt: 1, state: 'skipped', detail: 'skipped' }),
+      expect.objectContaining({ id: 'rework-1:develop:attempt-1', reworkAttempt: 1, state: 'completed' }),
+      expect.objectContaining({ id: 'rework-1:quality-gate:attempt-1', reworkAttempt: 1, state: 'completed' }),
+      expect.objectContaining({ id: 'rework-1:review:attempt-1', reworkAttempt: 1, state: 'completed' }),
+      expect.objectContaining({ id: 'rework-1:draft-pr-and-in-review:attempt-1', reworkAttempt: 1, state: 'completed' }),
+    ]));
   });
 
   it('closes the run successfully when the pull request is merged', async () => {

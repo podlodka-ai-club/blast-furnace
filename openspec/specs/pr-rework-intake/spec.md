@@ -32,7 +32,7 @@ The system SHALL provide a `pr-rework-intake` job handled by an isolated PR Rewo
 - **AND** it SHALL NOT schedule more work for the run
 
 ### Requirement: PR Rework Trigger Handling
-The PR Rework Intake module SHALL consume human `Rework` label triggers, collect qualifying comments, run route analysis, and delegate to Prepare Run for workspace preparation.
+The PR Rework Intake module SHALL consume human `Rework` label triggers, collect qualifying comments, run route analysis, update visible rework status, and delegate to Prepare Run for workspace preparation.
 
 #### Scenario: Rework trigger exceeds configured limit
 - **WHEN** PR Rework Intake detects the `Rework` label and another rework would make the total number of full flow runs exceed `MAX_HUMAN_REWORK_ATTEMPTS`
@@ -57,6 +57,8 @@ The PR Rework Intake module SHALL consume human `Rework` label triggers, collect
 - **AND** it SHALL route to `develop` only when the first line of the Codex response is exactly `ROUTE: DEVELOP`
 - **AND** it SHALL route to `plan` when the first line is `ROUTE: PLAN` or any other value
 - **AND** it SHALL append a `pr-rework-intake` handoff record containing the comments markdown, full Codex response, selected next stage, pull request identity, pull request head branch, expected head SHA, and latest accepted Plan record id
+- **AND** it SHALL update the existing source-issue status comment with a new rework section for the incremented `reworkAttempt`
+- **AND** the new rework section SHALL include all possible rework rows, including Plan, before Prepare Run continues execution
 - **AND** it SHALL enqueue `prepare-run` with a reference to that handoff record
 - **AND** the queued Prepare Run payload SHALL use incremented `reworkAttempt` and `stageAttempt: 1`
 

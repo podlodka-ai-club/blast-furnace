@@ -25,6 +25,7 @@ import {
 } from './orchestration.js';
 import { runCodexSession } from './codex-session.js';
 import { createJobLogger } from './logger.js';
+import { reworkStatusItems, updateRunStatus } from './status.js';
 
 export const PR_REWORK_INTAKE_PROMPT_TEMPLATE_PATH = join(process.cwd(), 'prompts', 'review_comments_analysis.md');
 
@@ -388,6 +389,11 @@ export async function runPrReworkIntakeWork(
     status: 'rework-needed',
     output,
   }, 'running');
+  await updateRunStatus(root, job.data.runId, {
+    heading: 'Blast Furnace is applying human review feedback',
+    focus: 'Current focus: Prepare rework',
+    items: reworkStatusItems(nextReworkAttempt),
+  });
   await updateRunSummaryPendingNextStage(root, job.data.runId, {
     stage: 'prepare-run',
     inputRecordRef: handoff.inputRecordRef,

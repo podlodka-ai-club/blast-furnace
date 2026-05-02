@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderStatusComment } from './render.js';
-import { createInitialStatusMetadata, makeStatusItem, upsertStatusItems } from './status.js';
+import { createInitialStatusMetadata, createReworkStatusItems, makeStatusItem, upsertStatusItems } from './status.js';
 
 const repository = { owner: 'owner', repo: 'repo' };
 
@@ -54,6 +54,55 @@ describe('status card renderer', () => {
     expect(body).toContain('| 1 | ✅ | ✅ | 🟡 Changes requested |');
     expect(body).toContain('| 2 | ✅ | ✅ | 🟡 Changes requested |');
     expect(body).toContain('| 3 | 🔵 In progress | ⚪ | ⚪ |');
+  });
+
+  it('renders a rework attempt section with human review as the first row', () => {
+    const initial = createInitialStatusMetadata('2026-04-30T10:00:00.000Z');
+    const status = {
+      ...initial,
+      checklist: upsertStatusItems(initial.checklist, createReworkStatusItems(1)),
+    };
+
+    const body = renderStatusComment({
+      runId: 'run-123',
+      repository,
+      issueNumber: 42,
+      status,
+    });
+
+    expect(body).toContain('### Rework attempt 1');
+    expect(body).toContain('Human review comments were left during review, so Blast Furnace is redoing the work.');
+    expect(body).toContain('| 🟡 | Human Review | Rework needed |');
+    expect(body.indexOf('| 🟡 | Human Review | Rework needed |')).toBeLessThan(
+      body.indexOf('| ⚪ | Prepare run |  |', body.indexOf('### Rework attempt 1'))
+    );
+    expect(body.slice(body.indexOf('## Progress'), body.indexOf('### Rework attempt 1'))).not.toContain('Human Review');
+  });
+
+  it('renders multiple rework attempts as separate scoped sections', () => {
+    const initial = createInitialStatusMetadata('2026-04-30T10:00:00.000Z');
+    const status = {
+      ...initial,
+      checklist: upsertStatusItems(initial.checklist, [
+        ...createReworkStatusItems(1),
+        makeStatusItem('plan', 1, 'completed', 'Plan solution', undefined, 1),
+        ...createReworkStatusItems(2),
+        makeStatusItem('plan', 1, 'in-progress', 'Plan solution', 'In progress', 2),
+      ]),
+    };
+
+    const body = renderStatusComment({
+      runId: 'run-123',
+      repository,
+      issueNumber: 42,
+      status,
+    });
+
+    expect(body).toContain('### Rework attempt 1');
+    expect(body).toContain('### Rework attempt 2');
+    expect(body).toContain('| ✅ | Plan solution |  |');
+    expect(body).toContain('| 🔵 | Plan solution | In progress |');
+    expect(body).not.toContain('### Review feedback loop');
   });
 
   it('renders PR-created tracker warning as a status note', () => {

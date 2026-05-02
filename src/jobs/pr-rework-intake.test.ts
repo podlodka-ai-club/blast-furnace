@@ -339,6 +339,46 @@ describe('pr-rework-intake job', () => {
     }));
   });
 
+  it('initializes all visible rework status rows before Prepare Run continues', async () => {
+    const { runPrReworkIntakeWork } = await import('./pr-rework-intake.js');
+    const job = await createJob();
+    openPr(['Rework']);
+    mockListReviewComments.mockResolvedValue([
+      {
+        id: 1,
+        authorLogin: 'reviewer',
+        authorType: 'User',
+        body: 'Please simplify implementation.',
+        createdAt: '2026-04-30T10:00:00.000Z',
+        outdated: false,
+        resolved: false,
+        deleted: false,
+      },
+    ]);
+
+    await runPrReworkIntakeWork(job, {
+      analyzeRoute: async () => 'ROUTE: DEVELOP\nImplementation-only.',
+    });
+
+    const summary = await readRunSummary(resolveOrchestrationStorageRoot(job.data.inputRecordRef), 'run-123');
+    expect(summary?.trackerStatus?.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'rework-1:human-review:attempt-1',
+        reworkAttempt: 1,
+        label: 'Human Review',
+        state: 'retrying',
+        detail: 'Rework needed',
+      }),
+      expect.objectContaining({ id: 'rework-1:prepare-run:attempt-1', state: 'pending' }),
+      expect.objectContaining({ id: 'rework-1:plan:attempt-1', state: 'pending' }),
+      expect.objectContaining({ id: 'rework-1:develop:attempt-1', state: 'pending' }),
+      expect.objectContaining({ id: 'rework-1:quality-gate:attempt-1', state: 'pending' }),
+      expect.objectContaining({ id: 'rework-1:review:attempt-1', state: 'pending' }),
+      expect.objectContaining({ id: 'rework-1:draft-pr-and-in-review:attempt-1', state: 'pending' }),
+    ]));
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('prepare-run', expect.objectContaining({ reworkAttempt: 1 }));
+  });
+
   it('renders the review comments analysis prompt and invokes Codex route analysis by default', async () => {
     const { runPrReworkIntakeWork } = await import('./pr-rework-intake.js');
     const job = await createJob();

@@ -573,6 +573,32 @@ describe('prepare-run job', () => {
     });
   });
 
+  it('marks scoped Plan skipped when rework routes directly to Develop', async () => {
+    const job = await createReworkJob('develop');
+
+    await runPrepareRunWork(job);
+    const summary = await readRunSummary(orchestrationRoot, 'run-123');
+
+    expect(summary?.trackerStatus?.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'rework-1:prepare-run:attempt-1',
+        reworkAttempt: 1,
+        state: 'completed',
+      }),
+      expect.objectContaining({
+        id: 'rework-1:plan:attempt-1',
+        reworkAttempt: 1,
+        state: 'skipped',
+        detail: 'skipped',
+      }),
+      expect.objectContaining({
+        id: 'rework-1:develop:attempt-1',
+        reworkAttempt: 1,
+        state: 'pending',
+      }),
+    ]));
+  });
+
   it('rejects rework PR heads from forks before workspace side effects', async () => {
     const job = await createReworkJob('develop');
     const records = await readHandoffRecords(job.data.inputRecordRef?.handoffPath ?? '');

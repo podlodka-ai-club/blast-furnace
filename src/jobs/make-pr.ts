@@ -313,7 +313,8 @@ async function recordPullRequestCreationFailure(
         1,
         'failed',
         'Make PR',
-        isDuplicate ? 'A pull request already exists' : 'PR creation failed'
+        isDuplicate ? 'A pull request already exists' : 'PR creation failed',
+        job.data.reworkAttempt
       ),
     ],
   }, logger);
@@ -340,7 +341,7 @@ export async function runMakePrWork(
   await updateRunStatus(orchestrationRoot, job.data.runId, {
     heading: 'Blast Furnace is creating a pull request',
     focus: 'Current focus: Make PR',
-    items: [statusItem('draft-pr-and-in-review', 1, 'in-progress', 'Make PR', 'In progress')],
+    items: [statusItem('draft-pr-and-in-review', 1, 'in-progress', 'Make PR', 'In progress', job.data.reworkAttempt)],
   }, logger);
   const status = await execGitCommand(
     ['status', '--porcelain', '--untracked-files=all', '--', ...TARGET_REPO_PATHS],
@@ -379,7 +380,7 @@ export async function runMakePrWork(
     await updateRunStatus(orchestrationRoot, job.data.runId, {
       heading: 'Blast Furnace finished with no changes',
       focus: 'Final state: No repository changes',
-      items: [statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR', 'No changes')],
+      items: [statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR', 'No changes', job.data.reworkAttempt)],
     }, logger);
     if (reworkPullRequest) {
       const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
@@ -472,7 +473,8 @@ export async function runMakePrWork(
         1,
         'completed',
         'Make PR',
-        `PR #${output.pullRequest.number} created`
+        `PR #${output.pullRequest.number} created`,
+        job.data.reworkAttempt
       ),
     ],
   }, logger);
@@ -519,7 +521,7 @@ export async function runMakePrFlow(job: Job<MakePrJobData>): Promise<void> {
         heading: 'Blast Furnace stopped before creating a pull request',
         focus: 'Final state: Pull request creation failed',
         items: [
-          statusItem('draft-pr-and-in-review', 1, 'failed', 'Make PR', 'PR was not created'),
+          statusItem('draft-pr-and-in-review', 1, 'failed', 'Make PR', 'PR was not created', job.data.reworkAttempt),
         ],
       }, logger);
     } catch {

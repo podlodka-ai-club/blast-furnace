@@ -337,6 +337,21 @@ async function runPrepareRunReworkWork(
     status: 'success',
     output,
   });
+  await updateRunStatus(orchestrationRoot, job.data.runId, {
+    heading: reworkContext.selectedNextStage === 'plan'
+      ? 'Blast Furnace is planning rework'
+      : 'Blast Furnace is developing rework',
+    focus: reworkContext.selectedNextStage === 'plan'
+      ? 'Current focus: Plan solution'
+      : 'Current focus: Develop changes',
+    items: [
+      statusItem('prepare-run', 1, 'completed', 'Prepare run', undefined, job.data.reworkAttempt),
+      ...(reworkContext.selectedNextStage === 'develop'
+        ? [statusItem('plan', 1, 'skipped', 'Plan solution', 'skipped', job.data.reworkAttempt)]
+        : []),
+      statusItem(reworkContext.selectedNextStage, 1, 'pending', reworkContext.selectedNextStage === 'plan' ? 'Plan solution' : 'Develop changes', undefined, job.data.reworkAttempt),
+    ],
+  }, logger);
 
   return {
     nextJobData: createForwardStagePayload(
@@ -515,13 +530,13 @@ export async function runPrepareRunFlow(job: Job<PrepareRunJobData>): Promise<vo
           heading: 'Blast Furnace stopped during preparation',
           focus: 'Final state: Prepare run failed',
           items: [
-            statusItem('prepare-run', 1, 'failed', 'Prepare run', 'Preparation failed'),
-            statusItem('assess', 1, 'skipped', 'Assess issue'),
-            statusItem('plan', 1, 'skipped', 'Plan solution'),
-            statusItem('develop', 1, 'skipped', 'Develop changes'),
-            statusItem('quality-gate', 1, 'skipped', 'Quality Gate'),
-            statusItem('review', 1, 'skipped', 'Code Review'),
-            statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR'),
+            statusItem('prepare-run', 1, 'failed', 'Prepare run', 'Preparation failed', job.data.reworkAttempt),
+            statusItem('assess', 1, 'skipped', 'Assess issue', undefined, job.data.reworkAttempt),
+            statusItem('plan', 1, 'skipped', 'Plan solution', undefined, job.data.reworkAttempt),
+            statusItem('develop', 1, 'skipped', 'Develop changes', undefined, job.data.reworkAttempt),
+            statusItem('quality-gate', 1, 'skipped', 'Quality Gate', undefined, job.data.reworkAttempt),
+            statusItem('review', 1, 'skipped', 'Code Review', undefined, job.data.reworkAttempt),
+            statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR', undefined, job.data.reworkAttempt),
           ],
         }, logger);
       } catch {

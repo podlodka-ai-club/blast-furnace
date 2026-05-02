@@ -92,7 +92,8 @@ export async function runSyncTrackerStateWork(
         'Make PR',
         trackerWarning
           ? 'PR tracker synchronization warning'
-          : 'PR ready for review'
+          : 'PR ready for review',
+        job.data.reworkAttempt
       ),
     ],
   }, logger);
