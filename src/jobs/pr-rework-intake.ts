@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { Job } from 'bullmq';
 import { config } from '../config/index.js';
 import { createIssueComment } from '../github/comments.js';
@@ -21,9 +23,20 @@ import {
   updateRunSummary,
   updateRunSummaryPendingNextStage,
 } from './orchestration.js';
+import { runCodexSession } from './codex-session.js';
+import { createJobLogger } from './logger.js';
+
+export const PR_REWORK_INTAKE_PROMPT_TEMPLATE_PATH = join(process.cwd(), 'prompts', 'review_comments_analysis.md');
 
 export interface PrReworkIntakeDependencies {
   analyzeRoute?(prompt: string): Promise<string>;
+}
+
+export interface PrReworkRoutePromptInput {
+  issueTitle: string;
+  issueDescription: string;
+  latestPlanContent: string;
+  commentsMarkdown: string;
 }
 
 function pullRequestFromRecordOutput(output: unknown): PullRequestResponse | null {
@@ -46,6 +59,61 @@ function pullRequestFromRecordOutput(output: unknown): PullRequestResponse | nul
 
 function selectedRoute(analysis: string): 'plan' | 'develop' {
   return analysis.split(/\r?\n/, 1)[0] === 'ROUTE: DEVELOP' ? 'develop' : 'plan';
+}
+
+export async function renderPrReworkRoutePrompt(
+  templatePath: string,
+  input: PrReworkRoutePromptInput
+): Promise<string> {
+  const template = await readFile(templatePath, 'utf8');
+  const replacements: Record<string, string> = {
+    issueTitle: input.issueTitle,
+    issueDescription: input.issueDescription.trim() ? input.issueDescription : '(No description provided)',
+    latestPlanContent: input.latestPlanContent,
+    commentsMarkdown: input.commentsMarkdown,
+  };
+
+  return template.replace(/\{\{([A-Za-z0-9_]+)\}\}/g, (match, key: string) => replacements[key] ?? match);
+}
+
+function planContentFromRecord(record: HandoffRecord): string {
+  const output = record.output;
+  if (
+    typeof output === 'object'
+    && output !== null
+    && 'plan' in output
+    && typeof output.plan === 'object'
+    && output.plan !== null
+    && 'content' in output.plan
+    && typeof output.plan.content === 'string'
+  ) {
+    return output.plan.content;
+  }
+  throw new Error('Latest accepted Plan record did not include plan content');
+}
+
+async function analyzeRouteWithCodex(
+  job: Job<PrReworkIntakeJobData>,
+  prompt: string
+): Promise<string> {
+  const logger = createJobLogger(job);
+  try {
+    const result = await runCodexSession({
+      prompt,
+      workspacePath: process.cwd(),
+      logger,
+      outputLastMessage: true,
+      enableHooks: false,
+      bypassSandbox: false,
+      sandboxMode: 'read-only',
+      logPrefix: 'pr-rework-intake-codex',
+      timeoutLabel: 'PR Rework Intake route analysis codex process',
+    });
+    return result.output;
+  } catch (err) {
+    logger.warn(`PR Rework Intake route analysis failed; routing to Plan: ${err instanceof Error ? err.message : String(err)}`);
+    return 'ROUTE: PLAN\nReason:\nRoute analysis failed; defaulting to Plan.';
+  }
 }
 
 async function enqueueNextPoll(job: Job<PrReworkIntakeJobData>): Promise<void> {
@@ -264,7 +332,7 @@ export async function runPrReworkIntakeWork(
 
   if (commentsMarkdown.length === 0) {
     await removeReworkLabelFromPullRequest(pullRequest.number);
-    await createIssueComment(summary.stableContext.issue.number, 'Blast Furnace found the Rework label, but no review comments were found.');
+    await createIssueComment(pullRequest.number, 'Blast Furnace found the Rework label, but no review comments were found.');
     await appendHandoffRecordAndUpdateSummary(root, {
       runId: job.data.runId,
       fromStage: 'pr-rework-intake',
@@ -279,7 +347,13 @@ export async function runPrReworkIntakeWork(
     return;
   }
 
-  const routeAnalysis = await (dependencies.analyzeRoute?.(commentsMarkdown) ?? Promise.resolve('ROUTE: PLAN'));
+  const routePrompt = await renderPrReworkRoutePrompt(PR_REWORK_INTAKE_PROMPT_TEMPLATE_PATH, {
+    issueTitle: summary.stableContext.issue.title,
+    issueDescription: summary.stableContext.issue.body ?? '',
+    latestPlanContent: planContentFromRecord(latestPlan),
+    commentsMarkdown,
+  });
+  const routeAnalysis = await (dependencies.analyzeRoute?.(routePrompt) ?? analyzeRouteWithCodex(job, routePrompt));
   const selectedNextStage = selectedRoute(routeAnalysis);
   await updateRunSummary(root, job.data.runId, (current) => ({
     ...current,

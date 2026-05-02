@@ -30,6 +30,10 @@ const { mockJobQueueAdd } = vi.hoisted(() => ({
   mockJobQueueAdd: vi.fn(),
 }));
 
+const { mockRunCodexSession } = vi.hoisted(() => ({
+  mockRunCodexSession: vi.fn(),
+}));
+
 vi.mock('../github/pullRequests.js', () => ({
   getPullRequestState: mockGetPullRequestState,
   removeReworkLabelFromPullRequest: mockRemoveReworkLabel,
@@ -45,6 +49,10 @@ vi.mock('./queue.js', () => ({
   jobQueue: {
     add: mockJobQueueAdd,
   },
+}));
+
+vi.mock('./codex-session.js', () => ({
+  runCodexSession: mockRunCodexSession,
 }));
 
 vi.mock('../config/index.js', () => ({
@@ -84,6 +92,11 @@ describe('pr-rework-intake job', () => {
     mockJobQueueAdd.mockResolvedValue({ id: 'next-job' });
     mockListReviewComments.mockResolvedValue([]);
     mockListPullRequestComments.mockResolvedValue([]);
+    mockRunCodexSession.mockResolvedValue({
+      cliCmd: 'codex',
+      cliArgs: [],
+      output: 'ROUTE: PLAN\nDefault test route.',
+    });
   });
 
   afterEach(async () => {
@@ -275,7 +288,8 @@ describe('pr-rework-intake job', () => {
     await runPrReworkIntakeWork(job);
 
     expect(mockRemoveReworkLabel).toHaveBeenCalledWith(7);
-    expect(mockCreateIssueComment).toHaveBeenCalledWith(42, expect.stringContaining('no review comments'));
+    expect(mockCreateIssueComment).toHaveBeenCalledWith(7, expect.stringContaining('no review comments'));
+    expect(mockCreateIssueComment).not.toHaveBeenCalledWith(42, expect.stringContaining('no review comments'));
     expect(mockJobQueueAdd).toHaveBeenCalledWith('pr-rework-intake', job.data, { delay: 60000 });
     const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
     expect(records.at(-1)).toMatchObject({
@@ -323,6 +337,53 @@ describe('pr-rework-intake job', () => {
       stageAttempt: 1,
       reworkAttempt: 1,
     }));
+  });
+
+  it('renders the review comments analysis prompt and invokes Codex route analysis by default', async () => {
+    const { runPrReworkIntakeWork } = await import('./pr-rework-intake.js');
+    const job = await createJob();
+    openPr(['Rework']);
+    mockRunCodexSession.mockResolvedValueOnce({
+      cliCmd: 'codex',
+      cliArgs: [],
+      output: 'ROUTE: DEVELOP\nLocal implementation-only feedback.',
+    });
+    mockListReviewComments.mockResolvedValue([
+      {
+        id: 1,
+        authorLogin: 'reviewer',
+        authorType: 'User',
+        body: 'Please simplify implementation.',
+        createdAt: '2026-04-30T10:00:00.000Z',
+        outdated: false,
+        resolved: false,
+        deleted: false,
+      },
+    ]);
+
+    await runPrReworkIntakeWork(job);
+
+    expect(mockRunCodexSession).toHaveBeenCalledWith(expect.objectContaining({
+      workspacePath: process.cwd(),
+      outputLastMessage: true,
+      enableHooks: false,
+      sandboxMode: 'read-only',
+      logPrefix: 'pr-rework-intake-codex',
+      timeoutLabel: 'PR Rework Intake route analysis codex process',
+    }));
+    const prompt = mockRunCodexSession.mock.calls[0][0].prompt as string;
+    expect(prompt).toContain('Test issue');
+    expect(prompt).toContain('Issue body');
+    expect(prompt).toContain('## Original Plan\nShip it.');
+    expect(prompt).toContain('Please simplify implementation.');
+
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
+    expect(records.at(-1)).toMatchObject({
+      output: {
+        routeAnalysis: 'ROUTE: DEVELOP\nLocal implementation-only feedback.',
+        selectedNextStage: 'develop',
+      },
+    });
   });
 
   it('exits without appending or enqueueing when an active durable marker exists', async () => {

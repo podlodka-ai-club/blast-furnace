@@ -27,6 +27,11 @@ The GitHub integration SHALL provide configured-repository operations for readin
 - **THEN** the GitHub integration SHALL list issue comments for the pull request issue in the configured owner and repository
 - **AND** include author login, author user type, body, and created timestamp
 
+#### Scenario: Pull request conversation comment is created
+- **WHEN** PR Rework Intake reports a consumed `Rework` trigger with no qualifying comments
+- **THEN** the GitHub integration SHALL create an issue comment on the pull request issue in the configured owner and repository
+- **AND** SHALL NOT create that no-comment explanation on the source issue
+
 #### Scenario: Non-qualifying comments are excluded
 - **WHEN** PR Rework Intake builds comments markdown
 - **THEN** it SHALL exclude comments authored by Blast Furnace

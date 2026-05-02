@@ -93,9 +93,5 @@ export function buildPrReworkCommentsMarkdown(input: BuildPrReworkCommentsMarkdo
   if (comments.length === 0) {
     return '';
   }
-  return [
-    '# PR Review Comments',
-    '',
-    ...comments.map((comment, index) => renderComment(comment, index + 1)),
-  ].join('\n\n');
+  return comments.map((comment, index) => renderComment(comment, index + 1)).join('\n\n');
 }

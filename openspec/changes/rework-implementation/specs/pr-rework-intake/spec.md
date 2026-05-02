@@ -41,7 +41,7 @@ The PR Rework Intake module SHALL consume human `Rework` label triggers, collect
 #### Scenario: Rework trigger has no qualifying comments
 - **WHEN** PR Rework Intake detects the `Rework` label and no qualifying human comments are found
 - **THEN** it SHALL remove the `Rework` label from the pull request
-- **AND** it SHALL post a comment explaining that no review comments were found
+- **AND** it SHALL post a comment to the pull request conversation explaining that no review comments were found
 - **AND** it SHALL append a non-continuing `pr-rework-intake` handoff record for the consumed no-comment trigger
 - **AND** it SHALL enqueue the next PR Rework Intake poll
 - **AND** it SHALL NOT schedule Prepare Run, Plan, or Develop

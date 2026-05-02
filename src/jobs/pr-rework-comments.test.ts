@@ -2,6 +2,27 @@ import { describe, expect, it } from 'vitest';
 import { buildPrReworkCommentsMarkdown } from './pr-rework-comments.js';
 
 describe('PR rework comment rendering', () => {
+  it('starts the markdown at the first comment without a document title', () => {
+    const markdown = buildPrReworkCommentsMarkdown({
+      reviewComments: [
+        {
+          id: 1,
+          authorLogin: 'reviewer',
+          authorType: 'User',
+          body: 'First actionable comment.',
+          createdAt: '2026-04-30T10:00:00.000Z',
+          outdated: false,
+          resolved: false,
+          deleted: false,
+        },
+      ],
+      pullRequestComments: [],
+    });
+
+    expect(markdown.startsWith('### Comment 1: Review Comment')).toBe(true);
+    expect(markdown).not.toContain('# PR Review Comments');
+  });
+
   it('excludes Blast Furnace, bot, outdated, resolved, deleted, and out-of-window comments', () => {
     const markdown = buildPrReworkCommentsMarkdown({
       blastFurnaceLogin: 'blast-furnace',

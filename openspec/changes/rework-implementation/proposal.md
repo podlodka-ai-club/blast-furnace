@@ -29,7 +29,7 @@ Blast Furnace currently ends the automated workflow after pull request creation 
 - Have PR Rework Intake monitor the pull request for merge and closed state; when the pull request is merged, the run is considered successful and is closed, and when the pull request is closed without merge, the run is terminated as closed without merge.
 - Treat exceeding the configured rework limit as a terminal condition; stop the flow and post a comment stating that there were too many reworks.
 - After completed rework is pushed, Sync Tracker State removes the `Rework` label from the pull request, sets the source issue status back to `in review`, and cleans up the workspace.
-- If the trigger fires but no qualifying comments are found, do not schedule Plan or Develop; remove the `Rework` label and post a comment explaining that no review comments were found.
+- If the trigger fires but no qualifying comments are found, do not schedule Plan or Develop; remove the `Rework` label and post a pull request conversation comment explaining that no review comments were found.
 
 ## Capabilities
 
@@ -44,7 +44,7 @@ Blast Furnace currently ends the automated workflow after pull request creation 
 - `plan-job`: Support a rework planning mode that uses the latest available accepted plan and collected human review comments with the `prompts/plan-rework.md` template.
 - `develop-job`: Support direct human-review rework input using `prompts/develop-rework.md`, resolve the latest available accepted plan, consume review comments as `reviewContent`, and continue through Quality Gate and Review as part of the full rework flow.
 - `make-pr-job`: Support finalizing completed rework by validating the existing pull request head repository, branch name, and expected head SHA, committing and pushing to the existing pull request branch rather than creating a new pull request, rejecting unsafe fork or unexpected branch targets, handling non-fast-forward push conflicts with a defined refetch-and-retry policy, then handing off to Sync Tracker State for tracker side effects and cleanup.
-- `github-integration`: Provide the required GitHub operations for polling pull requests, reading PR review comments and PR-level comments with authors, optional locations, active/resolved/outdated/deleted status, detecting trigger labels, excluding comments authored by Blast Furnace or users whose type is `Bot`, commenting on the source issue, removing the `Rework` label from a pull request, and updating source issue tracker labels.
+- `github-integration`: Provide the required GitHub operations for polling pull requests, reading PR review comments and PR-level comments with authors, optional locations, active/resolved/outdated/deleted status, detecting trigger labels, excluding comments authored by Blast Furnace or users whose type is `Bot`, commenting on the source issue for terminal rework-limit outcomes, commenting on the pull request conversation for no-comment triggers, removing the `Rework` label from a pull request, and updating source issue tracker labels.
 - `run-handoff-ledger`: Preserve rework routing records that include both the collected comments markdown and the full Codex route-analysis response without embedding unrelated stage context.
 
 ## Impact

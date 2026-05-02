@@ -44,19 +44,20 @@ Inputs:
 
 ## Original task
 
-{{original_task}}
+Title: {{issueTitle}}
 
-## Original plan
+Description:
+{{issueDescription}}
 
-{{original_plan}}
+## Latest accepted plan
 
-## Current implementation summary
-
-{{implementation_summary}}
+{{latestPlanContent}}
 
 ## Human PR review comments
 
-{{human_review_comments}}
+{{commentsMarkdown}}
+
+---
 
 Output format:
 
@@ -66,6 +67,3 @@ ROUTE: PLAN
 
 Reason:
 <short explanation>
-
-Notes for next stage:
-<any important warning, or "None">

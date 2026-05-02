@@ -654,7 +654,8 @@ describe('human PR rework orchestration', () => {
     const summary = await readRunSummary(run.root, 'run-123');
 
     expect(mockRemoveReworkLabelFromPullRequest).toHaveBeenCalledWith(7);
-    expect(mockCreateIssueComment).toHaveBeenCalledWith(42, expect.stringContaining('no review comments'));
+    expect(mockCreateIssueComment).toHaveBeenCalledWith(7, expect.stringContaining('no review comments'));
+    expect(mockCreateIssueComment).not.toHaveBeenCalledWith(42, expect.stringContaining('no review comments'));
     expect(records.at(-1)).toMatchObject({
       fromStage: 'pr-rework-intake',
       toStage: null,
