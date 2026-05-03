@@ -21,6 +21,14 @@ const { mockMoveIssueToInReview } = vi.hoisted(() => ({
   mockMoveIssueToInReview: vi.fn(),
 }));
 
+const { mockRemoveReworkLabelFromPullRequest } = vi.hoisted(() => ({
+  mockRemoveReworkLabelFromPullRequest: vi.fn(),
+}));
+
+const { mockJobQueueAdd } = vi.hoisted(() => ({
+  mockJobQueueAdd: vi.fn(),
+}));
+
 const { mockCreateJobLogger } = vi.hoisted(() => ({
   mockCreateJobLogger: vi.fn(),
 }));
@@ -31,6 +39,17 @@ vi.mock('../utils/working-dir.js', () => ({
 
 vi.mock('../github/issue-labels.js', () => ({
   moveIssueToInReview: mockMoveIssueToInReview,
+}));
+
+vi.mock('../github/pullRequests.js', () => ({
+  REWORK_LABEL: 'rework',
+  removeReworkLabelFromPullRequest: mockRemoveReworkLabelFromPullRequest,
+}));
+
+vi.mock('./queue.js', () => ({
+  jobQueue: {
+    add: mockJobQueueAdd,
+  },
 }));
 
 vi.mock('./logger.js', () => ({
@@ -67,6 +86,8 @@ describe('sync-tracker-state job', () => {
     vi.resetAllMocks();
     mockCleanupWorkingDir.mockResolvedValue(undefined);
     mockMoveIssueToInReview.mockResolvedValue(['in review']);
+    mockRemoveReworkLabelFromPullRequest.mockResolvedValue(undefined);
+    mockJobQueueAdd.mockResolvedValue({ id: 'queued-pr-rework-intake' });
     mockCreateJobLogger.mockReturnValue({
       info: vi.fn(),
       error: vi.fn(),
@@ -80,12 +101,18 @@ describe('sync-tracker-state job', () => {
     tempRoots.length = 0;
   });
 
-  async function createJob(
-    repository: RepositoryIdentity = {
+  async function createJob({
+    repository = {
       owner: 'test-owner',
       repo: 'test-repo',
-    }
-  ): Promise<Job<SyncTrackerStateJobData>> {
+    },
+    reworkAttempt = 0,
+    makePrStatus = 'pull-request-created',
+  }: {
+    repository?: RepositoryIdentity;
+    reworkAttempt?: number;
+    makePrStatus?: 'pull-request-created' | 'no-changes';
+  } = {}): Promise<Job<SyncTrackerStateJobData>> {
     const workspacePath = await mkdtemp(join(tmpdir(), 'sync-ledger-'));
     tempRoots.push(workspacePath);
     const fileSet = createRunFileSet(workspacePath, 'run-123', new Date('2026-04-26T08:07:30.000Z'));
@@ -95,7 +122,7 @@ describe('sync-tracker-state job', () => {
       currentStage: 'make-pr',
       runStartedAt: '2026-04-26T08:07:30.000Z',
       stageAttempt: 1,
-      reworkAttempt: 0,
+      reworkAttempt,
       latestHandoffRecord: null,
       stableContext: {
         issue: createIssue(),
@@ -110,13 +137,13 @@ describe('sync-tracker-state job', () => {
       fromStage: 'make-pr',
       toStage: 'sync-tracker-state',
       stageAttempt: 1,
-      reworkAttempt: 0,
+      reworkAttempt,
       status: 'success',
       output: {
-        status: 'pull-request-created',
+        status: makePrStatus,
         runId: 'run-123',
         stageAttempt: 1,
-        reworkAttempt: 0,
+        reworkAttempt,
         pullRequest: {
           number: 7,
           htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
@@ -132,13 +159,13 @@ describe('sync-tracker-state job', () => {
         runId: 'run-123',
         stage: 'sync-tracker-state',
         stageAttempt: 1,
-        reworkAttempt: 0,
+        reworkAttempt,
         inputRecordRef,
       },
     } as unknown as Job<SyncTrackerStateJobData>;
   }
 
-  it('reads pull request data from the ledger and moves the issue from ready to in review', async () => {
+  it('reads pull request data from the ledger and hands post-PR monitoring to PR Rework Intake', async () => {
     const { runSyncTrackerStateWork } = await import('./sync-tracker-state.js');
     const job = await createJob();
 
@@ -153,7 +180,7 @@ describe('sync-tracker-state job', () => {
     });
     expect(records[1]).toMatchObject({
       fromStage: 'sync-tracker-state',
-      toStage: null,
+      toStage: 'pr-rework-intake',
       dependsOn: ['000001_make-pr_to_sync-tracker-state'],
       output: {
         status: 'tracker-synced',
@@ -161,9 +188,37 @@ describe('sync-tracker-state job', () => {
       },
     });
     expect(summary).toMatchObject({
-      status: 'completed',
-      currentStage: null,
+      status: 'running',
+      currentStage: 'pr-rework-intake',
+      latestHandoffRecord: expect.objectContaining({
+        recordId: '000002_sync-tracker-state_to_pr-rework-intake',
+        stage: 'sync-tracker-state',
+      }),
     });
+  });
+
+  it('enqueues PR Rework Intake after initial pull request tracker synchronization', async () => {
+    const { runSyncTrackerStateFlow } = await import('./sync-tracker-state.js');
+    const job = await createJob();
+
+    await runSyncTrackerStateFlow(job);
+
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('pr-rework-intake', expect.objectContaining({
+      taskId: 'task-sync-tracker-state',
+      type: 'pr-rework-intake',
+      runId: 'run-123',
+      stage: 'pr-rework-intake',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      inputRecordRef: expect.objectContaining({
+        recordId: '000002_sync-tracker-state_to_pr-rework-intake',
+        stage: 'sync-tracker-state',
+      }),
+    }));
+    expect(mockCleanupWorkingDir.mock.invocationCallOrder[0]).toBeLessThan(
+      mockJobQueueAdd.mock.invocationCallOrder[0]
+    );
+    expect(mockRemoveReworkLabelFromPullRequest).not.toHaveBeenCalled();
   });
 
   it('logs tracker synchronization failures without losing pull request data', async () => {
@@ -204,14 +259,59 @@ describe('sync-tracker-state job', () => {
   it('fails mismatched repository identity before tracker side effects and still cleans up', async () => {
     const { runSyncTrackerStateFlow } = await import('./sync-tracker-state.js');
     const job = await createJob({
+      repository: {
       owner: 'other-owner',
       repo: 'other-repo',
+      },
     });
 
     await expect(runSyncTrackerStateFlow(job)).rejects.toThrow('Repository identity mismatch');
 
     expect(mockMoveIssueToInReview).not.toHaveBeenCalled();
     expect(mockCleanupWorkingDir).toHaveBeenCalledWith(expect.stringContaining('sync-ledger-'));
+  });
+
+  it('removes the rework label, moves the issue to in review, cleans up, and resumes polling after rework finalization', async () => {
+    const { runSyncTrackerStateFlow } = await import('./sync-tracker-state.js');
+    const job = await createJob({ reworkAttempt: 1 });
+
+    await runSyncTrackerStateFlow(job);
+
+    expect(mockRemoveReworkLabelFromPullRequest).toHaveBeenCalledWith(7);
+    expect(mockMoveIssueToInReview).toHaveBeenCalledWith(42);
+    expect(mockCleanupWorkingDir).toHaveBeenCalledWith(expect.stringContaining('sync-ledger-'));
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('pr-rework-intake', expect.objectContaining({
+      stage: 'pr-rework-intake',
+      reworkAttempt: 1,
+    }));
+  });
+
+  it('runs rework cleanup and polling even when Make PR produced no repository changes', async () => {
+    const { runSyncTrackerStateFlow } = await import('./sync-tracker-state.js');
+    const job = await createJob({ reworkAttempt: 1, makePrStatus: 'no-changes' });
+
+    await runSyncTrackerStateFlow(job);
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
+    const summary = await readRunSummary(resolveOrchestrationStorageRoot(job.data.inputRecordRef), 'run-123');
+
+    expect(mockRemoveReworkLabelFromPullRequest).toHaveBeenCalledWith(7);
+    expect(mockMoveIssueToInReview).toHaveBeenCalledWith(42);
+    expect(mockCleanupWorkingDir).toHaveBeenCalledWith(expect.stringContaining('sync-ledger-'));
+    expect(records[1]).toMatchObject({
+      fromStage: 'sync-tracker-state',
+      toStage: 'pr-rework-intake',
+      reworkAttempt: 1,
+      output: {
+        status: 'tracker-synced',
+      },
+    });
+    expect(summary).toMatchObject({
+      status: 'running',
+      currentStage: 'pr-rework-intake',
+    });
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('pr-rework-intake', expect.objectContaining({
+      reworkAttempt: 1,
+    }));
   });
 
   it('should export syncTrackerStateHandler', async () => {

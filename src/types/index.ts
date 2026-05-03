@@ -43,6 +43,7 @@ export const WORKFLOW_STAGES = [
   'review',
   'make-pr',
   'sync-tracker-state',
+  'pr-rework-intake',
 ] as const;
 export type WorkflowStage = (typeof WORKFLOW_STAGES)[number];
 export type StageName = WorkflowStage;
@@ -125,8 +126,10 @@ export interface InitialRunContext {
 export type TrackerCommentKind = 'orchestrator-status' | 'orchestrator-plan' | 'orchestrator-rework-start';
 export type TrackerProvider = 'github' | string;
 export type StatusItemState = 'pending' | 'in-progress' | 'completed' | 'retrying' | 'blocked' | 'failed' | 'skipped';
+// Tracker presentation row kind. Workflow routing must use WorkflowStage, queue payloads, and handoff records.
 export type StatusItemStage =
   | 'task-pickup'
+  | 'human-review'
   | 'prepare-run'
   | 'assess'
   | 'plan'
@@ -140,6 +143,7 @@ export interface StatusChecklistItem {
   id: string;
   stage: StatusItemStage;
   attempt: number;
+  reworkAttempt?: number;
   state: StatusItemState;
   label: string;
   detail?: string;
@@ -171,12 +175,26 @@ export interface RunSummaryData {
   stageAttempt?: number;
   reworkAttempt?: number;
   latestHandoffRecord?: InputRecordRef | null;
+  pendingNextStage?: PendingNextStage | null;
+  prReworkIntakeInProgress?: PrReworkIntakeInProgress | null;
   initialContext?: InitialRunContext;
   stableContext?: StableRunContext;
   trackerStatus?: RunStatusMetadata;
   stages: Record<string, RunStageSummary>;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface PendingNextStage {
+  stage: WorkflowStage;
+  inputRecordRef: InputRecordRef;
+  stageAttempt: number;
+  reworkAttempt: number;
+}
+
+export interface PrReworkIntakeInProgress {
+  action: string;
+  inputRecordId: string;
 }
 
 // Agent types
@@ -244,6 +262,10 @@ export interface ReviewConfig {
   attemptLimit: number;
 }
 
+export interface ReworkConfig {
+  maxHumanReworkAttempts: number;
+}
+
 export interface AppConfig {
   env: string;
   port: number;
@@ -252,6 +274,7 @@ export interface AppConfig {
   codex: CodexConfig;
   qualityGate: QualityGateConfig;
   review: ReviewConfig;
+  rework: ReworkConfig;
 }
 
 // Server types
@@ -403,9 +426,18 @@ export interface NoChangeOutput {
   runId: RunId;
   stageAttempt: number;
   reworkAttempt: number;
+  pullRequest?: PullRequestIdentity;
 }
 
-export type MakePrOutput = PullRequestOutput | NoChangeOutput;
+export interface PullRequestCreationFailureOutput {
+  status: 'pull-request-already-exists' | 'pull-request-creation-failed';
+  runId: RunId;
+  stageAttempt: number;
+  reworkAttempt: number;
+  errorMessage: string;
+}
+
+export type MakePrOutput = PullRequestOutput | NoChangeOutput | PullRequestCreationFailureOutput;
 
 export interface SyncTrackerStateOutput {
   status: 'tracker-synced';
@@ -415,6 +447,45 @@ export interface SyncTrackerStateOutput {
   trackerLabels: string[];
   trackerWarning?: string;
 }
+
+export interface PullRequestIdentity {
+  number: number;
+  htmlUrl: string;
+}
+
+export interface PullRequestHeadIdentity extends RepositoryIdentity {
+  branch: string;
+  sha: string;
+}
+
+export type PrReworkIntakeOutput =
+  | {
+    status: 'rework-needed';
+    runId: RunId;
+    stageAttempt: number;
+    reworkAttempt: number;
+    pullRequest: PullRequestIdentity;
+    commentsMarkdown: string;
+    routeAnalysis: string;
+    selectedNextStage: 'plan' | 'develop';
+    pullRequestHead: PullRequestHeadIdentity;
+    latestPlanRecordId: string;
+  }
+  | {
+    status: 'pull-request-merged' | 'pull-request-closed-without-merge' | 'no-comments-found';
+    runId: RunId;
+    stageAttempt: number;
+    reworkAttempt: number;
+    pullRequest: PullRequestIdentity;
+  }
+  | {
+    status: 'too-many-reworks';
+    runId: RunId;
+    stageAttempt: number;
+    reworkAttempt: number;
+    pullRequest: PullRequestIdentity;
+    commentsMarkdown?: string;
+  };
 
 // Job data types for the target workflow stages
 export interface IntakeJobData extends StageJobPayload<'intake'> {
@@ -426,6 +497,7 @@ export interface IntakeJobData extends StageJobPayload<'intake'> {
 export interface PrepareRunJobData extends StageJobPayload<'prepare-run'> {
   issue: GitHubIssue;
   repository: RepositoryIdentity;
+  inputRecordRef?: InputRecordRef;
 }
 
 export interface PreparedRunFields {
@@ -446,3 +518,5 @@ export type ReviewJobData = StageHandoffJobPayload<'review'>;
 export type MakePrJobData = StageHandoffJobPayload<'make-pr'>;
 
 export type SyncTrackerStateJobData = StageHandoffJobPayload<'sync-tracker-state'>;
+
+export type PrReworkIntakeJobData = StageHandoffJobPayload<'pr-rework-intake'>;

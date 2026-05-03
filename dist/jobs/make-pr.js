@@ -1,12 +1,12 @@
 import { spawn } from 'child_process';
-import { createPullRequest } from '../github/pullRequests.js';
+import { createPullRequest, getPullRequestState } from '../github/pullRequests.js';
 import { assertConfiguredRepository } from '../github/repository.js';
 import { cleanupWorkingDir, createGitCommandEnv, getRepoRemoteUrl } from '../utils/working-dir.js';
 import { stageOutputSchemas, stagePayloadSchemas } from './handoff-contracts.js';
 import { resolveMakePrContext } from './context-resolvers.js';
 import { createJobLogger } from './logger.js';
 import { jobQueue } from './queue.js';
-import { appendHandoffRecordAndUpdateSummary, resolveOrchestrationStorageRoot, scheduleNextJob, } from './orchestration.js';
+import { appendHandoffRecordAndUpdateSummary, readHandoffRecords, resolveOrchestrationStorageRoot, scheduleNextJob, } from './orchestration.js';
 import { createForwardStagePayload } from './stage-payloads.js';
 import { statusItem, updateRunStatus } from './status.js';
 const TARGET_REPO_PATHS = [
@@ -47,10 +47,68 @@ async function pushWithRetry(remoteUrl, branchName, cwd, logger, maxRetries = 3)
         catch (err) {
             if (attempt === maxRetries)
                 throw err;
+            const message = err instanceof Error ? err.message : String(err);
+            if (message.includes('non-fast-forward')
+                || message.includes('current branch is behind')
+                || message.includes('Updates were rejected')) {
+                await execGitCommand(['fetch', remoteUrl, `heads/${branchName}`], cwd);
+            }
             const delay = Math.pow(2, attempt - 1) * 1000;
             logger.warn(`Push attempt ${attempt} failed for ${branchName}: ${err}, retrying in ${delay}ms...`);
             await new Promise((resolve) => setTimeout(resolve, delay));
         }
+    }
+}
+function prReworkContext(output) {
+    if (typeof output === 'object'
+        && output !== null
+        && 'status' in output
+        && output.status === 'rework-needed'
+        && 'pullRequest' in output
+        && typeof output.pullRequest === 'object'
+        && output.pullRequest !== null
+        && 'number' in output.pullRequest
+        && 'htmlUrl' in output.pullRequest
+        && 'pullRequestHead' in output
+        && typeof output.pullRequestHead === 'object'
+        && output.pullRequestHead !== null) {
+        const parsed = output;
+        if (parsed.status !== 'rework-needed') {
+            return null;
+        }
+        return {
+            pullRequest: {
+                number: parsed.pullRequest.number,
+                htmlUrl: parsed.pullRequest.htmlUrl,
+            },
+            head: parsed.pullRequestHead,
+        };
+    }
+    return null;
+}
+async function resolveReworkPullRequest(job) {
+    if (job.data.reworkAttempt === 0)
+        return null;
+    const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
+    for (const record of [...records].reverse()) {
+        if (record.fromStage !== 'pr-rework-intake')
+            continue;
+        const context = prReworkContext(record.output);
+        if (context)
+            return context;
+    }
+    throw new Error('Rework pull request context not found');
+}
+async function validateCurrentReworkPullRequest(context) {
+    const current = await getPullRequestState(context.pullRequest.number);
+    if (current.head.owner !== context.head.owner || current.head.repo !== context.head.repo) {
+        throw new Error('Rework pull request head repository mismatch');
+    }
+    if (current.head.branch !== context.head.branch) {
+        throw new Error('Rework pull request head branch mismatch');
+    }
+    if (current.head.sha !== context.head.sha) {
+        throw new Error('Rework pull request head SHA mismatch');
     }
 }
 function sanitizeForGit(text, maxLength = 200) {
@@ -77,6 +135,110 @@ function parseGitStatusPaths(status) {
     }
     return [...paths];
 }
+function isObject(value) {
+    return typeof value === 'object' && value !== null;
+}
+function boundedErrorMessage(message) {
+    const normalized = message.replace(/\s+/g, ' ').trim();
+    return normalized.length > 500 ? `${normalized.slice(0, 497)}...` : normalized;
+}
+function errorMessage(error) {
+    if (error instanceof Error && error.message) {
+        return boundedErrorMessage(error.message);
+    }
+    if (typeof error === 'string') {
+        return boundedErrorMessage(error);
+    }
+    return 'Unknown pull request creation error';
+}
+function githubErrorMessages(error) {
+    const messages = new Set();
+    if (!isObject(error)) {
+        if (error instanceof Error && error.message) {
+            messages.add(error.message);
+        }
+        return [...messages];
+    }
+    const response = isObject(error.response) ? error.response : undefined;
+    const data = response && isObject(response.data) ? response.data : undefined;
+    const errors = Array.isArray(data?.errors) ? data.errors : [];
+    for (const entry of errors) {
+        if (isObject(entry) && typeof entry.message === 'string') {
+            messages.add(entry.message);
+        }
+    }
+    if (typeof data?.message === 'string') {
+        messages.add(data.message);
+    }
+    if (error instanceof Error && error.message) {
+        messages.add(error.message);
+    }
+    return [...messages];
+}
+function isPullRequestAlreadyExistsError(error) {
+    const status = isObject(error) && typeof error.status === 'number' ? error.status : undefined;
+    const responseStatus = isObject(error) && isObject(error.response) && typeof error.response.status === 'number'
+        ? error.response.status
+        : undefined;
+    const httpStatus = status ?? responseStatus;
+    if (httpStatus !== undefined && httpStatus !== 422) {
+        return false;
+    }
+    return githubErrorMessages(error).some((message) => message.includes('A pull request already exists'));
+}
+function classifyPullRequestCreationError(error) {
+    if (isPullRequestAlreadyExistsError(error)) {
+        const duplicateMessage = githubErrorMessages(error).find((message) => (message.includes('A pull request already exists')));
+        return {
+            status: 'pull-request-already-exists',
+            errorMessage: boundedErrorMessage(duplicateMessage ?? errorMessage(error)),
+        };
+    }
+    return {
+        status: 'pull-request-creation-failed',
+        errorMessage: errorMessage(error),
+    };
+}
+async function recordPullRequestCreationFailure(orchestrationRoot, job, context, failure, logger) {
+    const output = stageOutputSchemas['make-pr'].parse({
+        status: failure.status,
+        errorMessage: failure.errorMessage,
+        runId: job.data.runId,
+        stageAttempt: job.data.stageAttempt,
+        reworkAttempt: job.data.reworkAttempt,
+    });
+    if (output.status !== 'pull-request-already-exists' && output.status !== 'pull-request-creation-failed') {
+        throw new Error('Expected pull request creation failure make-pr output');
+    }
+    await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
+        runId: job.data.runId,
+        fromStage: 'make-pr',
+        toStage: null,
+        stageAttempt: job.data.stageAttempt,
+        reworkAttempt: job.data.reworkAttempt,
+        dependsOn: [
+            job.data.inputRecordRef,
+            context.developRecord.recordId,
+            context.planRecord.recordId,
+        ],
+        status: 'failure',
+        output,
+    }, failure.status);
+    const isDuplicate = failure.status === 'pull-request-already-exists';
+    await updateRunStatus(orchestrationRoot, job.data.runId, {
+        heading: isDuplicate
+            ? 'Blast Furnace found an existing pull request'
+            : 'Blast Furnace could not create a pull request',
+        focus: isDuplicate
+            ? 'Final state: Pull request already exists'
+            : 'Final state: Pull request creation failed',
+        note: failure.errorMessage,
+        items: [
+            statusItem('draft-pr-and-in-review', 1, 'failed', 'Make PR', isDuplicate ? 'A pull request already exists' : 'PR creation failed'),
+        ],
+    }, logger);
+    return { status: output.status, output };
+}
 export async function runMakePrWork(job, logger = createJobLogger(job)) {
     stagePayloadSchemas['make-pr'].parse(job.data);
     const context = await resolveMakePrContext(job.data);
@@ -84,6 +246,10 @@ export async function runMakePrWork(job, logger = createJobLogger(job)) {
     assertConfiguredRepository(repository);
     logger.info(`Finalizing issue #${issue.number} on branch ${branchName}`);
     const orchestrationRoot = resolveOrchestrationStorageRoot(job.data.inputRecordRef);
+    const reworkPullRequest = await resolveReworkPullRequest(job);
+    if (reworkPullRequest) {
+        await validateCurrentReworkPullRequest(reworkPullRequest);
+    }
     await updateRunStatus(orchestrationRoot, job.data.runId, {
         heading: 'Blast Furnace is creating a pull request',
         focus: 'Current focus: Make PR',
@@ -91,20 +257,24 @@ export async function runMakePrWork(job, logger = createJobLogger(job)) {
     }, logger);
     const status = await execGitCommand(['status', '--porcelain', '--untracked-files=all', '--', ...TARGET_REPO_PATHS], workspacePath);
     if (!status) {
-        logger.info('No changes detected, skipping commit, push, pull request, and tracker synchronization');
+        logger.info(reworkPullRequest
+            ? 'No changes detected during rework, handing off to tracker synchronization'
+            : 'No changes detected, skipping commit, push, pull request, and tracker synchronization');
         const output = stageOutputSchemas['make-pr'].parse({
             status: 'no-changes',
             runId: job.data.runId,
             stageAttempt: job.data.stageAttempt,
             reworkAttempt: job.data.reworkAttempt,
+            ...(reworkPullRequest ? { pullRequest: reworkPullRequest.pullRequest } : {}),
         });
         if (output.status !== 'no-changes') {
             throw new Error('Expected no-changes make-pr output');
         }
+        const toStage = reworkPullRequest ? 'sync-tracker-state' : null;
         await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
             runId: job.data.runId,
             fromStage: 'make-pr',
-            toStage: null,
+            toStage,
             stageAttempt: job.data.stageAttempt,
             reworkAttempt: job.data.reworkAttempt,
             dependsOn: [
@@ -114,12 +284,30 @@ export async function runMakePrWork(job, logger = createJobLogger(job)) {
             ],
             status: 'success',
             output,
-        }, 'completed');
+        }, reworkPullRequest ? undefined : 'completed');
         await updateRunStatus(orchestrationRoot, job.data.runId, {
             heading: 'Blast Furnace finished with no changes',
             focus: 'Final state: No repository changes',
             items: [statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR', 'No changes')],
         }, logger);
+        if (reworkPullRequest) {
+            const records = await readHandoffRecords(job.data.inputRecordRef.handoffPath);
+            const record = records.at(-1);
+            if (!record)
+                throw new Error('Make PR handoff record not found');
+            return {
+                status: 'no-changes',
+                output,
+                workspacePath,
+                syncTrackerStateJobData: createForwardStagePayload(job.data, 'sync-tracker-state', {
+                    runDir: job.data.inputRecordRef.runDir,
+                    handoffPath: job.data.inputRecordRef.handoffPath,
+                    recordId: record.recordId,
+                    sequence: record.sequence,
+                    stage: 'make-pr',
+                }, job.data.stageAttempt),
+            };
+        }
         return { status: 'no-changes', output, workspacePath };
     }
     logger.info('Changes detected, committing...');
@@ -134,13 +322,26 @@ export async function runMakePrWork(job, logger = createJobLogger(job)) {
     logger.info('Pushing changes to remote branch...');
     await pushWithRetry(getRepoRemoteUrl(), branchName, workspacePath, logger);
     logger.info(`Changes pushed to ${branchName}`);
-    logger.info('Creating pull request...');
-    const prResult = await createPullRequest({
-        title: `Process issue #${issue.number}: ${sanitizedTitle}`,
-        head: branchName,
-        base: 'main',
-        body: `Closes #${issue.number}`,
-    });
+    let prResult;
+    if (reworkPullRequest) {
+        prResult = reworkPullRequest.pullRequest;
+    }
+    else {
+        logger.info('Creating pull request...');
+        try {
+            prResult = await createPullRequest({
+                title: `Process issue #${issue.number}: ${sanitizedTitle}`,
+                head: branchName,
+                base: 'main',
+                body: `Closes #${issue.number}`,
+            });
+        }
+        catch (err) {
+            const failure = classifyPullRequestCreationError(err);
+            logger.error(`Pull request creation failed with ${failure.status}: ${failure.errorMessage}`);
+            return recordPullRequestCreationFailure(orchestrationRoot, job, context, failure, logger);
+        }
+    }
     logger.info(`Pull request created: ${prResult.htmlUrl}`);
     const output = stageOutputSchemas['make-pr'].parse({
         status: 'pull-request-created',
@@ -183,12 +384,24 @@ export async function runMakePrFlow(job) {
     const logger = createJobLogger(job);
     try {
         const result = await runMakePrWork(job, logger);
-        if (result.status === 'no-changes') {
-            logger.info(`Cleaning up temp working directory: ${result.workspacePath}`);
-            await cleanupWorkingDir(result.workspacePath);
-            return;
+        switch (result.status) {
+            case 'no-changes':
+                if (result.syncTrackerStateJobData) {
+                    await scheduleNextJob(jobQueue, 'sync-tracker-state', result.syncTrackerStateJobData);
+                }
+                else {
+                    logger.info(`Cleaning up temp working directory: ${result.workspacePath}`);
+                    await cleanupWorkingDir(result.workspacePath);
+                }
+                return;
+            case 'pull-request-already-exists':
+            case 'pull-request-creation-failed':
+                logger.info(`Make PR stopped with terminal status: ${result.status}`);
+                return;
+            case 'pull-request-created':
+                await scheduleNextJob(jobQueue, 'sync-tracker-state', result.syncTrackerStateJobData);
+                return;
         }
-        await scheduleNextJob(jobQueue, 'sync-tracker-state', result.syncTrackerStateJobData);
     }
     catch (err) {
         logger.error(`Make PR operation failed: ${err}`);

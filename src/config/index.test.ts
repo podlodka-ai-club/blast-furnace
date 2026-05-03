@@ -31,6 +31,7 @@ describe('config', () => {
     delete process.env['QUALITY_GATE_TEST_COMMAND'];
     delete process.env['QUALITY_GATE_TEST_TIMEOUT_MS'];
     delete process.env['REVIEW_ATTEMPT_LIMIT'];
+    delete process.env['MAX_HUMAN_REWORK_ATTEMPTS'];
 
     // Import fresh module
     vi.resetModules();
@@ -52,6 +53,7 @@ describe('config', () => {
     expect(config.qualityGate.testCommand).toBeUndefined();
     expect(config.qualityGate.testTimeoutMs).toBe(180000);
     expect(config.review.attemptLimit).toBe(3);
+    expect(config.rework.maxHumanReworkAttempts).toBe(3);
   });
 
   it('should load config from environment variables', async () => {
@@ -71,6 +73,7 @@ describe('config', () => {
     process.env['QUALITY_GATE_TEST_COMMAND'] = 'npm test -- --runInBand';
     process.env['QUALITY_GATE_TEST_TIMEOUT_MS'] = '45000';
     process.env['REVIEW_ATTEMPT_LIMIT'] = '7';
+    process.env['MAX_HUMAN_REWORK_ATTEMPTS'] = '5';
 
     // Import fresh module
     vi.resetModules();
@@ -92,6 +95,7 @@ describe('config', () => {
     expect(config.qualityGate.testCommand).toBe('npm test -- --runInBand');
     expect(config.qualityGate.testTimeoutMs).toBe(45000);
     expect(config.review.attemptLimit).toBe(7);
+    expect(config.rework.maxHumanReworkAttempts).toBe(5);
   });
 
   it('should ignore legacy issue strategy and webhook secret environment variables', async () => {
@@ -157,5 +161,12 @@ describe('config', () => {
 
     vi.resetModules();
     await expect(import('./index.js')).rejects.toThrow('REVIEW_ATTEMPT_LIMIT must be an integer from 1 through 19');
+  });
+
+  it.each(['abc', '2.5', '0', '20'])('should reject invalid max human rework attempts %s', async (value) => {
+    process.env['MAX_HUMAN_REWORK_ATTEMPTS'] = value;
+
+    vi.resetModules();
+    await expect(import('./index.js')).rejects.toThrow('MAX_HUMAN_REWORK_ATTEMPTS must be an integer from 1 through 19');
   });
 });

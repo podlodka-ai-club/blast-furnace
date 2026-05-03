@@ -9,6 +9,7 @@ import { developHandler } from './jobs/develop.js';
 import { reviewHandler } from './jobs/review.js';
 import { makePrHandler } from './jobs/make-pr.js';
 import { syncTrackerStateHandler } from './jobs/sync-tracker-state.js';
+import { prReworkIntakeHandler } from './jobs/pr-rework-intake.js';
 let server;
 let worker;
 let isShuttingDown = false;
@@ -30,6 +31,8 @@ export async function multiHandler(job) {
             return makePrHandler(job);
         case 'sync-tracker-state':
             return syncTrackerStateHandler(job);
+        case 'pr-rework-intake':
+            return prReworkIntakeHandler(job);
         default:
             throw new Error(`Unknown job type: ${job.data.type}`);
     }

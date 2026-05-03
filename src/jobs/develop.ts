@@ -85,14 +85,14 @@ export async function runDevelopWork(
   const orchestrationRoot = resolveOrchestrationStorageRoot(job.data.inputRecordRef);
   const attempt = job.data.stageAttempt;
   await updateRunStatus(orchestrationRoot, job.data.runId, {
-    heading: context.inputKind === 'review-rework'
+    heading: context.inputKind !== 'plan'
       ? 'Blast Furnace is applying review feedback'
       : 'Blast Furnace is building a solution',
     focus: `Current focus: ${attempt === 1 ? 'Develop changes' : `Develop rework ${attempt - 1}`}`,
     items: [
-      developStatusItem(attempt, 'in-progress', 'In progress'),
-      qualityStatusItem(attempt, 'pending'),
-      reviewStatusItem(attempt, 'pending'),
+      developStatusItem(attempt, 'in-progress', 'In progress', job.data.reworkAttempt),
+      qualityStatusItem(attempt, 'pending', undefined, job.data.reworkAttempt),
+      reviewStatusItem(attempt, 'pending', undefined, job.data.reworkAttempt),
     ],
   }, logger);
   const qualityGateCommand = process.env['QUALITY_GATE_TEST_COMMAND'] ?? config.qualityGate?.testCommand;
@@ -103,7 +103,7 @@ export async function runDevelopWork(
 
   logger.info(`Running develop for issue #${issue.number} on branch ${branchName}`);
 
-  const promptTemplatePath = context.inputKind === 'review-rework'
+  const promptTemplatePath = context.inputKind !== 'plan'
     ? DEVELOP_REWORK_PROMPT_TEMPLATE_PATH
     : DEVELOP_PROMPT_TEMPLATE_PATH;
   const prompt = await renderDevelopPrompt(promptTemplatePath, {
@@ -187,7 +187,9 @@ export async function runDevelopWork(
     reworkAttempt: job.data.reworkAttempt,
     dependsOn: context.inputKind === 'review-rework'
       ? [job.data.inputRecordRef, context.planRecord.recordId]
-      : [job.data.inputRecordRef],
+      : context.inputKind === 'human-pr-rework' && context.prReworkRecord
+        ? [job.data.inputRecordRef, context.prReworkRecord.recordId, context.planRecord.recordId]
+        : [job.data.inputRecordRef],
     status: handoffStatus,
     output,
   }, toStage === null ? output.status : undefined);
@@ -200,15 +202,15 @@ export async function runDevelopWork(
       : `Final state: Quality Gate ${output.quality.status}`,
     items: output.status === 'success'
       ? [
-          developStatusItem(attempt, 'completed'),
-          qualityStatusItem(attempt, 'completed'),
-          reviewStatusItem(attempt, 'pending'),
+          developStatusItem(attempt, 'completed', undefined, job.data.reworkAttempt),
+          qualityStatusItem(attempt, 'completed', undefined, job.data.reworkAttempt),
+          reviewStatusItem(attempt, 'pending', undefined, job.data.reworkAttempt),
         ]
       : [
-          developStatusItem(attempt, 'failed', 'Quality Gate failed'),
-          qualityStatusItem(attempt, 'failed', output.quality.status),
-          reviewStatusItem(attempt, 'skipped'),
-          statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR'),
+          developStatusItem(attempt, 'failed', 'Quality Gate failed', job.data.reworkAttempt),
+          qualityStatusItem(attempt, 'failed', output.quality.status, job.data.reworkAttempt),
+          reviewStatusItem(attempt, 'skipped', undefined, job.data.reworkAttempt),
+          statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR', undefined, job.data.reworkAttempt),
         ],
   }, logger);
 

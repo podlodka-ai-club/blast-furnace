@@ -5,6 +5,7 @@ import type {
   InputRecordRef,
   MakePrOutput,
   PlanOutput,
+  PrReworkIntakeOutput,
   PrepareRunOutput,
   QualityGateResult,
   ReviewOutput,
@@ -239,12 +240,19 @@ function parseMakePrOutput(value: unknown): MakePrOutput {
   }
   if (value['status'] === 'no-changes') {
     if ('pullRequest' in value) {
-      throw new Error('no-changes make-pr output must not include pullRequest');
+      requireObject(value, 'pullRequest');
+    }
+    return value as unknown as MakePrOutput;
+  }
+  if (value['status'] === 'pull-request-already-exists' || value['status'] === 'pull-request-creation-failed') {
+    requireString(value, 'errorMessage');
+    if ('pullRequest' in value) {
+      throw new Error('failed make-pr output must not include pullRequest');
     }
     return value as unknown as MakePrOutput;
   }
 
-  throw new Error('make-pr status must be pull-request-created or no-changes');
+  throw new Error('make-pr status must be pull-request-created, no-changes, pull-request-already-exists, or pull-request-creation-failed');
 }
 
 function parseSyncTrackerStateOutput(value: unknown): SyncTrackerStateOutput {
@@ -267,6 +275,63 @@ function parseSyncTrackerStateOutput(value: unknown): SyncTrackerStateOutput {
     throw new Error('trackerWarning must be a string');
   }
   return value as unknown as SyncTrackerStateOutput;
+}
+
+function parsePullRequestIdentity(value: unknown): void {
+  assertObject(value, 'pullRequest');
+  requireNumber(value, 'number');
+  requireString(value, 'htmlUrl');
+}
+
+function parsePullRequestHeadIdentity(value: unknown): void {
+  assertObject(value, 'pullRequestHead');
+  requireString(value, 'owner');
+  requireString(value, 'repo');
+  requireString(value, 'branch');
+  requireString(value, 'sha');
+}
+
+function parsePrReworkIntakeOutput(value: unknown): PrReworkIntakeOutput {
+  assertObject(value, 'pr-rework-intake output');
+  rejectFields(value, 'pr-rework-intake output', [
+    ...STABLE_CONTEXT_FIELDS,
+    'assessment',
+    'plan',
+    'development',
+    'quality',
+    'review',
+    'trackerLabels',
+  ]);
+  requireStageMetadata(value);
+  parsePullRequestIdentity(value['pullRequest']);
+
+  if (value['status'] === 'rework-needed') {
+    requireString(value, 'commentsMarkdown');
+    requireString(value, 'routeAnalysis');
+    if (value['selectedNextStage'] !== 'plan' && value['selectedNextStage'] !== 'develop') {
+      throw new Error('selectedNextStage must be plan or develop');
+    }
+    parsePullRequestHeadIdentity(value['pullRequestHead']);
+    requireString(value, 'latestPlanRecordId');
+    return value as unknown as PrReworkIntakeOutput;
+  }
+
+  if (
+    value['status'] === 'pull-request-merged'
+    || value['status'] === 'pull-request-closed-without-merge'
+    || value['status'] === 'no-comments-found'
+  ) {
+    return value as unknown as PrReworkIntakeOutput;
+  }
+
+  if (value['status'] === 'too-many-reworks') {
+    if (value['commentsMarkdown'] !== undefined && typeof value['commentsMarkdown'] !== 'string') {
+      throw new Error('commentsMarkdown must be a string');
+    }
+    return value as unknown as PrReworkIntakeOutput;
+  }
+
+  throw new Error('pr-rework-intake status must be rework-needed, pull-request-merged, pull-request-closed-without-merge, too-many-reworks, or no-comments-found');
 }
 
 export const inputRecordRefSchema: RuntimeSchema<InputRecordRef> = {
@@ -302,6 +367,7 @@ export const stagePayloadSchemas = {
   review: payloadSchema('review'),
   'make-pr': payloadSchema('make-pr'),
   'sync-tracker-state': payloadSchema('sync-tracker-state'),
+  'pr-rework-intake': payloadSchema('pr-rework-intake'),
 } as const;
 
 export const stageOutputSchemas = {
@@ -340,6 +406,9 @@ export const stageOutputSchemas = {
   },
   'sync-tracker-state': {
     parse: parseSyncTrackerStateOutput,
+  },
+  'pr-rework-intake': {
+    parse: parsePrReworkIntakeOutput,
   },
 } as const;
 

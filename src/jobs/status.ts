@@ -9,6 +9,7 @@ import type {
 import { trackerClient, type TrackerClient } from '../tracker/github.js';
 import {
   createInitialStatusMetadata,
+  createReworkStatusItems,
   makeStatusItem,
   upsertStatusItems,
 } from '../tracker/status.js';
@@ -88,19 +89,24 @@ export function statusItem(
   attempt: number,
   state: StatusItemState,
   label: string,
-  detail?: string
+  detail?: string,
+  reworkAttempt = 0
 ): StatusChecklistItem {
-  return makeStatusItem(stage, attempt, state, label, detail);
+  return makeStatusItem(stage, attempt, state, label, detail, reworkAttempt);
 }
 
-export function developStatusItem(attempt: number, state: StatusItemState, detail?: string): StatusChecklistItem {
-  return statusItem('develop', attempt, state, attempt === 1 ? 'Develop changes' : `Develop rework ${attempt - 1}`, detail);
+export function reworkStatusItems(reworkAttempt: number): StatusChecklistItem[] {
+  return createReworkStatusItems(reworkAttempt);
 }
 
-export function qualityStatusItem(attempt: number, state: StatusItemState, detail?: string): StatusChecklistItem {
-  return statusItem('quality-gate', attempt, state, attempt === 1 ? 'Quality Gate' : `Quality Gate rework ${attempt - 1}`, detail);
+export function developStatusItem(attempt: number, state: StatusItemState, detail?: string, reworkAttempt = 0): StatusChecklistItem {
+  return statusItem('develop', attempt, state, attempt === 1 ? 'Develop changes' : `Develop rework ${attempt - 1}`, detail, reworkAttempt);
 }
 
-export function reviewStatusItem(attempt: number, state: StatusItemState, detail?: string): StatusChecklistItem {
-  return statusItem('review', attempt, state, attempt === 1 ? 'Code Review' : `Code Review attempt ${attempt}`, detail);
+export function qualityStatusItem(attempt: number, state: StatusItemState, detail?: string, reworkAttempt = 0): StatusChecklistItem {
+  return statusItem('quality-gate', attempt, state, attempt === 1 ? 'Quality Gate' : `Quality Gate rework ${attempt - 1}`, detail, reworkAttempt);
+}
+
+export function reviewStatusItem(attempt: number, state: StatusItemState, detail?: string, reworkAttempt = 0): StatusChecklistItem {
+  return statusItem('review', attempt, state, attempt === 1 ? 'Code Review' : `Code Review attempt ${attempt}`, detail, reworkAttempt);
 }

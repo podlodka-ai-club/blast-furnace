@@ -6,7 +6,13 @@ import type { Job } from 'bullmq';
 import type { GitHubIssue, PrepareRunJobData } from '../types/index.js';
 import { spawn } from 'child_process';
 import { createPrepareRunPayload, runPrepareRunFlow, runPrepareRunWork } from './prepare-run.js';
-import { createRunFileSet, initializeRunSummary, readHandoffRecords, readRunSummary } from './orchestration.js';
+import {
+  appendHandoffRecordAndUpdateSummary,
+  createRunFileSet,
+  initializeRunSummary,
+  readHandoffRecords,
+  readRunSummary,
+} from './orchestration.js';
 
 const TEMP_DIR = '/tmp/prepare-run-abc123';
 let orchestrationRoot: string;
@@ -465,5 +471,201 @@ describe('prepare-run job', () => {
 
     expect(mockCleanupWorkingDir).toHaveBeenCalledWith(TEMP_DIR);
     expect(mockDeleteBranch).not.toHaveBeenCalled();
+  });
+
+  async function createReworkJob(route: 'plan' | 'develop' = 'plan'): Promise<Job<PrepareRunJobData>> {
+    const issue = createIssue();
+    const fileSet = createRunFileSet(orchestrationRoot, 'run-123', new Date('2026-04-30T10:00:00.000Z'));
+    await initializeRunSummary(orchestrationRoot, fileSet, {
+      runId: 'run-123',
+      status: 'running',
+      currentStage: 'pr-rework-intake',
+      runStartedAt: '2026-04-30T10:00:00.000Z',
+      stageAttempt: 1,
+      reworkAttempt: 1,
+      latestHandoffRecord: null,
+      stableContext: {
+        issue,
+        repository: {
+          owner: 'test-owner',
+          repo: 'test-repo',
+        },
+        branchName: 'issue-42-test-issue',
+        workspacePath: '/tmp/old-workspace',
+      },
+      stages: {},
+    });
+    const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
+      runId: 'run-123',
+      fromStage: 'pr-rework-intake',
+      toStage: 'prepare-run',
+      stageAttempt: 1,
+      reworkAttempt: 1,
+      status: 'rework-needed',
+      output: {
+        status: 'rework-needed',
+        runId: 'run-123',
+        stageAttempt: 1,
+        reworkAttempt: 1,
+        pullRequest: {
+          number: 7,
+          htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+        },
+        commentsMarkdown: 'comments',
+        routeAnalysis: route === 'develop' ? 'ROUTE: DEVELOP' : 'ROUTE: PLAN',
+        selectedNextStage: route,
+        pullRequestHead: {
+          owner: 'test-owner',
+          repo: 'test-repo',
+          branch: 'issue-42-test-issue',
+          sha: 'abc123',
+        },
+        latestPlanRecordId: '000001_plan_to_develop',
+      },
+    });
+
+    return createJob(issue, {
+      reworkAttempt: 1,
+      inputRecordRef,
+    });
+  }
+
+  it('prepares a rework workspace from the existing PR head and forwards stageAttempt 1 to Plan', async () => {
+    const job = await createReworkJob('plan');
+
+    const result = await runPrepareRunWork(job);
+    const records = await readHandoffRecords(job.data.inputRecordRef?.handoffPath ?? '');
+    const summary = await readRunSummary(orchestrationRoot, 'run-123');
+
+    expect(mockGetRef).not.toHaveBeenCalledWith('main');
+    expect(mockPushBranch).not.toHaveBeenCalled();
+    expect(mockCloneRepoInto).toHaveBeenCalledWith(TEMP_DIR, 'https://github.com/test-owner/test-repo.git');
+    expect(spawn).toHaveBeenCalledWith(
+      'git',
+      ['fetch', 'https://github.com/test-owner/test-repo.git', 'heads/issue-42-test-issue'],
+      expect.objectContaining({ cwd: TEMP_DIR })
+    );
+    expect(spawn).toHaveBeenCalledWith(
+      'git',
+      ['reset', '--hard', 'abc123'],
+      expect.objectContaining({ cwd: TEMP_DIR })
+    );
+    expect(result).toMatchObject({
+      nextJobData: {
+        type: 'plan',
+        stage: 'plan',
+        stageAttempt: 1,
+        reworkAttempt: 1,
+      },
+    });
+    expect(records.at(-1)).toMatchObject({
+      fromStage: 'prepare-run',
+      toStage: 'plan',
+      dependsOn: [job.data.inputRecordRef?.recordId],
+      stageAttempt: 1,
+      reworkAttempt: 1,
+    });
+    expect(summary).toMatchObject({
+      stableContext: {
+        branchName: 'issue-42-test-issue',
+        workspacePath: TEMP_DIR,
+      },
+    });
+  });
+
+  it('marks scoped Plan skipped when rework routes directly to Develop', async () => {
+    const job = await createReworkJob('develop');
+
+    await runPrepareRunWork(job);
+    const summary = await readRunSummary(orchestrationRoot, 'run-123');
+
+    expect(summary?.trackerStatus?.checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'rework-1:prepare-run:attempt-1',
+        reworkAttempt: 1,
+        state: 'completed',
+      }),
+      expect.objectContaining({
+        id: 'rework-1:plan:attempt-1',
+        reworkAttempt: 1,
+        state: 'skipped',
+        detail: 'skipped',
+      }),
+      expect.objectContaining({
+        id: 'rework-1:develop:attempt-1',
+        reworkAttempt: 1,
+        state: 'pending',
+      }),
+    ]));
+  });
+
+  it('rejects rework PR heads from forks before workspace side effects', async () => {
+    const job = await createReworkJob('develop');
+    const records = await readHandoffRecords(job.data.inputRecordRef?.handoffPath ?? '');
+    const reworkRecord = records.at(-1);
+    if (!reworkRecord || typeof reworkRecord.output !== 'object' || reworkRecord.output === null) {
+      throw new Error('Expected rework record');
+    }
+    reworkRecord.output = {
+      ...reworkRecord.output,
+      pullRequestHead: {
+        owner: 'other-owner',
+        repo: 'other-repo',
+        branch: 'issue-42-test-issue',
+        sha: 'abc123',
+      },
+    };
+    await rm(job.data.inputRecordRef?.handoffPath ?? '', { force: true });
+    for (const record of records) {
+      await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
+        runId: record.runId,
+        fromStage: record.fromStage,
+        toStage: record.toStage,
+        stageAttempt: record.stageAttempt,
+        reworkAttempt: record.reworkAttempt,
+        dependsOn: record.dependsOn,
+        status: record.status,
+        output: record.output,
+        createdAt: record.createdAt,
+      });
+    }
+
+    await expect(runPrepareRunWork(job)).rejects.toThrow('Rework pull request head repository mismatch');
+
+    expect(mockCreateTempWorkingDir).not.toHaveBeenCalled();
+    expect(mockCloneRepoInto).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('enqueues the selected rework next stage instead of Assess', async () => {
+    const job = await createReworkJob('develop');
+
+    await runPrepareRunFlow(job);
+
+    expect(mockJobQueueAdd).toHaveBeenCalledWith('develop', expect.objectContaining({
+      type: 'develop',
+      stage: 'develop',
+      stageAttempt: 1,
+      reworkAttempt: 1,
+      inputRecordRef: expect.objectContaining({
+        stage: 'prepare-run',
+      }),
+    }));
+    expect(mockJobQueueAdd).not.toHaveBeenCalledWith('assess', expect.anything());
+  });
+
+  it('keeps the previous current workspace pointer and cleans up when rework preparation fails', async () => {
+    const job = await createReworkJob('plan');
+    mockCloneRepoInto.mockRejectedValue(new Error('clone failed'));
+
+    await expect(runPrepareRunFlow(job)).rejects.toThrow('clone failed');
+
+    expect(mockCleanupWorkingDir).toHaveBeenCalledWith(TEMP_DIR);
+    await expect(readRunSummary(orchestrationRoot, 'run-123')).resolves.toMatchObject({
+      stableContext: {
+        workspacePath: '/tmp/old-workspace',
+      },
+    });
+    expect(mockJobQueueAdd).not.toHaveBeenCalled();
   });
 });

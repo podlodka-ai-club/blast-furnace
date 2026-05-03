@@ -45,6 +45,18 @@ function parseReviewAttemptLimit(value: string | undefined, defaultVal: number):
   return parsed;
 }
 
+function parseMaxHumanReworkAttempts(value: string | undefined, defaultVal: number): number {
+  if (value === undefined) return defaultVal;
+  if (!/^\d+$/.test(value)) {
+    throw new Error('MAX_HUMAN_REWORK_ATTEMPTS must be an integer from 1 through 19');
+  }
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 19) {
+    throw new Error('MAX_HUMAN_REWORK_ATTEMPTS must be an integer from 1 through 19');
+  }
+  return parsed;
+}
+
 function loadConfig(): AppConfig {
   return {
     env: process.env['NODE_ENV'] ?? 'development',
@@ -71,6 +83,9 @@ function loadConfig(): AppConfig {
     },
     review: {
       attemptLimit: parseReviewAttemptLimit(process.env['REVIEW_ATTEMPT_LIMIT'], 3),
+    },
+    rework: {
+      maxHumanReworkAttempts: parseMaxHumanReworkAttempts(process.env['MAX_HUMAN_REWORK_ATTEMPTS'], 3),
     },
   };
 }

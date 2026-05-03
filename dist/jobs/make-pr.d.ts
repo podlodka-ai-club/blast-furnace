@@ -1,9 +1,13 @@
 import type { Job } from 'bullmq';
-import type { MakePrJobData, NoChangeOutput, PullRequestOutput, SyncTrackerStateJobData } from '../types/index.js';
+import type { MakePrJobData, NoChangeOutput, PullRequestCreationFailureOutput, PullRequestOutput, SyncTrackerStateJobData } from '../types/index.js';
 export type MakePrWorkResult = {
     status: 'no-changes';
     output: NoChangeOutput;
     workspacePath: string;
+    syncTrackerStateJobData?: SyncTrackerStateJobData;
+} | {
+    status: PullRequestCreationFailureOutput['status'];
+    output: PullRequestCreationFailureOutput;
 } | {
     status: 'pull-request-created';
     output: PullRequestOutput;

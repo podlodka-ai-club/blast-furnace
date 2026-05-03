@@ -17,8 +17,21 @@ export type { GitHubIssueComment } from './comments.js';
 export { pushBranch, getRef } from './branches.js';
 
 // Pull Requests
-export { createPullRequest } from './pullRequests.js';
-export type { CreatePullRequestOptions, PullRequestResponse } from './pullRequests.js';
+export {
+  createPullRequest,
+  getPullRequestState,
+  listPullRequestComments,
+  listPullRequestReviewComments,
+  REWORK_LABEL,
+  removeReworkLabelFromPullRequest,
+} from './pullRequests.js';
+export type {
+  CreatePullRequestOptions,
+  PullRequestComment,
+  PullRequestResponse,
+  PullRequestReviewComment,
+  PullRequestState,
+} from './pullRequests.js';
 
 // Types
 export type { GitRef, BranchRefResponse, PullRequest } from './types.js';

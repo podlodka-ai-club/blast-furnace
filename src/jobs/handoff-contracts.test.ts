@@ -61,6 +61,22 @@ describe('handoff runtime contracts', () => {
       stage: 'plan',
       inputRecordRef,
     });
+    expect(stagePayloadSchemas['pr-rework-intake'].parse({
+      taskId: 'task-pr-rework-intake',
+      type: 'pr-rework-intake',
+      runId: 'run-123',
+      stage: 'pr-rework-intake',
+      stageAttempt: 1,
+      reworkAttempt: 0,
+      inputRecordRef: {
+        ...inputRecordRef,
+        recordId: '000007_sync-tracker-state_to_pr-rework-intake',
+        sequence: 7,
+        stage: 'sync-tracker-state',
+      },
+    })).toMatchObject({
+      stage: 'pr-rework-intake',
+    });
     expect(handoffRecordSchema.parse({
       recordId: '000001_prepare-run_to_assess',
       sequence: 1,
@@ -423,5 +439,139 @@ describe('handoff runtime contracts', () => {
         content: 'Fix the failing test.',
       },
     })).toThrow('successful review output requires review.status passed');
+  });
+
+  it('validates PR Rework Intake route, terminal, and no-comment output contracts', () => {
+    const base = {
+      runId: 'run-123',
+      stageAttempt: 1,
+      reworkAttempt: 1,
+      pullRequest: {
+        number: 7,
+        htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+      },
+    } as const;
+
+    expect(stageOutputSchemas['pr-rework-intake'].parse({
+      ...base,
+      status: 'rework-needed',
+      commentsMarkdown: '## Review Comments\n\n- Please update tests.',
+      routeAnalysis: 'ROUTE: DEVELOP\nThe comments are implementation-only.',
+      selectedNextStage: 'develop',
+      pullRequestHead: {
+        owner: 'test-owner',
+        repo: 'test-repo',
+        branch: 'issue-42-test-issue',
+        sha: 'abc123',
+      },
+      latestPlanRecordId: '000003_assess_to_plan',
+    })).toMatchObject({
+      status: 'rework-needed',
+      selectedNextStage: 'develop',
+    });
+
+    expect(stageOutputSchemas['pr-rework-intake'].parse({
+      ...base,
+      status: 'pull-request-merged',
+    })).toMatchObject({ status: 'pull-request-merged' });
+
+    expect(stageOutputSchemas['pr-rework-intake'].parse({
+      ...base,
+      status: 'pull-request-closed-without-merge',
+    })).toMatchObject({ status: 'pull-request-closed-without-merge' });
+
+    expect(stageOutputSchemas['pr-rework-intake'].parse({
+      ...base,
+      status: 'too-many-reworks',
+      commentsMarkdown: '## Review Comments\n\n- Another change.',
+    })).toMatchObject({ status: 'too-many-reworks' });
+
+    expect(stageOutputSchemas['pr-rework-intake'].parse({
+      ...base,
+      status: 'no-comments-found',
+    })).toMatchObject({ status: 'no-comments-found' });
+
+    expect(() => stageOutputSchemas['pr-rework-intake'].parse({
+      ...base,
+      status: 'rework-needed',
+      workspacePath: '/tmp/prepare-run-abc123',
+      commentsMarkdown: 'comments',
+      routeAnalysis: 'ROUTE: PLAN',
+      selectedNextStage: 'plan',
+      pullRequestHead: {
+        owner: 'test-owner',
+        repo: 'test-repo',
+        branch: 'issue-42-test-issue',
+        sha: 'abc123',
+      },
+      latestPlanRecordId: '000003_assess_to_plan',
+    })).toThrow('pr-rework-intake output must not include workspacePath');
+  });
+
+  it('validates PR Rework Intake and rework Prepare Run handoff records', () => {
+    const syncRecordId = '000007_make-pr_to_sync-tracker-state';
+    const planRecordId = '000003_assess_to_plan';
+    const prReworkRecord = handoffRecordSchema.parse({
+      recordId: '000009_pr-rework-intake_to_prepare-run',
+      sequence: 9,
+      runId: 'run-123',
+      createdAt: '2026-04-26T08:07:30.000Z',
+      fromStage: 'pr-rework-intake',
+      toStage: 'prepare-run',
+      stageAttempt: 1,
+      reworkAttempt: 1,
+      dependsOn: [syncRecordId, planRecordId],
+      status: 'rework-needed',
+      output: {
+        status: 'rework-needed',
+        runId: 'run-123',
+        stageAttempt: 1,
+        reworkAttempt: 1,
+        commentsMarkdown: '## Review Comments\n\n- Please update tests.',
+        routeAnalysis: 'ROUTE: PLAN\nPlanning is needed.',
+        selectedNextStage: 'plan',
+        pullRequest: {
+          number: 7,
+          htmlUrl: 'https://github.com/test-owner/test-repo/pull/7',
+        },
+        pullRequestHead: {
+          owner: 'test-owner',
+          repo: 'test-repo',
+          branch: 'issue-42-test-issue',
+          sha: 'abc123',
+        },
+        latestPlanRecordId: planRecordId,
+      },
+    });
+
+    expect(prReworkRecord).toMatchObject({
+      fromStage: 'pr-rework-intake',
+      toStage: 'prepare-run',
+      status: 'rework-needed',
+      dependsOn: [syncRecordId, planRecordId],
+    });
+
+    expect(handoffRecordSchema.parse({
+      recordId: '000010_prepare-run_to_plan',
+      sequence: 10,
+      runId: 'run-123',
+      createdAt: '2026-04-26T08:08:30.000Z',
+      fromStage: 'prepare-run',
+      toStage: 'plan',
+      stageAttempt: 1,
+      reworkAttempt: 1,
+      dependsOn: [prReworkRecord.recordId],
+      status: 'success',
+      output: {
+        status: 'success',
+        runId: 'run-123',
+        stageAttempt: 1,
+        reworkAttempt: 1,
+      },
+    })).toMatchObject({
+      fromStage: 'prepare-run',
+      toStage: 'plan',
+      dependsOn: [prReworkRecord.recordId],
+    });
   });
 });

@@ -61,6 +61,10 @@ vi.mock('./jobs/sync-tracker-state.js', () => ({
   syncTrackerStateHandler: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('./jobs/pr-rework-intake.js', () => ({
+  prReworkIntakeHandler: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('./server/index.js', () => ({
   buildServer: vi.fn().mockResolvedValue({
     close: vi.fn().mockResolvedValue(undefined),
@@ -144,6 +148,7 @@ describe('index', () => {
       const { reviewHandler } = await import('./jobs/review.js');
       const { makePrHandler } = await import('./jobs/make-pr.js');
       const { syncTrackerStateHandler } = await import('./jobs/sync-tracker-state.js');
+      const { prReworkIntakeHandler } = await import('./jobs/pr-rework-intake.js');
       const { multiHandler } = await import('./index.js');
 
       const handlers = [
@@ -155,6 +160,7 @@ describe('index', () => {
         ['review', reviewHandler],
         ['make-pr', makePrHandler],
         ['sync-tracker-state', syncTrackerStateHandler],
+        ['pr-rework-intake', prReworkIntakeHandler],
       ] as const;
 
       for (const [type, handler] of handlers) {

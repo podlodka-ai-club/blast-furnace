@@ -4,4 +4,4 @@ export { moveIssueToInReview, READY_LABEL, IN_REVIEW_LABEL } from './issue-label
 export { assertConfiguredRepository, getConfiguredRepository, isConfiguredRepository } from './repository.js';
 export { createIssueComment, updateIssueComment, listIssueComments } from './comments.js';
 export { pushBranch, getRef } from './branches.js';
-export { createPullRequest } from './pullRequests.js';
+export { createPullRequest, getPullRequestState, listPullRequestComments, listPullRequestReviewComments, REWORK_LABEL, removeReworkLabelFromPullRequest, } from './pullRequests.js';

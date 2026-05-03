@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import type { Job } from 'bullmq';
-import type { DevelopJobData, GitHubIssue, InputRecordRef, PlanJobData, PlanOutput } from '../types/index.js';
+import type { DevelopJobData, GitHubIssue, HandoffRecordDependency, InputRecordRef, PlanJobData, PlanOutput } from '../types/index.js';
 import { runCodexSession } from './codex-session.js';
 import { stageOutputSchemas, stagePayloadSchemas } from './handoff-contracts.js';
 import { resolvePlanContext } from './context-resolvers.js';
@@ -18,6 +18,7 @@ import { statusItem, updateRunStatus } from './status.js';
 
 const MAX_PLAN_ATTEMPTS = 3;
 export const PLAN_PROMPT_TEMPLATE_PATH = join(process.cwd(), 'prompts', 'plan.md');
+export const PLAN_REWORK_PROMPT_TEMPLATE_PATH = join(process.cwd(), 'prompts', 'plan-rework.md');
 export const PLAN_CHECKS_PATH = join(process.cwd(), 'config', 'plan-checks.yaml');
 export const PLAN_CONTINUATION_PROMPT = [
   'Rewrite the full implementation plan and include every required Markdown section title.',
@@ -36,6 +37,8 @@ export interface PlanResponseValidation {
 
 export interface PlanPromptInput {
   issue: Pick<GitHubIssue, 'number' | 'title' | 'body'>;
+  latestPlanContent?: string;
+  commentsMarkdown?: string;
 }
 
 export interface PlanningSession {
@@ -95,6 +98,8 @@ export async function renderPlanPrompt(templatePath: string, input: PlanPromptIn
     issueNumber: String(input.issue.number),
     issueTitle: input.issue.title,
     issueDescription: input.issue.body?.trim() ? input.issue.body : '(No description provided)',
+    latestPlanContent: input.latestPlanContent ?? '',
+    commentsMarkdown: input.commentsMarkdown ?? '',
   };
 
   return template.replace(/\{\{([A-Za-z0-9_]+)\}\}/g, (match, key: string) => replacements[key] ?? match);
@@ -151,18 +156,26 @@ export async function runPlanWork(job: Job<PlanJobData>, options: PlanRunOptions
   await updateRunStatus(orchestrationRoot, job.data.runId, {
     heading: 'Blast Furnace is planning the solution',
     focus: 'Current focus: Plan solution',
-    items: [statusItem('plan', 1, 'in-progress', 'Plan solution', 'In progress')],
+    items: [statusItem('plan', 1, 'in-progress', 'Plan solution', 'In progress', job.data.reworkAttempt)],
   }, logger);
   const checks = await loadPlanChecks(options.checksPath ?? PLAN_CHECKS_PATH);
-  const initialPrompt = await renderPlanPrompt(options.promptTemplatePath ?? PLAN_PROMPT_TEMPLATE_PATH, {
-    issue: context.runContext.issue,
-  });
+  const initialPrompt = context.inputKind === 'pr-rework'
+    ? await renderPlanPrompt(options.promptTemplatePath ?? PLAN_REWORK_PROMPT_TEMPLATE_PATH, {
+        issue: context.runContext.issue,
+        latestPlanContent: context.latestPlan?.content,
+        commentsMarkdown: context.commentsMarkdown,
+      })
+    : await renderPlanPrompt(options.promptTemplatePath ?? PLAN_PROMPT_TEMPLATE_PATH, {
+        issue: context.runContext.issue,
+      });
   const session = await (options.createPlanningSession ?? createDefaultPlanningSession)({
     workspacePath: context.runContext.workspacePath,
     logger,
   });
 
-  let dependencies: InputRecordRef[] = [job.data.inputRecordRef];
+  let dependencies: Array<InputRecordRef | HandoffRecordDependency> = context.inputKind === 'pr-rework' && context.latestPlanRecord
+    ? [job.data.inputRecordRef, context.latestPlanRecord.recordId]
+    : [job.data.inputRecordRef];
   let latestOutput: PlanOutput | undefined;
   try {
     for (let attempt = 1; attempt <= MAX_PLAN_ATTEMPTS; attempt += 1) {
@@ -205,8 +218,8 @@ export async function runPlanWork(job: Job<PlanJobData>, options: PlanRunOptions
           heading: 'Blast Furnace is building a solution',
           focus: 'Current focus: Develop changes',
           items: [
-            statusItem('plan', 1, 'completed', 'Plan solution'),
-            statusItem('develop', 1, 'pending', 'Develop changes'),
+            statusItem('plan', 1, 'completed', 'Plan solution', undefined, job.data.reworkAttempt),
+            statusItem('develop', 1, 'pending', 'Develop changes', undefined, job.data.reworkAttempt),
           ],
         }, logger);
 
@@ -231,13 +244,13 @@ export async function runPlanWork(job: Job<PlanJobData>, options: PlanRunOptions
         focus: isFinalAttempt ? 'Final state: Plan validation exhausted' : 'Current focus: Plan solution',
         items: isFinalAttempt
           ? [
-              statusItem('plan', 1, 'blocked', 'Plan solution', 'Validation limit reached'),
-              statusItem('develop', 1, 'skipped', 'Develop changes'),
-              statusItem('quality-gate', 1, 'skipped', 'Quality Gate'),
-              statusItem('review', 1, 'skipped', 'Code Review'),
-              statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR'),
+              statusItem('plan', 1, 'blocked', 'Plan solution', 'Validation limit reached', job.data.reworkAttempt),
+              statusItem('develop', 1, 'skipped', 'Develop changes', undefined, job.data.reworkAttempt),
+              statusItem('quality-gate', 1, 'skipped', 'Quality Gate', undefined, job.data.reworkAttempt),
+              statusItem('review', 1, 'skipped', 'Code Review', undefined, job.data.reworkAttempt),
+              statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR', undefined, job.data.reworkAttempt),
             ]
-          : [statusItem('plan', 1, 'retrying', 'Plan solution', 'Validation retry')],
+          : [statusItem('plan', 1, 'retrying', 'Plan solution', 'Validation retry', job.data.reworkAttempt)],
       }, logger);
       dependencies = [inputRecordRef];
 

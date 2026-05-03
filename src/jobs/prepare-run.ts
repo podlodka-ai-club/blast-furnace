@@ -3,13 +3,16 @@ import { spawn } from 'child_process';
 import type { Job } from 'bullmq';
 import type {
   AssessJobData,
+  DevelopJobData,
   GitHubIssue,
+  HandoffRecord,
+  PlanJobData,
   PrepareRunJobData,
   PrepareRunOutput,
   RepositoryIdentity,
 } from '../types/index.js';
 import { getRef, pushBranch, deleteBranch } from '../github/branches.js';
-import { assertConfiguredRepository } from '../github/repository.js';
+import { assertConfiguredRepository, isConfiguredRepository } from '../github/repository.js';
 import {
   cloneRepoInto,
   cleanupWorkingDir,
@@ -24,6 +27,7 @@ import {
   appendHandoffRecordAndUpdateSummary,
   createRunFileSet,
   initializeRunSummary,
+  readHandoffRecord,
   readRunSummary,
   resolveOrchestrationStorageRoot,
   scheduleNextJob,
@@ -40,7 +44,8 @@ interface PrepareRunState {
 }
 
 export interface PrepareRunWorkResult {
-  assessJobData: AssessJobData;
+  assessJobData?: AssessJobData;
+  nextJobData?: PlanJobData | DevelopJobData;
 }
 
 export interface CreatePrepareRunPayloadInput {
@@ -175,6 +180,27 @@ async function checkoutPreparedBranch(
   await execGitCommand(['reset', '--hard', `origin/${branchName}`], workspacePath);
 }
 
+async function checkoutReworkBranch(
+  branchName: string,
+  expectedSha: string,
+  workspacePath: string,
+  logger: ReturnType<typeof createJobLogger>
+): Promise<void> {
+  await fetchBranchWithRetry(branchName, workspacePath, logger);
+
+  const branchExists = await execGitCommand(['rev-parse', '--verify', '--quiet', branchName], workspacePath)
+    .then(() => true)
+    .catch(() => false);
+
+  if (branchExists) {
+    await execGitCommand(['checkout', branchName], workspacePath);
+  } else {
+    await execGitCommand(['checkout', '-b', branchName, '--track', `origin/${branchName}`], workspacePath);
+  }
+
+  await execGitCommand(['reset', '--hard', expectedSha], workspacePath);
+}
+
 async function cleanupPrepareRunFailure(
   state: PrepareRunState,
   logger: ReturnType<typeof createJobLogger>
@@ -201,6 +227,142 @@ async function cleanupPrepareRunFailure(
   }
 }
 
+function assertObject(value: unknown, label: string): asserts value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+}
+
+function readReworkContext(record: HandoffRecord): {
+  selectedNextStage: 'plan' | 'develop';
+  pullRequestHead: {
+    owner: string;
+    repo: string;
+    branch: string;
+    sha: string;
+  };
+} {
+  if (record.fromStage !== 'pr-rework-intake') {
+    throw new Error('Rework Prepare Run input must be produced by pr-rework-intake');
+  }
+  assertObject(record.output, 'PR Rework Intake output');
+  if (record.output['status'] !== 'rework-needed') {
+    throw new Error('Rework Prepare Run input must have rework-needed status');
+  }
+  const selectedNextStage = record.output['selectedNextStage'];
+  if (selectedNextStage !== 'plan' && selectedNextStage !== 'develop') {
+    throw new Error('PR Rework Intake selectedNextStage must be plan or develop');
+  }
+  const pullRequestHead = record.output['pullRequestHead'];
+  assertObject(pullRequestHead, 'pullRequestHead');
+  for (const field of ['owner', 'repo', 'branch', 'sha'] as const) {
+    if (typeof pullRequestHead[field] !== 'string' || pullRequestHead[field].length === 0) {
+      throw new Error(`pullRequestHead.${field} must be a non-empty string`);
+    }
+  }
+  return {
+    selectedNextStage,
+    pullRequestHead: {
+      owner: String(pullRequestHead['owner']),
+      repo: String(pullRequestHead['repo']),
+      branch: String(pullRequestHead['branch']),
+      sha: String(pullRequestHead['sha']),
+    },
+  };
+}
+
+async function runPrepareRunReworkWork(
+  job: Job<PrepareRunJobData>,
+  logger: ReturnType<typeof createJobLogger>,
+  state: PrepareRunState
+): Promise<PrepareRunWorkResult> {
+  if (!job.data.inputRecordRef) {
+    throw new Error('Rework Prepare Run requires an input handoff record reference');
+  }
+  const inputRecord = await readHandoffRecord(job.data.inputRecordRef);
+  const reworkContext = readReworkContext(inputRecord);
+  const headRepository = {
+    owner: reworkContext.pullRequestHead.owner,
+    repo: reworkContext.pullRequestHead.repo,
+  };
+  if (!isConfiguredRepository(headRepository)) {
+    throw new Error('Rework pull request head repository mismatch');
+  }
+  assertConfiguredRepository(job.data.repository);
+
+  const branchName = reworkContext.pullRequestHead.branch;
+  state.branchName = branchName;
+  const orchestrationRoot = resolveOrchestrationStorageRoot(job.data.inputRecordRef);
+  const workspacePath = await createTempWorkingDir('prepare-run');
+  state.workspacePath = workspacePath;
+
+  logger.info(`Preparing rework run ${job.data.runId} from PR branch ${branchName}`);
+  await cloneRepoInto(workspacePath, getRepoRemoteUrl());
+  await checkoutReworkBranch(branchName, reworkContext.pullRequestHead.sha, workspacePath, logger);
+
+  await updateRunSummary(orchestrationRoot, job.data.runId, (summary) => ({
+    ...summary,
+    status: 'running',
+    currentStage: 'prepare-run',
+    stageAttempt: 1,
+    reworkAttempt: job.data.reworkAttempt,
+    stableContext: {
+      issue: summary.stableContext?.issue ?? job.data.issue,
+      repository: summary.stableContext?.repository ?? job.data.repository,
+      branchName,
+      workspacePath,
+    },
+    stages: {
+      ...summary.stages,
+      'prepare-run': {
+        attempts: 1,
+        status: 'running',
+      },
+    },
+  }));
+
+  const output = stageOutputSchemas['prepare-run'].parse({
+    status: 'success',
+    runId: job.data.runId,
+    stageAttempt: 1,
+    reworkAttempt: job.data.reworkAttempt,
+  }) as PrepareRunOutput;
+  const { inputRecordRef } = await appendHandoffRecordAndUpdateSummary(orchestrationRoot, {
+    runId: job.data.runId,
+    fromStage: 'prepare-run',
+    toStage: reworkContext.selectedNextStage,
+    stageAttempt: 1,
+    reworkAttempt: job.data.reworkAttempt,
+    dependsOn: [job.data.inputRecordRef],
+    status: 'success',
+    output,
+  });
+  await updateRunStatus(orchestrationRoot, job.data.runId, {
+    heading: reworkContext.selectedNextStage === 'plan'
+      ? 'Blast Furnace is planning rework'
+      : 'Blast Furnace is developing rework',
+    focus: reworkContext.selectedNextStage === 'plan'
+      ? 'Current focus: Plan solution'
+      : 'Current focus: Develop changes',
+    items: [
+      statusItem('prepare-run', 1, 'completed', 'Prepare run', undefined, job.data.reworkAttempt),
+      ...(reworkContext.selectedNextStage === 'develop'
+        ? [statusItem('plan', 1, 'skipped', 'Plan solution', 'skipped', job.data.reworkAttempt)]
+        : []),
+      statusItem(reworkContext.selectedNextStage, 1, 'pending', reworkContext.selectedNextStage === 'plan' ? 'Plan solution' : 'Develop changes', undefined, job.data.reworkAttempt),
+    ],
+  }, logger);
+
+  return {
+    nextJobData: createForwardStagePayload(
+      job.data,
+      reworkContext.selectedNextStage,
+      inputRecordRef,
+      1
+    ) as PlanJobData | DevelopJobData,
+  };
+}
+
 export async function runPrepareRunWork(
   job: Job<PrepareRunJobData>,
   logger = createJobLogger(job),
@@ -211,6 +373,10 @@ export async function runPrepareRunWork(
     cleaned: false,
   }
 ): Promise<PrepareRunWorkResult> {
+  if (job.data.inputRecordRef) {
+    return runPrepareRunReworkWork(job, logger, state);
+  }
+
   const { issue, repository, runId, stageAttempt } = job.data;
   assertConfiguredRepository(repository);
 
@@ -349,10 +515,14 @@ export async function runPrepareRunFlow(job: Job<PrepareRunJobData>): Promise<vo
 
   try {
     const result = await runPrepareRunWork(job, logger, state);
-    await job.updateProgress?.({ step: 'enqueueing-assess', issue: job.data.issue.number });
-    await scheduleNextJob(jobQueue, 'assess', result.assessJobData);
+    const nextJobData = result.nextJobData ?? result.assessJobData;
+    if (!nextJobData) {
+      throw new Error('Prepare Run did not produce a next job payload');
+    }
+    await job.updateProgress?.({ step: `enqueueing-${nextJobData.stage}`, issue: job.data.issue.number });
+    await scheduleNextJob(jobQueue, nextJobData.stage, nextJobData);
     handoffCompleted = true;
-    logger.info(`Assess job enqueued for run: ${result.assessJobData.runId}`);
+    logger.info(`${nextJobData.stage} job enqueued for run: ${nextJobData.runId}`);
   } catch (err) {
     if (!handoffCompleted) {
       try {
@@ -360,13 +530,13 @@ export async function runPrepareRunFlow(job: Job<PrepareRunJobData>): Promise<vo
           heading: 'Blast Furnace stopped during preparation',
           focus: 'Final state: Prepare run failed',
           items: [
-            statusItem('prepare-run', 1, 'failed', 'Prepare run', 'Preparation failed'),
-            statusItem('assess', 1, 'skipped', 'Assess issue'),
-            statusItem('plan', 1, 'skipped', 'Plan solution'),
-            statusItem('develop', 1, 'skipped', 'Develop changes'),
-            statusItem('quality-gate', 1, 'skipped', 'Quality Gate'),
-            statusItem('review', 1, 'skipped', 'Code Review'),
-            statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR'),
+            statusItem('prepare-run', 1, 'failed', 'Prepare run', 'Preparation failed', job.data.reworkAttempt),
+            statusItem('assess', 1, 'skipped', 'Assess issue', undefined, job.data.reworkAttempt),
+            statusItem('plan', 1, 'skipped', 'Plan solution', undefined, job.data.reworkAttempt),
+            statusItem('develop', 1, 'skipped', 'Develop changes', undefined, job.data.reworkAttempt),
+            statusItem('quality-gate', 1, 'skipped', 'Quality Gate', undefined, job.data.reworkAttempt),
+            statusItem('review', 1, 'skipped', 'Code Review', undefined, job.data.reworkAttempt),
+            statusItem('draft-pr-and-in-review', 1, 'skipped', 'Make PR', undefined, job.data.reworkAttempt),
           ],
         }, logger);
       } catch {
