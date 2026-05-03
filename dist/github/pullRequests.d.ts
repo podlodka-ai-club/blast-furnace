@@ -1,3 +1,4 @@
+export declare const REWORK_LABEL = "rework";
 export interface CreatePullRequestOptions {
     title: string;
     head: string;

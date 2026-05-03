@@ -1,6 +1,8 @@
 import { githubClient } from './client.js';
 import { config } from '../config/index.js';
 
+export const REWORK_LABEL = 'rework';
+
 /**
  * Options for creating a pull request
  */
@@ -143,7 +145,7 @@ export async function removeReworkLabelFromPullRequest(pullNumber: number): Prom
       owner: config.github.owner,
       repo: config.github.repo,
       issue_number: pullNumber,
-      name: 'Rework',
+      name: REWORK_LABEL,
     });
   } catch (error) {
     if (!isNotFoundError(error)) {

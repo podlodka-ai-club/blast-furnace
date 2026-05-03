@@ -5,6 +5,7 @@ import {
   getPullRequestState,
   listPullRequestComments,
   listPullRequestReviewComments,
+  REWORK_LABEL,
   removeReworkLabelFromPullRequest,
 } from './pullRequests.js';
 import { githubClient } from './client.js';
@@ -266,7 +267,7 @@ describe('pullRequests', () => {
             },
           },
           labels: [
-            { name: 'Rework' },
+            { name: REWORK_LABEL },
             { name: 'bug' },
           ],
         },
@@ -283,7 +284,7 @@ describe('pullRequests', () => {
           branch: 'issue-42-test-issue',
           sha: 'abc123',
         },
-        labels: ['Rework', 'bug'],
+        labels: [REWORK_LABEL, 'bug'],
       });
       expect(githubClient.pulls.get).toHaveBeenCalledWith({
         owner: 'test-owner',
@@ -292,7 +293,7 @@ describe('pullRequests', () => {
       });
     });
 
-    it('removes the Rework label from a pull request issue idempotently', async () => {
+    it('removes the rework label from a pull request issue idempotently', async () => {
       vi.mocked(githubClient.issues.removeLabel).mockResolvedValue({
         data: [],
       } as Awaited<ReturnType<typeof githubClient.issues.removeLabel>>);
@@ -302,7 +303,7 @@ describe('pullRequests', () => {
         owner: 'test-owner',
         repo: 'test-repo',
         issue_number: 7,
-        name: 'Rework',
+        name: REWORK_LABEL,
       });
 
       vi.mocked(githubClient.issues.removeLabel).mockRejectedValueOnce(Object.assign(new Error('Not Found'), {

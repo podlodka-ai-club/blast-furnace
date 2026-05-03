@@ -22,6 +22,7 @@ export {
   getPullRequestState,
   listPullRequestComments,
   listPullRequestReviewComments,
+  REWORK_LABEL,
   removeReworkLabelFromPullRequest,
 } from './pullRequests.js';
 export type {

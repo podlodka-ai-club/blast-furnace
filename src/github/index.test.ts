@@ -93,6 +93,10 @@ describe('GitHub module exports', () => {
       expect(typeof github.createPullRequest).toBe('function');
     });
 
+    it('should export the rework label constant', () => {
+      expect(github.REWORK_LABEL).toBe('rework');
+    });
+
     it('should export CreatePullRequestOptions interface', () => {
       const options: github.CreatePullRequestOptions = {
         title: 'Test PR',

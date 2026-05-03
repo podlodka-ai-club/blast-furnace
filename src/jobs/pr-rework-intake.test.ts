@@ -35,6 +35,7 @@ const { mockRunCodexSession } = vi.hoisted(() => ({
 }));
 
 vi.mock('../github/pullRequests.js', () => ({
+  REWORK_LABEL: 'rework',
   getPullRequestState: mockGetPullRequestState,
   removeReworkLabelFromPullRequest: mockRemoveReworkLabel,
   listPullRequestReviewComments: mockListReviewComments,
@@ -267,7 +268,7 @@ describe('pr-rework-intake job', () => {
   it('terminates and comments when another rework would exceed the configured limit', async () => {
     const { runPrReworkIntakeWork } = await import('./pr-rework-intake.js');
     const job = await createJob(2);
-    openPr(['Rework']);
+    openPr(['rework']);
 
     await runPrReworkIntakeWork(job);
 
@@ -280,10 +281,10 @@ describe('pr-rework-intake job', () => {
     expect(mockJobQueueAdd).not.toHaveBeenCalledWith('prepare-run', expect.anything());
   });
 
-  it('consumes a Rework trigger without comments and schedules the next poll', async () => {
+  it('consumes a lowercase rework trigger without comments and schedules the next poll', async () => {
     const { runPrReworkIntakeWork } = await import('./pr-rework-intake.js');
     const job = await createJob();
-    openPr(['Rework']);
+    openPr(['rework']);
 
     await runPrReworkIntakeWork(job);
 
@@ -300,7 +301,7 @@ describe('pr-rework-intake job', () => {
   it('creates a route handoff and delegates to Prepare Run when comments qualify', async () => {
     const { runPrReworkIntakeWork } = await import('./pr-rework-intake.js');
     const job = await createJob();
-    openPr(['Rework']);
+    openPr(['rework']);
     mockListReviewComments.mockResolvedValue([
       {
         id: 1,
@@ -342,7 +343,7 @@ describe('pr-rework-intake job', () => {
   it('initializes all visible rework status rows before Prepare Run continues', async () => {
     const { runPrReworkIntakeWork } = await import('./pr-rework-intake.js');
     const job = await createJob();
-    openPr(['Rework']);
+    openPr(['rework']);
     mockListReviewComments.mockResolvedValue([
       {
         id: 1,
@@ -382,7 +383,7 @@ describe('pr-rework-intake job', () => {
   it('renders the review comments analysis prompt and invokes Codex route analysis by default', async () => {
     const { runPrReworkIntakeWork } = await import('./pr-rework-intake.js');
     const job = await createJob();
-    openPr(['Rework']);
+    openPr(['rework']);
     mockRunCodexSession.mockResolvedValueOnce({
       cliCmd: 'codex',
       cliArgs: [],
@@ -436,7 +437,7 @@ describe('pr-rework-intake job', () => {
         inputRecordId: job.data.inputRecordRef.recordId,
       },
     }));
-    openPr(['Rework']);
+    openPr(['rework']);
 
     await runPrReworkIntakeWork(job);
 
@@ -448,7 +449,7 @@ describe('pr-rework-intake job', () => {
   it('does not append duplicate route handoffs when duplicate delayed jobs process the same trigger', async () => {
     const { runPrReworkIntakeWork } = await import('./pr-rework-intake.js');
     const job = await createJob();
-    openPr(['Rework']);
+    openPr(['rework']);
     mockListReviewComments.mockResolvedValue([
       {
         id: 1,
@@ -502,7 +503,7 @@ describe('pr-rework-intake job', () => {
         },
       },
     });
-    openPr(['Rework']);
+    openPr(['rework']);
     mockListReviewComments.mockResolvedValue([
       {
         id: 1,
@@ -558,7 +559,7 @@ describe('pr-rework-intake job', () => {
         latestPlanRecordId: '000001_plan_to_develop',
       },
     });
-    openPr(['Rework']);
+    openPr(['rework']);
     mockListReviewComments.mockResolvedValue([
       {
         id: 1,
@@ -614,7 +615,7 @@ describe('pr-rework-intake job', () => {
         latestPlanRecordId: '000001_plan_to_develop',
       },
     });
-    openPr(['Rework']);
+    openPr(['rework']);
     mockListReviewComments.mockResolvedValue([
       {
         id: 1,
@@ -692,7 +693,7 @@ describe('pr-rework-intake job', () => {
       stageAttempt: 1,
       reworkAttempt: 1,
     });
-    openPr(['Rework']);
+    openPr(['rework']);
 
     await runPrReworkIntakeWork(job);
 

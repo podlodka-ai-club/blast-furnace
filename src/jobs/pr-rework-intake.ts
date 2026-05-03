@@ -7,6 +7,7 @@ import {
   getPullRequestState,
   listPullRequestComments,
   listPullRequestReviewComments,
+  REWORK_LABEL,
   removeReworkLabelFromPullRequest,
 } from '../github/pullRequests.js';
 import type { PullRequestResponse } from '../github/pullRequests.js';
@@ -307,7 +308,7 @@ export async function runPrReworkIntakeWork(
     return;
   }
 
-  if (!prState.labels.includes('Rework')) {
+  if (!prState.labels.includes(REWORK_LABEL)) {
     await enqueueNextPoll(job);
     return;
   }
@@ -333,7 +334,7 @@ export async function runPrReworkIntakeWork(
 
   if (commentsMarkdown.length === 0) {
     await removeReworkLabelFromPullRequest(pullRequest.number);
-    await createIssueComment(pullRequest.number, 'Blast Furnace found the Rework label, but no review comments were found.');
+    await createIssueComment(pullRequest.number, 'Blast Furnace found the rework label, but no review comments were found.');
     await appendHandoffRecordAndUpdateSummary(root, {
       runId: job.data.runId,
       fromStage: 'pr-rework-intake',

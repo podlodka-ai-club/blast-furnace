@@ -146,7 +146,7 @@ describe('make-pr job', () => {
         branch: 'issue-42-test-issue',
         sha: 'abc123',
       },
-      labels: ['Rework'],
+      labels: ['rework'],
     });
     mockMoveIssueToInReview.mockResolvedValue(['in review']);
     mockCleanupWorkingDir.mockResolvedValue(undefined);
@@ -686,7 +686,7 @@ describe('make-pr job', () => {
         branch: 'issue-42-test-issue',
         sha: 'abc123',
       },
-      labels: ['Rework'],
+      labels: ['rework'],
     });
     const job = await createReworkJob();
 
@@ -710,7 +710,7 @@ describe('make-pr job', () => {
         branch: 'other-branch',
         sha: 'abc123',
       },
-      labels: ['Rework'],
+      labels: ['rework'],
     });
 
     await expect(runMakePrWork(job)).rejects.toThrow('Rework pull request head branch mismatch');
@@ -726,7 +726,7 @@ describe('make-pr job', () => {
         branch: 'issue-42-test-issue',
         sha: 'different-sha',
       },
-      labels: ['Rework'],
+      labels: ['rework'],
     });
 
     await expect(runMakePrWork(job)).rejects.toThrow('Rework pull request head SHA mismatch');

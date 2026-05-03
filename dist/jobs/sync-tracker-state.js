@@ -1,5 +1,5 @@
 import { moveIssueToInReview } from '../github/issue-labels.js';
-import { removeReworkLabelFromPullRequest } from '../github/pullRequests.js';
+import { REWORK_LABEL, removeReworkLabelFromPullRequest } from '../github/pullRequests.js';
 import { assertConfiguredRepository } from '../github/repository.js';
 import { cleanupWorkingDir } from '../utils/working-dir.js';
 import { stageOutputSchemas, stagePayloadSchemas } from './handoff-contracts.js';
@@ -25,11 +25,11 @@ export async function runSyncTrackerStateWork(job, logger = createJobLogger(job)
     if (isReworkFinalization) {
         try {
             await removeReworkLabelFromPullRequest(pullRequest.number);
-            logger.info(`Removed Rework label from PR #${pullRequest.number}`);
+            logger.info(`Removed ${REWORK_LABEL} label from PR #${pullRequest.number}`);
         }
         catch (err) {
-            trackerWarnings.push(`Removing the \`Rework\` label from pull request #${pullRequest.number} failed.`);
-            logger.warn(`Failed to remove Rework label from PR #${pullRequest.number}: ${err}`);
+            trackerWarnings.push(`Removing the \`${REWORK_LABEL}\` label from pull request #${pullRequest.number} failed.`);
+            logger.warn(`Failed to remove ${REWORK_LABEL} label from PR #${pullRequest.number}: ${err}`);
         }
     }
     try {
@@ -71,7 +71,7 @@ export async function runSyncTrackerStateWork(job, logger = createJobLogger(job)
         items: [
             statusItem('draft-pr-and-in-review', 1, 'completed', 'Make PR', trackerWarning
                 ? 'PR tracker synchronization warning'
-                : 'PR ready for review'),
+                : 'PR ready for review', job.data.reworkAttempt),
         ],
     }, logger);
     return pullRequest;

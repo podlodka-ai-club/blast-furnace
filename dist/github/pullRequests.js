@@ -1,5 +1,6 @@
 import { githubClient } from './client.js';
 import { config } from '../config/index.js';
+export const REWORK_LABEL = 'rework';
 export async function createPullRequest(options) {
     const { title, head, base, body = '', draft = false } = options;
     if (!title.trim() || !head.trim() || !base.trim()) {
@@ -73,7 +74,7 @@ export async function removeReworkLabelFromPullRequest(pullNumber) {
             owner: config.github.owner,
             repo: config.github.repo,
             issue_number: pullNumber,
-            name: 'Rework',
+            name: REWORK_LABEL,
         });
     }
     catch (error) {

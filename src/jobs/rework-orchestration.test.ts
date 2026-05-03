@@ -108,6 +108,7 @@ vi.mock('../utils/working-dir.js', () => ({
 }));
 
 vi.mock('../github/pullRequests.js', () => ({
+  REWORK_LABEL: 'rework',
   createPullRequest: mockCreatePullRequest,
   getPullRequestState: mockGetPullRequestState,
   listPullRequestComments: mockListPullRequestComments,
@@ -214,7 +215,7 @@ function makeJob<TData>(data: TData, id = `job-${String((data as { stage?: strin
   } as unknown as Job<TData>;
 }
 
-function openPullRequest(labels = ['Rework']) {
+function openPullRequest(labels = ['rework']) {
   return {
     number: 7,
     state: 'open',
@@ -522,7 +523,7 @@ describe('human PR rework orchestration', () => {
     }));
   });
 
-  it('routes a Rework label through Prepare Run, Plan, Develop, Review, Make PR, Sync Tracker State, and back to polling', async () => {
+  it('routes a rework label through Prepare Run, Plan, Develop, Review, Make PR, Sync Tracker State, and back to polling', async () => {
     const run = await runReworkRoute('plan');
     const records = await readHandoffRecords(run.syncInput.handoffPath);
 
@@ -561,7 +562,7 @@ describe('human PR rework orchestration', () => {
     ]));
   });
 
-  it('routes a Rework label directly through Develop, Quality Gate, Review, Make PR, Sync Tracker State, and back to polling', async () => {
+  it('routes a rework label directly through Develop, Quality Gate, Review, Make PR, Sync Tracker State, and back to polling', async () => {
     const run = await runReworkRoute('develop');
     const records = await readHandoffRecords(run.syncInput.handoffPath);
 
@@ -654,7 +655,7 @@ describe('human PR rework orchestration', () => {
 
   it('terminates after too many human reworks without scheduling implementation work', async () => {
     const run = await createPostPrRun({ reworkAttempt: 2 });
-    mockGetPullRequestState.mockResolvedValue(openPullRequest(['Rework']));
+    mockGetPullRequestState.mockResolvedValue(openPullRequest(['rework']));
 
     await runPrReworkIntakeWork(makeJob(run.prReworkJobData));
     const records = await readHandoffRecords(run.syncInput.handoffPath);
@@ -673,9 +674,9 @@ describe('human PR rework orchestration', () => {
     expect(mockJobQueueAdd).not.toHaveBeenCalledWith('prepare-run', expect.anything());
   });
 
-  it('consumes a no-comment Rework trigger and schedules the next poll without implementation work', async () => {
+  it('consumes a no-comment rework trigger and schedules the next poll without implementation work', async () => {
     const run = await createPostPrRun();
-    mockGetPullRequestState.mockResolvedValue(openPullRequest(['Rework']));
+    mockGetPullRequestState.mockResolvedValue(openPullRequest(['rework']));
     mockListPullRequestReviewComments.mockResolvedValue([]);
     mockListPullRequestComments.mockResolvedValue([]);
 

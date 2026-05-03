@@ -2,13 +2,14 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config } from '../config/index.js';
 import { createIssueComment } from '../github/comments.js';
-import { getPullRequestState, listPullRequestComments, listPullRequestReviewComments, removeReworkLabelFromPullRequest, } from '../github/pullRequests.js';
+import { getPullRequestState, listPullRequestComments, listPullRequestReviewComments, REWORK_LABEL, removeReworkLabelFromPullRequest, } from '../github/pullRequests.js';
 import { stageOutputSchemas, stagePayloadSchemas } from './handoff-contracts.js';
 import { jobQueue } from './queue.js';
 import { buildPrReworkCommentsMarkdown } from './pr-rework-comments.js';
 import { appendHandoffRecordAndUpdateSummary, readHandoffRecords, readRunSummary, resolveOrchestrationStorageRoot, scheduleNextJob, updateRunSummary, updateRunSummaryPendingNextStage, } from './orchestration.js';
 import { runCodexSession } from './codex-session.js';
 import { createJobLogger } from './logger.js';
+import { reworkStatusItems, updateRunStatus } from './status.js';
 export const PR_REWORK_INTAKE_PROMPT_TEMPLATE_PATH = join(process.cwd(), 'prompts', 'review_comments_analysis.md');
 function pullRequestFromRecordOutput(output) {
     if (typeof output === 'object'
@@ -211,7 +212,7 @@ export async function runPrReworkIntakeWork(job, dependencies = {}) {
         await appendTerminal(job, terminalOutput(job, 'pull-request-closed-without-merge', pullRequestIdentity), 'terminated');
         return;
     }
-    if (!prState.labels.includes('Rework')) {
+    if (!prState.labels.includes(REWORK_LABEL)) {
         await enqueueNextPoll(job);
         return;
     }
@@ -234,7 +235,7 @@ export async function runPrReworkIntakeWork(job, dependencies = {}) {
     });
     if (commentsMarkdown.length === 0) {
         await removeReworkLabelFromPullRequest(pullRequest.number);
-        await createIssueComment(pullRequest.number, 'Blast Furnace found the Rework label, but no review comments were found.');
+        await createIssueComment(pullRequest.number, 'Blast Furnace found the rework label, but no review comments were found.');
         await appendHandoffRecordAndUpdateSummary(root, {
             runId: job.data.runId,
             fromStage: 'pr-rework-intake',
@@ -289,6 +290,11 @@ export async function runPrReworkIntakeWork(job, dependencies = {}) {
         status: 'rework-needed',
         output,
     }, 'running');
+    await updateRunStatus(root, job.data.runId, {
+        heading: 'Blast Furnace is applying human review feedback',
+        focus: 'Current focus: Prepare rework',
+        items: reworkStatusItems(nextReworkAttempt),
+    });
     await updateRunSummaryPendingNextStage(root, job.data.runId, {
         stage: 'prepare-run',
         inputRecordRef: handoff.inputRecordRef,

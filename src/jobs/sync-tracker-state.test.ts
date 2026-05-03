@@ -42,6 +42,7 @@ vi.mock('../github/issue-labels.js', () => ({
 }));
 
 vi.mock('../github/pullRequests.js', () => ({
+  REWORK_LABEL: 'rework',
   removeReworkLabelFromPullRequest: mockRemoveReworkLabelFromPullRequest,
 }));
 
@@ -270,7 +271,7 @@ describe('sync-tracker-state job', () => {
     expect(mockCleanupWorkingDir).toHaveBeenCalledWith(expect.stringContaining('sync-ledger-'));
   });
 
-  it('removes the Rework label, moves the issue to in review, cleans up, and resumes polling after rework finalization', async () => {
+  it('removes the rework label, moves the issue to in review, cleans up, and resumes polling after rework finalization', async () => {
     const { runSyncTrackerStateFlow } = await import('./sync-tracker-state.js');
     const job = await createJob({ reworkAttempt: 1 });
 
