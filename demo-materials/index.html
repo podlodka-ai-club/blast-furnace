@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Blast Furnace Public Demo</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #eef2f6;
+      --surface: #ffffff;
+      --surface-muted: #dde6ee;
+      --text: #0b1220;
+      --muted: #2f3b4a;
+      --line: #aeb8c5;
+      --accent: #006d77;
+      --accent-strong: #004d57;
+      --amber: #9a5a00;
+      --blue: #174ea6;
+      --shadow: 0 18px 48px rgba(11, 18, 32, 0.16);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    a {
+      color: var(--accent-strong);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+
+    img {
+      display: block;
+      max-width: 100%;
+      height: auto;
+    }
+
+    .page {
+      min-height: 100vh;
+    }
+
+    .hero {
+      background: #0b1220;
+      border-bottom: 1px solid #020617;
+    }
+
+    .hero-inner {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 64px 0 46px;
+    }
+
+    h1,
+    h2,
+    h3 {
+      letter-spacing: 0;
+      line-height: 1.08;
+    }
+
+    h1 {
+      max-width: 920px;
+      margin: 0;
+      color: #ffffff;
+      font-size: clamp(2.4rem, 6vw, 5.2rem);
+      font-weight: 820;
+    }
+
+    .hero-copy {
+      max-width: 760px;
+      margin: 20px 0 0;
+      color: #dbe7f3;
+      font-size: 1.08rem;
+    }
+
+    .nav-wrap {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: rgba(238, 242, 246, 0.95);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(10px);
+    }
+
+    .nav {
+      display: flex;
+      gap: 8px;
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 10px 0;
+      overflow-x: auto;
+    }
+
+    .nav a {
+      flex: 0 0 auto;
+      padding: 8px 10px;
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.9rem;
+      text-decoration: none;
+    }
+
+    .nav a:hover,
+    .nav a:focus-visible {
+      background: var(--surface-muted);
+      outline: none;
+    }
+
+    main {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 34px 0 64px;
+    }
+
+    section {
+      padding: 34px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    section:last-child {
+      border-bottom: 0;
+    }
+
+    .section-header {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(280px, 1.2fr);
+      gap: 28px;
+      align-items: start;
+      margin-bottom: 22px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: clamp(1.65rem, 3vw, 2.55rem);
+    }
+
+    .section-header p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .panel,
+    .artifact,
+    .shot {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 1px 0 rgba(21, 32, 28, 0.04);
+    }
+
+    .panel {
+      padding: 22px;
+    }
+
+    .panel h3,
+    .artifact h3,
+    .shot h3 {
+      margin: 0 0 12px;
+      font-size: 1.08rem;
+    }
+
+    .panel p {
+      margin: 0 0 12px;
+      color: var(--muted);
+    }
+
+    .panel p:last-child {
+      margin-bottom: 0;
+    }
+
+    ul,
+    ol {
+      margin: 0;
+      padding-left: 1.2rem;
+    }
+
+    li + li {
+      margin-top: 7px;
+    }
+
+    .stage-list {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 42px 44px;
+      margin-top: 18px;
+      padding: 2px 2px 14px;
+      list-style: none;
+      overflow: visible;
+      counter-reset: stage;
+    }
+
+    .stage-list li {
+      position: relative;
+      min-height: 128px;
+      margin: 0;
+      padding: 18px 16px 16px 54px;
+      background: var(--surface);
+      border: 2px solid var(--line);
+      border-top: 5px solid var(--accent);
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      box-shadow: var(--shadow);
+      counter-increment: stage;
+    }
+
+    .stage-list li + li {
+      margin-top: 0;
+    }
+
+    .stage-list li::before {
+      content: counter(stage);
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      display: grid;
+      width: 26px;
+      height: 26px;
+      place-items: center;
+      background: var(--accent-strong);
+      border-radius: 999px;
+      color: #ffffff;
+      font-size: 0.82rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .stage-list li:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      top: 52px;
+      right: -28px;
+      color: var(--accent-strong);
+      font-size: 1.7rem;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .stage-list li:nth-child(5) {
+      grid-column: 4;
+      grid-row: 2;
+    }
+
+    .stage-list li:nth-child(6) {
+      grid-column: 3;
+      grid-row: 2;
+    }
+
+    .stage-list li:nth-child(7) {
+      grid-column: 2;
+      grid-row: 2;
+    }
+
+    .stage-list li:nth-child(8) {
+      grid-column: 1;
+      grid-row: 2;
+    }
+
+    .stage-list li:nth-child(4)::after,
+    .stage-list li:nth-child(8)::after {
+      content: "↓";
+      top: auto;
+      right: 50%;
+      bottom: -36px;
+      transform: translateX(50%);
+    }
+
+    .stage-list li:nth-child(5)::after,
+    .stage-list li:nth-child(6)::after,
+    .stage-list li:nth-child(7)::after {
+      content: "←";
+      right: auto;
+      left: -32px;
+    }
+
+    .stage-list li:nth-child(6),
+    .stage-list li:nth-child(10) {
+      border-top-color: var(--blue);
+    }
+
+    .stage-list li:nth-child(10) {
+      background: #fff8eb;
+      border-color: #cf9a3b;
+    }
+
+    .stage-list strong {
+      display: block;
+      color: var(--text);
+      font-size: 0.96rem;
+    }
+
+    .timeline {
+      margin-top: 18px;
+      padding-left: 0;
+      list-style: none;
+    }
+
+    .timeline li {
+      display: grid;
+      grid-template-columns: 176px minmax(0, 1fr);
+      gap: 16px;
+      margin: 0;
+      padding: 12px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .timeline time {
+      color: var(--accent-strong);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.86rem;
+      white-space: nowrap;
+    }
+
+    .timeline span {
+      color: var(--muted);
+    }
+
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .shot {
+      overflow: hidden;
+    }
+
+    .shot img {
+      width: 100%;
+      background: #e9ece8;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .shot figcaption {
+      padding: 14px 16px 16px;
+      color: var(--muted);
+      font-size: 0.93rem;
+    }
+
+    .shot figcaption strong {
+      display: block;
+      margin-bottom: 3px;
+      color: var(--text);
+    }
+
+    .pr-shots {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 18px;
+    }
+
+    .pr-shots .shot img {
+      max-height: 760px;
+      object-fit: contain;
+    }
+
+    .artifact-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .artifact {
+      padding: 20px;
+    }
+
+    pre {
+      max-width: 100%;
+      margin: 14px 0 0;
+      padding: 16px;
+      overflow-x: auto;
+      background: #111a16;
+      color: #e9f0ec;
+      border-radius: 8px;
+      font-size: 0.84rem;
+      line-height: 1.48;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+    }
+
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .links a {
+      padding: 8px 10px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      text-decoration: none;
+    }
+
+    .footer {
+      padding: 28px 0 42px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    @media (max-width: 860px) {
+      .gallery,
+      .artifact-grid,
+      .two-col {
+        grid-template-columns: 1fr;
+      }
+
+      .section-header {
+        grid-template-columns: 1fr;
+      }
+
+      .timeline li {
+        grid-template-columns: 1fr;
+        gap: 4px;
+      }
+
+      .stage-list {
+        grid-template-columns: 1fr;
+        gap: 32px;
+      }
+
+      .stage-list li:nth-child(n) {
+        grid-column: auto;
+        grid-row: auto;
+      }
+
+      .stage-list li:not(:last-child)::after,
+      .stage-list li:nth-child(5)::after,
+      .stage-list li:nth-child(6)::after,
+      .stage-list li:nth-child(7)::after {
+        content: "↓";
+        top: auto;
+        right: 50%;
+        bottom: -28px;
+        left: auto;
+        transform: translateX(50%);
+      }
+    }
+
+    @media (max-width: 520px) {
+      .hero-inner,
+      main,
+      .nav {
+        width: min(100% - 22px, 1180px);
+      }
+
+      .hero-inner {
+        padding-top: 40px;
+      }
+
+      .panel,
+      .artifact {
+        padding: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <div class="hero-inner">
+        <h1>Blast Furnace automated issue-to-PR workflow</h1>
+        <p class="hero-copy">
+          A self-contained public demo of a private GitHub workflow: task intake, planning, development, quality checks, PR creation, human feedback, and PR rework.
+        </p>
+      </div>
+    </header>
+
+    <div class="nav-wrap">
+      <nav class="nav" aria-label="Page sections">
+        <a href="#task">Original task</a>
+        <a href="#pipeline">Pipeline</a>
+        <a href="#screenshots">Process screenshots</a>
+        <a href="#pr">PR and rework</a>
+        <a href="#artifacts">Run artifacts</a>
+        <a href="#materials">Source materials</a>
+      </nav>
+    </div>
+
+    <main>
+      <section id="task">
+        <div class="section-header">
+          <h2>Original Task</h2>
+          <p>
+            The source issue asked the agent to normalize category names by capitalizing the first letter when a user submits a category name.
+          </p>
+        </div>
+
+        <div class="two-col">
+          <div class="panel">
+            <h3>Issue title</h3>
+            <p><strong>[Feature] Capitalize the first letter of Category name</strong></p>
+            <p>
+              A category like <code>scientific books</code> should be saved and displayed as <code>Scientific books</code>.
+            </p>
+          </div>
+
+          <div class="panel">
+            <h3>Acceptance criteria</h3>
+            <ul>
+              <li>New category creation applies first-letter capitalization.</li>
+              <li>Category rename submission follows the same rule.</li>
+              <li>Normalization happens on submission, not while typing.</li>
+              <li>Duplicate-name handling still runs after normalization.</li>
+              <li>Focused test coverage verifies the behavior.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="pipeline">
+        <div class="section-header">
+          <h2>Execution Pipeline</h2>
+          <p>
+            The orchestrator advanced the issue through deterministic stages, then accepted human PR feedback and routed the same PR through a rework pass.
+          </p>
+        </div>
+
+        <ol class="stage-list">
+          <li><strong>Intake</strong>Picked up a ready GitHub issue and created a run.</li>
+          <li><strong>Prepare Run</strong>Created the working context for the target repository.</li>
+          <li><strong>Assess</strong>Completed with a stub-safe assessment.</li>
+          <li><strong>Plan</strong>Validated a scoped implementation plan.</li>
+          <li><strong>Develop</strong>Executed the implementation with Codex.</li>
+          <li><strong>Quality Gate</strong>Ran the configured test command and passed.</li>
+          <li><strong>Review</strong>Approved the generated changes.</li>
+          <li><strong>Make PR</strong>Created private PR #43.</li>
+          <li><strong>Tracker Sync</strong>Moved the task into review state.</li>
+          <li><strong>Human Review</strong>Requested a targeted rework fix.</li>
+          <li><strong>Rework Develop</strong>Updated the same PR.</li>
+          <li><strong>Final Sync</strong>Marked PR rework as finalized.</li>
+        </ol>
+
+        <ul class="timeline">
+          <li><time>2026-05-03 11:15Z</time><span>Intake picked up the task and Prepare Run handed off to Assess.</span></li>
+          <li><time>2026-05-03 11:16Z</time><span>Plan validated successfully and handed off to Develop.</span></li>
+          <li><time>2026-05-03 11:21Z</time><span>Develop completed and Quality Gate passed.</span></li>
+          <li><time>2026-05-03 11:22Z</time><span>Review passed, Make PR created private PR #43, and tracker sync moved the task to review.</span></li>
+          <li><time>2026-05-03 11:43Z</time><span>Human feedback requested rework; PR rework intake routed directly to Develop.</span></li>
+          <li><time>2026-05-03 12:00Z</time><span>Rework passed Quality Gate and Review, updated the same PR, and finalized tracker state.</span></li>
+        </ul>
+      </section>
+
+      <section id="screenshots">
+        <div class="section-header">
+          <h2>Process Screenshots</h2>
+        </div>
+
+        <div class="gallery">
+          <figure class="shot">
+            <img src="screenshots/Screenshot%202026-05-04%204@2x.png" alt="Pipeline process screenshot 1">
+            <figcaption>
+              <strong>Pipeline process 1</strong>
+              Stage status detail showing the orchestrated execution path.
+            </figcaption>
+          </figure>
+
+          <figure class="shot">
+            <img src="screenshots/Screenshot%202026-05-04%205@2x.png" alt="Pipeline process screenshot 2">
+            <figcaption>
+              <strong>Pipeline process 2</strong>
+              Continued pipeline progress including PR-related stages.
+            </figcaption>
+          </figure>
+
+          <figure class="shot">
+            <img src="screenshots/Screenshot%202026-05-04%206@2x.png" alt="Pipeline process screenshot 3">
+            <figcaption>
+              <strong>Pipeline process 3</strong>
+              Finalized workflow state after the rework pass.
+            </figcaption>
+          </figure>
+
+          <figure class="shot">
+            <img src="screenshots/Screenshot%202026-05-04%203@2x.png" alt="Pipeline process screenshot 4">
+            <figcaption>
+              <strong>Pipeline process 4</strong>
+              Initial workflow progress from task pickup into the automated stages.
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section id="pr">
+        <div class="section-header">
+          <h2>Created PR And Rework</h2>
+          <p>
+            The orchestrator created a private pull request, received human feedback, classified it as a Develop-level rework, and updated the same PR.
+          </p>
+        </div>
+
+        <div class="two-col">
+          <div class="panel">
+            <h3>PR result</h3>
+            <ul>
+              <li>Title: <code>Process issue #42: [Feature] Capitalize the first letter of Category name</code></li>
+              <li>Private PR number: <code>#43</code></li>
+              <li>Initial Quality Gate: 23 suites passed, 104 tests passed.</li>
+              <li>Automated review passed before PR creation.</li>
+            </ul>
+          </div>
+
+          <div class="panel">
+            <h3>Human rework</h3>
+            <p>
+              The human reviewer requested a deliberate rework: duplicate the first letter in the title. PR rework intake routed that requested adjustment directly to Develop because the accepted plan did not need to change.
+            </p>
+            <p>
+              After rework, Quality Gate passed again with 23 suites and 107 tests, Review passed, and PR #43 was updated.
+            </p>
+          </div>
+        </div>
+
+        <div class="pr-shots" aria-label="PR screenshots">
+          <figure class="shot">
+            <img src="screenshots/rework.png" alt="Pull request rework screenshot">
+            <figcaption>
+              <strong>Rework flow</strong>
+              Public-safe screenshot placeholder for the feedback and updated PR flow.
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section id="artifacts">
+        <div class="section-header">
+          <h2>Run Artifacts</h2>
+          <p>
+            Local artifacts make the orchestrator debuggable and recoverable.
+          </p>
+        </div>
+
+        <div class="artifact-grid">
+          <article class="artifact">
+            <h3><code>run.json</code></h3>
+            <p>
+              Tracks stable input context, run status, stage attempts, rework attempts, tracker status, and the latest handoff pointer.
+            </p>
+            <pre><code>{
+  "runId": "[REDACTED]",
+  "status": "running",
+  "stageAttempt": 1,
+  "reworkAttempt": 1,
+  "stages": {
+    "develop": { "attempts": 1, "status": "success" },
+    "make-pr": { "attempts": 1, "status": "success" },
+    "pr-rework-intake": { "attempts": 1, "status": "rework-needed" }
+  }
+}</code></pre>
+          </article>
+
+          <article class="artifact">
+            <h3><code>handoff.jsonl</code></h3>
+            <p>
+              Append-only stage ledger with sequence, dependencies, source stage, target stage, attempts, status, and validated output.
+            </p>
+            <pre><code>{
+  "recordId": "000008_pr-rework-intake_to_prepare-run",
+  "fromStage": "pr-rework-intake",
+  "toStage": "prepare-run",
+  "reworkAttempt": 1,
+  "status": "rework-needed",
+  "output": {
+    "selectedNextStage": "develop",
+    "commentsMarkdown": "[REDACTED]"
+  }
+}</code></pre>
+          </article>
+        </div>
+      </section>
+
+      <section id="materials">
+        <div class="section-header">
+          <h2>Source Materials</h2>
+        </div>
+
+        <div class="links">
+          <a href="./original-task.md">Original task</a>
+          <a href="./execution-trace.md">Execution trace</a>
+          <a href="./pr-and-rework.md">PR and rework</a>
+          <a href="./run-artifacts.md">Run artifacts</a>
+          <a href="./screenshots/">Screenshots folder</a>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</body>
+</html>
