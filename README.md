@@ -1,12 +1,22 @@
 # Blast Furnace
 
-Agent Orchestrator server that polls one configured GitHub repository for issues and processes them through a BullMQ-backed workflow.
+Blast Furnace is an agent orchestrator server that polls one configured GitHub repository for labeled issues and drives them through a pipeline until a pull request is created, updated after review feedback, or the run reaches a terminal failure state.
+
+The main practical feature is that agent work is executed through Codex CLI. This lets the pipeline use a subscription-based agent interface instead of paying per orchestration token in the server itself, while keeping deterministic orchestration, state, and handoff contracts around the agent steps.
 
 ## Overview
 
-Blast Furnace runs continuously, polls the repository configured by `GITHUB_OWNER` and `GITHUB_REPO` for open issues labeled `ready`, and turns each accepted issue into a run. A run prepares an issue branch and workspace, executes the target workflow, runs Codex in the prepared workspace, and either opens a pull request or finishes as a no-change run.
+Blast Furnace runs continuously. It polls the repository configured by `GITHUB_OWNER` and `GITHUB_REPO`, finds open issues with the `ready` label, prepares a branch and isolated workspace, asks Codex to plan and develop the change, runs a deterministic Quality Gate, asks Codex for review, then commits, pushes, and opens a PR.
 
-The current runtime is intentionally single-repository and polling-only. Webhook intake and Redis-backed repository registry routes are not part of the active server surface.
+The runtime is intentionally single-target-repository. It does not choose between multiple production repositories at runtime.
+
+GitHub workflow state is label-based rather than issue-status-based:
+
+- intake selects open issues with label `ready`;
+- tracker sync removes `ready` and adds `in review`;
+- PR rework is triggered by label `rework` on the PR.
+
+This is more portable than coupling the orchestrator directly to GitHub Project columns. The target repository should have its own GitHub Project automation that maps labels to the desired columns and statuses. Blast Furnace owns the labels; GitHub automation owns column movement.
 
 ## Prerequisites
 
@@ -14,21 +24,40 @@ The current runtime is intentionally single-repository and polling-only. Webhook
 - Redis server for BullMQ
 - Git
 - Docker Compose, if using the bundled Redis startup scripts
+- GitHub token with enough access to read issues, write issue/PR labels and comments, create branches, push commits, read PR state, and create PRs
+- A prepared target GitHub repository with the labels and project automation described below
+
+## Target Repository Setup
+
+Blast Furnace is designed to operate against one target GitHub repository per running server instance.
+
+Prepare the target repository before starting the orchestrator:
+
+1. Create labels `ready`, `in review`, and `rework`.
+2. Add GitHub Project automation, if the project board matters, so `ready` and `in review` move issues to the target columns.
+3. Ensure the default base branch used by the current implementation is `main`.
+4. Add tests or another deterministic verification command suitable for `QUALITY_GATE_TEST_COMMAND`.
+5. Create an issue, write a clear task description, and add the `ready` label when it should be picked up.
+
+The current implementation uses only these labels. More project columns can exist because the orchestrator does not depend on their names.
 
 ## Quick Start
 
 1. Install dependencies:
+
    ```bash
    npm install
    ```
 
 2. Configure environment variables:
+
    ```bash
    cp .env.local.example .env.local
    source ./scripts/load-env.sh
    ```
 
 3. Start Redis and the development server:
+
    ```bash
    ./scripts/start.sh
    ```
@@ -36,10 +65,17 @@ The current runtime is intentionally single-repository and polling-only. Webhook
    The start script loads `.env.local` when present, starts Redis with Docker Compose, waits for Redis to become healthy, then runs `npm run dev`.
 
    To start Redis manually instead:
+
    ```bash
    docker-compose up -d
    npm run dev
    ```
+
+4. In the configured target repository, create or update an open issue and add label `ready`.
+
+5. Watch the issue comment created by Blast Furnace. It is updated as the run moves through the pipeline.
+
+6. Inspect run files under `.orchestrator/runs/...` after or during the run.
 
 ## Configuration
 
@@ -49,9 +85,9 @@ All application configuration is loaded from environment variables. For local de
 
 | Variable | Description |
 |----------|-------------|
-| `GITHUB_TOKEN` | GitHub personal access token used for issue, branch, PR, label, and clone/push operations |
-| `GITHUB_OWNER` | Single repository owner, user, or organization |
-| `GITHUB_REPO` | Single repository name |
+| `GITHUB_TOKEN` | GitHub personal access token used for issue, branch, PR, label, comment, clone, and push operations |
+| `GITHUB_OWNER` | Single target repository owner, user, or organization |
+| `GITHUB_REPO` | Single target repository name |
 
 ### Optional Variables
 
@@ -63,53 +99,82 @@ All application configuration is loaded from environment variables. For local de
 | `REDIS_PORT` | `6379` | Redis port |
 | `REDIS_PASSWORD` | (none) | Redis password |
 | `CORS_ORIGIN` | `true` | CORS allowed origins, comma-separated list or `*` for all |
-| `GITHUB_POLL_INTERVAL_MS` | `60000` | Intake polling interval in milliseconds, minimum `1000` |
+| `GITHUB_POLL_INTERVAL_MS` | `60000` | Intake and PR-rework polling interval in milliseconds, minimum `1000` |
 | `CODEX_CLI_PATH` | `npx @openai/codex` | Command used to launch Codex CLI |
 | `CODEX_MODEL` | `gpt-5.4` | Model passed to Codex CLI with `--model` when the CLI path does not already specify a model |
 | `CODEX_TIMEOUT_MS` | `600000` | Codex CLI timeout in milliseconds, capped at 10 minutes |
 | `QUALITY_GATE_TEST_COMMAND` | (none) | Deterministic target-repository test command run by the Develop Stop hook |
 | `QUALITY_GATE_TEST_TIMEOUT_MS` | `180000` | Quality Gate command timeout in milliseconds, minimum `1` |
+| `REVIEW_ATTEMPT_LIMIT` | `3` | Maximum agent review/develop rework attempts before the run stops |
+| `MAX_HUMAN_REWORK_ATTEMPTS` | `3` | Maximum human-triggered PR rework attempts |
 | `ORCHESTRATION_STORAGE_ROOT` | current process working directory | Root where `.orchestrator/runs/...` run files are written |
-
-Legacy `GITHUB_ISSUE_STRATEGY` and `GITHUB_WEBHOOK_SECRET` values are ignored by the current runtime.
 
 ## Architecture
 
 ### Operating Model
 
-The orchestrator is a queue-driven workflow. BullMQ carries transport payloads, retries jobs, and schedules stage transitions. Durable business handoff after `prepare-run` is stored in run-scoped JSONL files under the Blast Furnace repository, not in the cloned target repository workspace.
+The orchestrator is queue-driven. BullMQ carries transport payloads, retries jobs, and schedules stage transitions. Durable handoff after `prepare-run` is stored in run-scoped JSONL files under the Blast Furnace repository, not in the cloned target repository workspace.
 
-Current flow:
+Current main flow:
 
 ```text
 GitHub polling intake
-  -> intake
   -> prepare-run
   -> assess
   -> plan
   -> develop
   -> review
   -> make-pr
-  -> sync-tracker-state, only after a pull request is created
+  -> sync-tracker-state
+  -> pr-rework-intake
 ```
 
-`develop` owns the Quality Gate Stop-hook loop. Passed quality hands off directly to `review`. Failed, timed-out, or misconfigured terminal quality outcomes are recorded as terminal Develop handoff records and do not enqueue `review`, `make-pr`, or `sync-tracker-state`.
+`pr-rework-intake` keeps polling the created PR. It terminates the run when the PR is merged or closed, or starts a new rework pass when label `rework` appears on the PR.
 
-No-change runs terminate in `make-pr` after workspace cleanup. Pull-request runs terminate in `sync-tracker-state` after tracker synchronization and workspace cleanup. Before deploying this topology over a previous version, drain old queued `quality-gate` jobs or explicitly accept that they will be rejected as unsupported active workflow jobs.
+### Pipeline
 
-### Intake
+| Stage | What happens | Deterministic? |
+|-------|--------------|----------------|
+| `intake` | Polls the configured repository for open issues labeled `ready`, skips issues that already have an active run, creates a run, writes initial status, and enqueues `prepare-run`. | Yes |
+| `prepare-run` | Creates or reuses branch `issue-{number}-{slugified-title}`, clones the target repo into `/tmp`, checks out and resets the branch, records stable context, and appends the first handoff. In rework mode it checks out the existing PR branch at the expected SHA. | Yes |
+| `assess` | Assessment stage reserved for deciding whether the issue is clear enough and whether work can be derived safely. Current implementation is stub-safe: it records a successful stub assessment and does not yet block unclear tasks. | Currently deterministic stub |
+| `plan` | Runs Codex with `prompts/plan.md`, validates the returned plan against `config/plan-checks.yaml`, retries up to 3 times when required sections are missing, and blocks if validation is exhausted. | Agent output plus deterministic validation |
+| `develop` | Runs Codex in the prepared workspace with the accepted plan or rework feedback. Codex hooks are enabled. | Agent output |
+| Quality Gate inside `develop` | Runs `QUALITY_GATE_TEST_COMMAND` from the target workspace through the Codex Stop hook. Failing or timed-out checks block Codex from stopping for bounded attempts so it can fix errors in the same session. Final failed, timed-out, or misconfigured outcomes stop the run before review. | Yes |
+| `review` | Runs Codex in read-only review mode. It must return exactly `Review Success` or `Review failed` with actionable findings. Failed review loops back to `develop`; malformed or exhausted review stops the run. | Agent output plus deterministic parser |
+| `make-pr` | Detects target-repo changes, excludes orchestrator and Codex hook files, commits, pushes, and creates a PR. No-change initial runs finish without PR. Duplicate or failed PR creation is terminal. | Yes |
+| `sync-tracker-state` | Moves the source issue from `ready` to `in review`, removes PR label `rework` during rework finalization, updates the issue status comment, cleans the workspace, and enqueues PR polling. | Yes, with GitHub side effects |
+| `pr-rework-intake` | Polls PR state. If merged, completes the run. If closed without merge, terminates it. If label `rework` appears, collects human PR comments, routes rework to `plan` or `develop`, and restarts through `prepare-run`. If idle, delays itself and polls again. | Mostly deterministic; route analysis uses Codex and defaults to `plan` on failure |
 
-Startup always schedules the repeatable `intake` job with job id `intake-repeatable`. Intake reads the last valid poll timestamp from Redis key `github:intake:last-poll`, falls back to the legacy `github:issue-watcher:last-poll` key when present, and fetches open GitHub issues labeled `ready`.
+```mermaid
+stateDiagram-v2
+  [*] --> intake
+  intake --> prepare_run
+  prepare_run --> assess
+  assess --> plan
+  plan --> develop
+  develop --> review
+  review --> develop
+  review --> make_pr
+  make_pr --> sync_tracker_state
+  sync_tracker_state --> pr_rework_intake
+  pr_rework_intake --> prepare_run
+  pr_rework_intake --> completed
+  pr_rework_intake --> terminated
+  plan --> blocked
+  develop --> failed
+  review --> failed
+  make_pr --> failed
+  make_pr --> completed
+  completed --> [*]
+  terminated --> [*]
+  blocked --> [*]
+  failed --> [*]
+```
 
-For each issue, Intake creates a `prepare-run` payload with a new `runId`, the configured repository identity, `stageAttempt: 1`, and `reworkAttempt: 0`. A Redis processing lock prevents repeated polling from enqueueing the same issue concurrently.
+### State, Handoff, and Tracing
 
-### Single Repository
-
-`GITHUB_OWNER`, `GITHUB_REPO`, and `GITHUB_TOKEN` are the only production repository selection mechanism. Runtime intake ignores old `github:repos` Redis registry data. Downstream GitHub and git side-effect stages validate the repository identity from the run before creating branches, checking changes, pushing, opening pull requests, or moving labels.
-
-### Run Handoff Files
-
-`prepare-run` initializes a timestamped run file set:
+Each run gets a timestamped file set:
 
 ```text
 <ORCHESTRATION_STORAGE_ROOT>/.orchestrator/runs/<YYYY-MM-DD_HH.MM_runId>/
@@ -117,198 +182,77 @@ For each issue, Intake creates a `prepare-run` payload with a new `runId`, the c
   <YYYY-MM-DD_HH.MM_runId>_handoff.jsonl
 ```
 
-The timestamp is computed once in UTC and persisted in the run summary. `run.json` is mutable status and pointer state: current stage, run status, stage attempt summaries, counters, and the latest handoff record reference.
+`run.json` is mutable run state stored next to the JSONL ledger. It contains the current stage, run status, stage summaries, counters, stable context, the latest handoff pointer, pending next-stage recovery data, and tracker-comment metadata.
 
-The handoff JSONL file is the durable source of stage outputs. Each line is one validated record with `recordId`, `sequence`, `runId`, `fromStage`, `toStage`, `stageAttempt`, `reworkAttempt`, `dependsOn`, `status`, `output`, and `nextInput`.
+`*_handoff.jsonl` is append-only. Each line is one JSON handoff record with `recordId`, `sequence`, `runId`, `fromStage`, `toStage`, `stageAttempt`, `reworkAttempt`, `dependsOn`, `status`, and `output`.
 
-After `prepare-run`, stage queue payloads are intentionally transport-only:
+Handoff happens by appending one JSON object to the JSONL file. Each next stage receives only a transport pointer to the previous record, reads that record, validates the payload and record model deterministically, and stops if the handoff is malformed or does not match the receiving stage. This keeps business data out of BullMQ payloads.
 
-```typescript
-{
-  type: 'plan',
-  runId: '...',
-  stage: 'plan',
-  stageAttempt: 1,
-  reworkAttempt: 0,
-  inputRecordRef: {
-    runDir: '...',
-    handoffPath: '...',
-    recordId: '000002_assess_to_plan',
-    sequence: 2,
-    stage: 'assess',
-  },
-}
-```
+The JSONL handoff ledger is also the run-level trace file. It is convenient to inspect after a run, and it can drive a future UI by replaying appended records and reading `run.json`. Runtime process logs are structured JSON written to stdout; the durable per-run sequence is the JSONL handoff ledger.
 
-Stages validate the incoming payload, read and validate the referenced handoff record, produce a typed output, append the next JSONL record, update `run.json`, and then enqueue the next job.
+Quality Gate stdout/stderr is written under `.orchestrator/runs/.../quality/attempt-N.log` while diagnostics are needed. Successful quality artifacts are removed after the Develop handoff is written; failed, timed-out, and misconfigured runs keep them.
 
-### Background Job Processing
+### GitHub Issue Status Comment
 
-BullMQ v5 with Redis provides:
+Blast Furnace creates or updates one marker-based GitHub issue comment for the run. The marker lets the server recover and update the same comment instead of creating a new one.
 
-- Retry policy: 3 attempts with exponential backoff, starting at 1 second
-- Concurrency: 5 jobs processed simultaneously
-- Cleanup: completed jobs removed after 100 jobs or 24 hours; failed jobs removed after 500 jobs or 7 days
+The comment is updated at the main visible transitions:
 
-`stageAttempt` and `reworkAttempt` are domain counters carried in run contracts. BullMQ retry attempts are infrastructure retry state and are not treated as stage attempts.
+- intake creates the initial "starting work" status;
+- `prepare-run`, `assess`, `plan`, `develop`, Quality Gate, `review`, `make-pr`, and `sync-tracker-state` mark pending, in-progress, completed, skipped, retrying, blocked, or failed rows;
+- Quality Gate failures, plan validation exhaustion, review exhaustion, PR creation failures, no-change outcomes, and tracker sync warnings are surfaced in the comment;
+- human PR rework adds a scoped rework section and tracks that pass separately.
 
-### Stage Responsibilities
+This lets a user follow pipeline progress from the GitHub issue without reading logs.
 
-| Stage | Responsibility |
-|-------|----------------|
-| `intake` | Poll the configured repository for open `ready` issues and enqueue `prepare-run` |
-| `prepare-run` | Create run identity and files, create or reuse `issue-{number}-{slugified-title}`, clone the repository, check out/reset the issue branch, append the first handoff record |
-| `assess` | Stub-safe assessment stage; appends assessment output |
-| `plan` | Stub-safe planning stage; appends plan output used by `develop` |
-| `develop` | Runs Codex CLI in the prepared workspace via `node-pty`, enables Codex Stop hooks, appends development and quality output |
-| `review` | Stub-safe review stage; appends review output |
-| `make-pr` | Detects target-repo changes, commits, pushes, creates a PR, or records terminal no-change output |
-| `sync-tracker-state` | Moves issue labels from `ready` to `in review` after PR creation and performs terminal workspace cleanup |
+### Quality Gate in Develop
 
-`make-pr` excludes `.orchestrator/**` from target repository status checks and staging so orchestration run files are never committed to the target repository.
+The deterministic Quality Gate is embedded into `develop` through a Codex Stop hook. This is deliberate: if tests fail, Codex receives bounded feedback while the same session still has the implementation context. The agent can fix failures before the pipeline hands off to review, which is more effective than starting a fresh stage with less context.
 
-## API Endpoints
+`QUALITY_GATE_TEST_COMMAND` must be deterministic, non-interactive, and run from the cloned target repository workspace.
 
-**GET /health**
+### Ambiguous Tasks
 
-- Returns server health status with timestamp and uptime in seconds
-- Response: `{ "status": "ok", "timestamp": "2026-04-22T00:00:00.000Z", "uptime": 1234 }`
+The pipeline has an `assess` stage for evaluating task clarity and safety before planning. That is the intended place to stop, ask for clarification, or mark the task blocked when the issue is underdescribed or when the required action cannot be derived from code.
 
-No GitHub webhook endpoint or repository management API is registered in the current server.
+That behavior is not fully implemented yet. Today `assess` is a stub that records "Assessment deferred for this iteration." The later `plan` stage can still block if Codex does not return a structurally valid plan, but it does not yet ask a human clarifying questions for unclear requirements.
 
-## Implementation Details
+### Post-PR Rework
 
-### ESNext Modules
+After PR creation and tracker sync, `pr-rework-intake` polls the PR:
 
-Import/export statements use `.js` extensions for local files:
+- merged PR -> terminal completed run;
+- closed unmerged PR -> terminal terminated run;
+- no `rework` label -> delayed poll again;
+- `rework` label -> collect human PR comments and review comments, filter bot/outdated/resolved/deleted comments, analyze whether to restart at `plan` or `develop`, prepare a fresh workspace, and push further commits to the same PR branch.
 
-```typescript
-import { buildServer } from './server/index.js';
-```
+Human review feedback is intentionally label-triggered. The system does not yet react to every PR event, GitHub review state, CI status, or comment in real time.
 
-This is required for ESNext module resolution with TypeScript.
+## How to Reproduce a Run
 
-### Worker Routing
+1. Create a test GitHub repository or choose a safe target repository.
+2. Add labels `ready`, `in review`, and `rework`.
+3. Configure GitHub Project automation so labels map to the desired columns, if using a project board.
+4. Create a token with repository access and put it in `.env.local`.
+5. Set `GITHUB_OWNER`, `GITHUB_REPO`, `QUALITY_GATE_TEST_COMMAND`, and optionally `CODEX_CLI_PATH`.
+6. Run `npm install`.
+7. Run `source ./scripts/load-env.sh`.
+8. Run `./scripts/start.sh`, or run `docker-compose up -d` and `npm run dev`.
+9. Create an open issue in the target repository and add label `ready`.
+10. Watch the GitHub issue status comment, the PR, and `.orchestrator/runs/...`.
+11. To test human rework, leave a human PR comment and add label `rework` to the PR.
 
-A single worker routes all job types in `src/index.ts`:
+See `docs/test-repository-setup.md` for an additional local testing checklist.
 
-```typescript
-export async function multiHandler(job: Job<JobPayload>): Promise<void> {
-  switch (job.data.type) {
-    case 'intake':
-      return intakeHandler(job as Job<IntakeJobData>);
-    case 'prepare-run':
-      return prepareRunHandler(job as Job<PrepareRunJobData>);
-    case 'assess':
-      return assessHandler(job as Job<AssessJobData>);
-    case 'plan':
-      return planHandler(job as Job<PlanJobData>);
-    case 'develop':
-      return developHandler(job as Job<DevelopJobData>);
-    case 'review':
-      return reviewHandler(job as Job<ReviewJobData>);
-    case 'make-pr':
-      return makePrHandler(job as Job<MakePrJobData>);
-    case 'sync-tracker-state':
-      return syncTrackerStateHandler(job as Job<SyncTrackerStateJobData>);
-    default:
-      throw new Error(`Unknown job type: ${job.data.type}`);
-  }
-}
-```
+## Technical Stack
 
-### Branch Names
-
-Issue branch names are generated as `issue-{number}-{slugified-title}`. The title is lowercased, stripped to alphanumeric characters, spaces, and hyphens, collapsed into hyphen separators, and truncated to 50 characters on a hyphen boundary when possible.
-
-Branch names are rejected when empty, containing `..`, starting with `-`, or containing whitespace.
-
-### Codex Execution
-
-`develop` reads the planned context from the handoff ledger, builds a prompt from the issue title, issue body, and plan output, and runs the configured Codex CLI command in the prepared workspace. If the configured command looks like a Codex command and no subcommand is present, `exec` is added automatically. The stage also adds `--enable codex_hooks`, `--dangerously-bypass-approvals-and-sandbox`, and `--model <CODEX_MODEL>` unless already provided.
-
-### Quality Gate
-
-Quality Gate is deterministic deployment configuration, not agent-selected behavior. `QUALITY_GATE_TEST_COMMAND` runs from the target repository `workspacePath`, should be non-interactive and unit-test oriented, must return non-zero on failure, and should not require browser UI, manual auth, or nondeterministic external services. If services are required, their setup must be deterministic outside the command or inside the target repository's test harness.
-
-Full stdout/stderr from each attempt is written to a run-scoped artifact under `.orchestrator/runs/.../quality/` while Quality Gate is running. Successful Quality Gate runs clean up those runtime artifacts after the Develop handoff is written, and their handoff records keep only bounded summary feedback. Failed, timed-out, or misconfigured runs keep the quality artifacts for diagnostics, and their handoff records include the artifact path when one exists.
-
-### Graceful Shutdown
-
-Shutdown follows this order with a 10-second timeout:
-
-1. Close the HTTP server
-2. Close the worker
-3. Close queue events and queue
-4. Close the Intake Redis client
-
-## Testing
-
-Tests use Vitest with co-located `.test.ts` files.
-
-```bash
-npm test
-npm run test:watch
-npm run lint
-npm run build
-```
-
-## Project Structure
-
-```text
-src/
-  index.ts                - Application entry point, startup, worker routing, shutdown
-  config/
-    index.ts              - Environment configuration
-  types/
-    index.ts              - Shared runtime, GitHub, job, run, and handoff types
-    node-pty.d.ts         - node-pty type declaration
-  utils/
-    logger.ts             - Structured logging with pino
-    node-pty.ts           - node-pty helper executable handling
-    working-dir.ts        - Temporary workspace and git remote utilities
-  server/
-    index.ts              - Fastify server factory
-    routes/
-      health.ts           - GET /health endpoint
-  jobs/
-    queue.ts              - BullMQ Queue and QueueEvents configuration
-    worker.ts             - BullMQ Worker factory with logging middleware
-    logger.ts             - Job-specific logging helper
-    intake.ts             - Polling-based GitHub issue intake
-    prepare-run.ts        - Run bootstrap, branch setup, clone, checkout, first handoff
-    assess.ts             - Stub-safe assessment stage
-    plan.ts               - Stub-safe planning stage
-    develop.ts            - Codex CLI executor and quality handoff stage
-    develop-stop-hook.ts  - Stop-hook state and Quality Gate adapter
-    develop-stop-hook-runner.ts - Reusable Codex Stop-hook entrypoint
-    quality-gate-runner.ts - Deterministic target-repository test runner
-    review.ts             - Stub-safe review stage
-    make-pr.ts            - Commit, push, pull request, no-change terminal path
-    sync-tracker-state.ts - Post-PR label synchronization and cleanup
-    orchestration.ts      - Run file, JSONL ledger, and run summary helpers
-    handoff-contracts.ts  - Runtime validation for payloads and stage outputs
-    stage-payloads.ts     - Transport-only downstream stage payload helpers
-  github/
-    client.ts             - Octokit client factory
-    issues.ts             - Configured-repository issue fetching
-    branches.ts           - Branch ref helpers
-    pullRequests.ts       - Pull request creation
-    issue-labels.ts       - `ready` -> `in review` transition helpers
-    repository.ts         - Configured repository identity and validation
-```
-
-## Docker Redis
-
-See `docs/docker.md` for Docker Compose details.
-
-```bash
-./scripts/start.sh      # Start Redis and the dev server
-./scripts/stop.sh       # Stop the dev server and Redis
-docker-compose up -d    # Start Redis only
-docker-compose down     # Stop Redis only
-```
-
-## License
-
-MIT
+- Agents: Codex CLI for planning, development, review, and PR rework route analysis
+- LLM: configured by `CODEX_MODEL`, default `gpt-5.4`
+- Tracker integration: GitHub Issues, GitHub Pull Requests, GitHub labels, GitHub issue comments through Octokit REST
+- Language: TypeScript, ESNext modules
+- HTTP framework: Fastify v5
+- Background jobs: BullMQ v5 with Redis
+- Runtime: Node.js >= 20
+- Git workspaces: cloned temporary directories under `/tmp`
+- Testing: Vitest
+- Linting: ESLint with typescript-eslint
